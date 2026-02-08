@@ -18,7 +18,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../shared/services/supabase';
-import { supabaseAdmin } from '../../../shared/services/supabaseAdmin';
 import { useAuth } from '../../../shared/services/AuthContext';
 import { Colors, Spacing, Fonts } from '../../../shared/constants/Colors';
 import { Payslip } from '../../../types';
@@ -286,25 +285,42 @@ export const AdminCoachesScreen: React.FC = () => {
 
     setCreating(true);
     try {
-      // Create auth account
-      const { data, error } = await supabaseAdmin.auth.admin.createUser({
-        email: email,
-        password: 'JMT1234',
-        email_confirm: true,
-        user_metadata: {
-          role: 'coach',
-          full_name: fullName,
-        },
-      });
+      // Get current session for token
+      const { data: { session } } = await supabase.auth.getSession();
 
-      if (error) throw error;
+      // Call Edge Function using direct fetch
+      const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            email: email,
+            password: 'JMT1234',
+            full_name: fullName,
+            role: 'coach',
+            user_token: session?.access_token,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create user');
+      }
+
+      const data = { user: result.user };
 
       if (data.user) {
-        // Update user record with employment details
+        // Update user record with employment details (profile already created by Edge Function)
         const { error: updateError } = await supabase
           .from('users')
           .update({
-            full_name: fullName,
             phone: newPhone.trim() || null,
             employment_type: newEmploymentType,
             hourly_rate: newEmploymentType === 'part_time' ? parseFloat(newHourlyRate) || null : null,

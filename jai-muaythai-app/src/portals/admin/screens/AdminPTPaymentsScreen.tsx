@@ -47,7 +47,7 @@ const formatCurrency = (amount: number) => {
 const JEREMY_USER_ID = 'your-jeremy-user-id-here'; // Replace with actual UUID
 
 export const AdminPTPaymentsScreen: React.FC = () => {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sessions, setSessions] = useState<PTPaymentApproval[]>([]);
@@ -57,7 +57,7 @@ export const AdminPTPaymentsScreen: React.FC = () => {
   const [approving, setApproving] = useState(false);
   const [bulkApproving, setBulkApproving] = useState(false);
 
-  const isMasterAdmin = profile?.role === 'master_admin';
+  const isMasterAdmin = user?.role === 'master_admin';
 
   const fetchSessions = useCallback(async () => {
     if (!user?.id) return;

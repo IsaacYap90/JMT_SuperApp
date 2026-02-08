@@ -1,79 +1,64 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View, Text, StyleSheet } from 'react-native';
 import { Colors } from '../shared/constants/Colors';
+import { Ionicons } from '@expo/vector-icons';
+
+import { ClassesScreen } from '../portals/member/screens/ClassesScreen';
+import { PTSessionsScreen } from '../portals/member/screens/PTSessionsScreen';
+import { ProfileScreen } from '../portals/member/screens/ProfileScreen';
 
 const Tab = createBottomTabNavigator();
-
-// Placeholder screens - we'll build these next
-const ClassesScreen = () => (
-  <View style={styles.screen}>
-    <Text style={styles.text}>Classes</Text>
-  </View>
-);
-
-const PTScreen = () => (
-  <View style={styles.screen}>
-    <Text style={styles.text}>Personal Training</Text>
-  </View>
-);
-
-const MembershipScreen = () => (
-  <View style={styles.screen}>
-    <Text style={styles.text}>Membership</Text>
-  </View>
-);
 
 export const MemberNavigator: React.FC = () => {
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.darkCharcoal,
-          borderTopColor: Colors.border,
+          backgroundColor: '#0A0A0F', // Dark background matching design
+          borderTopColor: '#2A2A35',
           paddingBottom: 8,
           paddingTop: 8,
           height: 60,
         },
         tabBarActiveTintColor: Colors.jaiBlue,
         tabBarInactiveTintColor: Colors.darkGray,
-      }}
+        tabBarIcon: ({ focused, color, size }) => {
+          let iconName;
+
+          if (route.name === 'Classes') {
+            iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'PT') {
+            iconName = focused ? 'fitness' : 'fitness-outline';
+          } else if (route.name === 'Profile') {
+            iconName = focused ? 'person' : 'person-outline';
+          }
+
+          return <Ionicons name={iconName as any} size={size} color={color} />;
+        },
+      })}
     >
       <Tab.Screen
         name="Classes"
         component={ClassesScreen}
         options={{
-          tabBarLabel: 'Classes',
+          tabBarLabel: 'Schedule',
         }}
       />
       <Tab.Screen
         name="PT"
-        component={PTScreen}
+        component={PTSessionsScreen}
         options={{
-          tabBarLabel: 'PT',
+          tabBarLabel: 'My PT',
         }}
       />
       <Tab.Screen
-        name="Membership"
-        component={MembershipScreen}
+        name="Profile"
+        component={ProfileScreen}
         options={{
-          tabBarLabel: 'Membership',
+          tabBarLabel: 'Profile',
         }}
       />
     </Tab.Navigator>
   );
 };
-
-const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: Colors.black,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  text: {
-    color: Colors.white,
-    fontSize: 24,
-  },
-});
