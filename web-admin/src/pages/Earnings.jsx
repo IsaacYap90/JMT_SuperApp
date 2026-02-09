@@ -51,7 +51,16 @@ export const Earnings = () => {
         .is('cancelled_at', null)
         .order('scheduled_at', { ascending: true });
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('[Earnings] PT sessions query failed. Check RLS for admin access to pt_sessions.', {
+          message: fetchError.message,
+          details: fetchError.details,
+          hint: fetchError.hint,
+          code: fetchError.code,
+          userId: user?.id,
+        });
+        throw fetchError;
+      }
       setSessions(data || []);
     } catch (err) {
       console.error('Failed to fetch PT sessions:', err);
