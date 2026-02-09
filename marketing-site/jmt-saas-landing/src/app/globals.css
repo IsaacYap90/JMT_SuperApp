@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-cloud text-ink antialiased;
+  background-image:
+    radial-gradient(circle at 12% 10%, rgba(0, 150, 255, 0.16), transparent 42%),
+    radial-gradient(circle at 88% 12%, rgba(0, 150, 255, 0.12), transparent 38%),
+    linear-gradient(180deg, #f7fbff 0%, #eef4fb 60%, #fdfefe 100%);
+}
+
+section {
+  @apply relative;
+}
+
+.container-padding {
+  @apply px-6 sm:px-10 lg:px-16;
+}
+
+.card {
+  @apply rounded-3xl border border-white/60 bg-white/80 shadow-xl backdrop-blur;
+}
+
+.text-gradient {
+  @apply bg-gradient-to-r from-ink via-ink to-brand bg-clip-text text-transparent;
+}
+
+.primary-button {
+  @apply inline-flex items-center justify-center rounded-full bg-brand px-6 py-3 text-sm font-semibold tracking-wide text-white shadow-glow transition hover:translate-y-[-1px] hover:shadow-xl;
+}
+
+.surface {
+  @apply rounded-2xl border border-white/60 bg-white/90;
+}
