@@ -258,10 +258,10 @@ export const CoachPTSessionsScreen: React.FC = () => {
       setSessions(typedSessions);
 
       const now = new Date();
-      const today = now.toISOString().split('T')[0];
+      const todayStr = now.toISOString().split('T')[0];
 
       // Split into categories
-      const today: PTSession[] = [];
+      const todayList: PTSession[] = [];
       const upcoming: PTSession[] = [];
       const completed: PTSession[] = [];
       let pendingVer = 0;
@@ -297,8 +297,8 @@ export const CoachPTSessionsScreen: React.FC = () => {
         }
 
         // Categorize sessions
-        if (sessionDateStr === today) {
-          today.push(session);
+        if (sessionDateStr === todayStr) {
+          todayList.push(session);
         } else if (sessionDate > now) {
           upcoming.push(session);
         } else {
@@ -306,7 +306,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
         }
       });
 
-      setTodaySessions(today);
+      setTodaySessions(todayList);
       setUpcomingSessions(upcoming);
       setCompletedSessions(completed.slice(-10).reverse()); // Show last 10 completed
 
@@ -994,7 +994,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
                     onPress={() => setEditMemberId(member.id)}
                   >
                     <View>
-                      <Text style={styles.memberName}>{member.full_name}</Text>
+                      <Text style={styles.modalMemberName}>{member.full_name}</Text>
                       <Text style={styles.memberEmail}>{member.email}</Text>
                     </View>
                     <Ionicons
@@ -1676,7 +1676,7 @@ const styles = StyleSheet.create({
   memberOptionSelected: {
     backgroundColor: Colors.success + '15',
   },
-  memberName: {
+  modalMemberName: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.white,

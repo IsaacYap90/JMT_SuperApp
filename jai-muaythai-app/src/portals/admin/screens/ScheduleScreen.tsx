@@ -3107,15 +3107,15 @@ export const AdminScheduleScreen: React.FC = () => {
                 {newClassCoaches.length > 0 && (
                   <View style={styles.formGroup}>
                     <Text style={styles.formLabel}>Lead Coach *</Text>
-                    <View style={styles.coachSelectList}>
+                    <View style={styles.coachSelectListSimple}>
                       {coaches
                         .filter(coach => newClassCoaches.includes(coach.id))
                         .map(coach => (
                           <TouchableOpacity
                             key={coach.id}
                             style={[
-                              styles.coachSelectItem,
-                              newClassLeadCoach === coach.id && styles.coachSelectItemActive
+                              styles.coachSelectItemSimple,
+                              newClassLeadCoach === coach.id && styles.coachSelectItemSelectedSimple
                             ]}
                             onPress={() => setNewClassLeadCoach(coach.id)}
                           >
@@ -4366,20 +4366,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: Colors.white,
   },
-  leadBadge: {
-    backgroundColor: Colors.success + '20',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  leadBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: Colors.success,
-    textTransform: 'uppercase',
-  },
-  // Coach select styles
-  coachSelectList: {
+  coachSelectListSimple: {
     gap: 8,
   },
   coachSelectScrollList: {
@@ -4388,7 +4375,7 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     borderRadius: 10,
   },
-  coachSelectItem: {
+  coachSelectItemSimple: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -4398,7 +4385,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  coachSelectItemSelected: {
+  coachSelectItemSelectedSimple: {
     borderColor: Colors.jaiBlue,
     backgroundColor: Colors.jaiBlue + '10',
   },
@@ -4470,11 +4457,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.xs,
     marginTop: 2,
     fontStyle: 'italic',
-  },
-  // Time row styles
-  timeRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
   },
   // PT Picker styles
   ptTimeRow: {

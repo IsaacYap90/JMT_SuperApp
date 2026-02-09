@@ -1272,7 +1272,7 @@ export const AdminOverviewScreen: React.FC = () => {
                     {coaches.map(coach => (
                       <TouchableOpacity
                         key={coach.id}
-                        style={styles.coachRadio}
+                        style={styles.coachRow}
                         onPress={() => setEditPTCoachId(coach.id)}
                       >
                         <Ionicons
@@ -1377,10 +1377,10 @@ export const AdminOverviewScreen: React.FC = () => {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.modalCloseButton}
+                  style={styles.modalCancelButton}
                   onPress={() => setPTEditModalVisible(false)}
                 >
-                  <Text style={styles.modalCloseButtonText}>Cancel</Text>
+                  <Text style={styles.modalCancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
               </ScrollView>
             </TouchableOpacity>

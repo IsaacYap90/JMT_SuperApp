@@ -1573,9 +1573,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: Colors.success,
   },
-  textDimmed: {
-    opacity: 0.6,
-  },
+  /* textDimmed duplicate removed */
   classCapacity: {
     fontSize: 13,
     color: Colors.lightGray,
