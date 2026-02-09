@@ -30,12 +30,9 @@ export const Login = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-6">
       <div className="w-full max-w-md border border-slate-800 bg-slate-900/70 p-8 rounded-2xl shadow-lg">
-        <div className="mb-6">
-          <div className="text-sm uppercase tracking-[0.2em] text-slate-400">JMT</div>
-          <h1 className="text-2xl font-semibold">Admin Login</h1>
-          <p className="text-sm text-slate-400 mt-2">
-            Use your email and password to access the portal.
-          </p>
+        <div className="mb-6 text-center">
+          <h1 className="text-3xl font-bold text-jai-blue mb-1">Jai Muay Thai</h1>
+          <p className="text-sm font-medium text-slate-300 italic">"Live with Passion, Fight with Heart"</p>
         </div>
         <form className="space-y-4" onSubmit={onSubmit}>
           <div>
