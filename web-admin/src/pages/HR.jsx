@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
+import { Coaches } from './Coaches'; // Re-use the existing component for now
 
 const months = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -17,7 +18,7 @@ const formatDate = (dateStr) => {
   return date.toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-export const HR = () => {
+const PayslipList = () => {
   const now = new Date();
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -96,89 +97,122 @@ export const HR = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">HR</h1>
-        <p className="text-slate-400">Payslips by month with payout status.</p>
-      </div>
-
-      <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
-            >
-              {months.map((month, idx) => (
-                <option key={month} value={idx + 1}>{month}</option>
-              ))}
-            </select>
-            <input
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              type="number"
-              className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 w-28"
-            />
+    <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(Number(e.target.value))}
+            className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2"
+          >
+            {months.map((month, idx) => (
+              <option key={month} value={idx + 1}>{month}</option>
+            ))}
+          </select>
+          <input
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(Number(e.target.value))}
+            type="number"
+            className="rounded-lg bg-slate-950 border border-slate-800 px-3 py-2 w-28"
+          />
+        </div>
+        <div className="flex items-center gap-6 text-sm text-slate-300">
+          <div>
+            <div className="text-xs uppercase tracking-widest text-slate-400">Gross</div>
+            <div className="text-lg font-semibold">{formatCurrency(totals.gross)}</div>
           </div>
-          <div className="flex items-center gap-6 text-sm text-slate-300">
-            <div>
-              <div className="text-xs uppercase tracking-widest text-slate-400">Gross</div>
-              <div className="text-lg font-semibold">{formatCurrency(totals.gross)}</div>
-            </div>
-            <div>
-              <div className="text-xs uppercase tracking-widest text-slate-400">Net</div>
-              <div className="text-lg font-semibold">{formatCurrency(totals.net)}</div>
-            </div>
+          <div>
+            <div className="text-xs uppercase tracking-widest text-slate-400">Net</div>
+            <div className="text-lg font-semibold">{formatCurrency(totals.net)}</div>
           </div>
         </div>
+      </div>
 
-        {loading ? (
-          <div className="text-slate-400">Loading payslips...</div>
-        ) : error ? (
-          <div className="text-sm text-red-400 border border-red-900/60 bg-red-950/50 p-2 rounded">{error}</div>
-        ) : payslips.length === 0 ? (
-          <div className="text-slate-400">No payslips for this period.</div>
-        ) : (
-          <div className="space-y-3">
-            {payslips.map((payslip) => (
-              <div
-                key={payslip.id}
-                className="border border-slate-800 rounded-xl px-5 py-4 bg-slate-950/70"
-              >
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                  <div>
-                    <div className="font-semibold text-white">
-                      {payslip.users?.full_name || 'Coach'}
-                    </div>
-                    <div className="text-xs text-slate-400">{payslip.users?.email}</div>
-                    <div className="text-xs text-slate-500">
-                      {months[payslip.month - 1]} {payslip.year}  -  {payslip.employment_type?.replace('_', ' ')}
-                    </div>
+      {loading ? (
+        <div className="text-slate-400">Loading payslips...</div>
+      ) : error ? (
+        <div className="text-sm text-red-400 border border-red-900/60 bg-red-950/50 p-2 rounded">{error}</div>
+      ) : payslips.length === 0 ? (
+        <div className="text-slate-400">No payslips for this period.</div>
+      ) : (
+        <div className="space-y-3">
+          {payslips.map((payslip) => (
+            <div
+              key={payslip.id}
+              className="border border-slate-800 rounded-xl px-5 py-4 bg-slate-950/70"
+            >
+              <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div>
+                  <div className="font-semibold text-white">
+                    {payslip.users?.full_name || 'Coach'}
                   </div>
-                  <div className="text-right">
-                    <div className="text-sm text-slate-400">Gross {formatCurrency(payslip.gross_pay || 0)}</div>
-                    <div className="text-lg font-semibold">Net {formatCurrency(payslip.net_pay || 0)}</div>
-                    <div className="text-xs text-slate-500">Payment date: {formatDate(payslip.payment_date)}</div>
+                  <div className="text-xs text-slate-400">{payslip.users?.email}</div>
+                  <div className="text-xs text-slate-500">
+                    {months[payslip.month - 1]} {payslip.year}  -  {payslip.employment_type?.replace('_', ' ')}
                   </div>
                 </div>
-                <div className="mt-4 flex items-center justify-between text-xs uppercase tracking-widest text-slate-400">
-                  <span>Status: {payslip.status}</span>
-                  {payslip.status !== 'paid' ? (
-                    <button
-                      onClick={() => handleMarkPaid(payslip.id)}
-                      disabled={markingId === payslip.id}
-                      className="rounded-lg bg-jai-blue hover:bg-[#007acc] transition text-white text-xs font-medium px-3 py-2"
-                    >
-                      {markingId === payslip.id ? 'Updating...' : 'Mark Paid'}
-                    </button>
-                  ) : null}
+                <div className="text-right">
+                  <div className="text-sm text-slate-400">Gross {formatCurrency(payslip.gross_pay || 0)}</div>
+                  <div className="text-lg font-semibold">Net {formatCurrency(payslip.net_pay || 0)}</div>
+                  <div className="text-xs text-slate-500">Payment date: {formatDate(payslip.payment_date)}</div>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="mt-4 flex items-center justify-between text-xs uppercase tracking-widest text-slate-400">
+                <span>Status: {payslip.status}</span>
+                {payslip.status !== 'paid' ? (
+                  <button
+                    onClick={() => handleMarkPaid(payslip.id)}
+                    disabled={markingId === payslip.id}
+                    className="rounded-lg bg-jai-blue hover:bg-[#007acc] transition text-white text-xs font-medium px-3 py-2"
+                  >
+                    {markingId === payslip.id ? 'Updating...' : 'Mark Paid'}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const HR = () => {
+  const [activeTab, setActiveTab] = useState('payslips'); // 'payslips' | 'coaches'
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">HR Management</h1>
+          <p className="text-slate-400">Manage payroll and staff profiles.</p>
+        </div>
+        
+        <div className="flex bg-slate-900/50 p-1 rounded-lg border border-slate-800 w-fit">
+          <button
+            onClick={() => setActiveTab('payslips')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+              activeTab === 'payslips' 
+                ? 'bg-jai-blue text-white' 
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Payslips
+          </button>
+          <button
+            onClick={() => setActiveTab('coaches')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+              activeTab === 'coaches' 
+                ? 'bg-jai-blue text-white' 
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Coaches
+          </button>
+        </div>
       </div>
+
+      {activeTab === 'payslips' ? <PayslipList /> : <Coaches />}
     </div>
   );
 };

@@ -76,7 +76,7 @@ export const Overview = () => {
         const enrichedClasses = await Promise.all(
           (classData || []).map(async (classItem) => {
             const { count } = await supabase
-              .from('bookings')
+              .from('class_enrollments')
               .select('*', { count: 'exact', head: true })
               .eq('class_id', classItem.id)
               .neq('status', 'cancelled');

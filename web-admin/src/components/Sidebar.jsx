@@ -5,8 +5,6 @@ const allItems = [
   { label: 'Overview', to: '/overview', roles: ['master_admin', 'admin'] },
   { label: 'Schedule', to: '/schedule', roles: ['master_admin', 'admin'] },
   { label: 'Members', to: '/members', roles: ['master_admin', 'admin'] },
-  { label: 'Bookings', to: '/bookings', roles: ['master_admin', 'admin'] },
-  { label: 'Coaches', to: '/coaches', roles: ['master_admin'] },
   { label: 'Earnings', to: '/earnings', roles: ['master_admin'] },
   { label: 'HR', to: '/hr', roles: ['master_admin'] }
 ];

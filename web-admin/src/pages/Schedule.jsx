@@ -1,21 +1,30 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
-const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const dayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // Shortened
-
-const formatTime = (time) => {
-  if (!time) return '';
-  const [hours, minutes] = time.split(':');
-  const date = new Date();
-  date.setHours(Number(hours), Number(minutes || 0), 0, 0);
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+const getWeekDays = () => {
+  const today = new Date();
+  const currentDay = today.getDay(); // 0 (Sun) - 6 (Sat)
+  const sunday = new Date(today);
+  sunday.setDate(today.getDate() - currentDay);
+  
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(sunday);
+    d.setDate(sunday.getDate() + i);
+    return {
+      index: i,
+      label: d.toLocaleDateString('en-SG', { weekday: 'short', day: 'numeric', month: 'short' }), // "Tue, 10 Feb"
+      date: d
+    };
+  });
 };
 
 export const Schedule = () => {
   const todayIndex = new Date().getDay();
   const [selectedDay, setSelectedDay] = useState(todayIndex);
   const [classes, setClasses] = useState([]);
+  
+  const weekDays = useMemo(() => getWeekDays(), []);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -127,7 +136,7 @@ export const Schedule = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-semibold">Schedule</h1>
-          <p className="text-slate-400">Manage classes for {dayNames[selectedDay]}.</p>
+          <p className="text-slate-400">Manage classes for {weekDays[selectedDay]?.label}.</p>
         </div>
         <button 
           onClick={() => openModal()}
@@ -139,17 +148,17 @@ export const Schedule = () => {
 
       {/* Day Picker */}
       <div className="flex gap-2 overflow-x-auto pb-2">
-        {dayLabels.map((label, idx) => (
+        {weekDays.map((day) => (
           <button
-            key={label}
-            onClick={() => setSelectedDay(idx)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              idx === selectedDay
+            key={day.index}
+            onClick={() => setSelectedDay(day.index)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap ${
+              day.index === selectedDay
                 ? 'bg-slate-800 text-white border border-jai-blue'
                 : 'bg-slate-900/50 text-slate-400 border border-transparent hover:bg-slate-800'
             }`}
           >
-            {label}
+            {day.label}
           </button>
         ))}
       </div>
