@@ -50,23 +50,41 @@ export const Overview = () => {
       try {
         const today = new Date();
         const dayOfWeek = dayNames[today.getDay()];
-        const startOfDay = new Date(today);
-        startOfDay.setHours(0, 0, 0, 0);
-        const endOfDay = new Date(today);
-        endOfDay.setHours(23, 59, 59, 999);
+
+        const singaporeOffset = 8 * 60 * 60 * 1000;
+        const todayInSG = new Date(today.getTime() + singaporeOffset);
+        const year = todayInSG.getUTCFullYear();
+        const month = todayInSG.getUTCMonth();
+        const day = todayInSG.getUTCDate();
+        const startOfTodayUTC = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+        const endOfTodayUTC = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
 
         const [{ data: classData, error: classError }, { data: ptData, error: ptError }] = await Promise.all([
           supabase
             .from('classes')
-            .select('id, name, start_time, end_time, capacity, lead_coach:lead_coach_id(full_name)')
+            .select('*, lead_coach:lead_coach_id(full_name)')
             .eq('day_of_week', dayOfWeek)
             .eq('is_active', true)
             .order('start_time', { ascending: true }),
           supabase
             .from('pt_sessions')
-            .select('id, scheduled_at, session_type, session_price, coach:coach_id(full_name), member:member_id(full_name)')
-            .gte('scheduled_at', startOfDay.toISOString())
-            .lte('scheduled_at', endOfDay.toISOString())
+            .select(`
+              id,
+              scheduled_at,
+              duration_minutes,
+              status,
+              session_type,
+              session_rate,
+              commission_amount,
+              coach_verified,
+              member_verified,
+              coach_id,
+              member_id,
+              member:member_id (full_name),
+              coach:coach_id (full_name)
+            `)
+            .gte('scheduled_at', startOfTodayUTC.toISOString())
+            .lte('scheduled_at', endOfTodayUTC.toISOString())
             .order('scheduled_at', { ascending: true }),
         ]);
 

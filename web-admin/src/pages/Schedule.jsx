@@ -1,6 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+const formatTime = (time) => {
+  if (!time) return '';
+  const [hours, minutes] = time.split(':');
+  const date = new Date();
+  date.setHours(Number(hours), Number(minutes || 0), 0, 0);
+  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+};
+
 const getWeekDays = () => {
   const today = new Date();
   const currentDay = today.getDay(); // 0 (Sun) - 6 (Sat)
@@ -54,6 +64,7 @@ export const Schedule = () => {
 
   const loadClasses = async () => {
     setLoading(true);
+    setError('');
     try {
       const { data, error: fetchError } = await supabase
         .from('classes')
