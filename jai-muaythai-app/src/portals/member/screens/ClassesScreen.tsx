@@ -110,7 +110,19 @@ export const ClassesScreen: React.FC = () => {
       const bookedClassIds = new Set(myBookings?.map(b => b.class_id));
       const bookingMap = new Map(myBookings?.map(b => [b.class_id, b.id]));
 
-      // 3. Process classes
+      // 3. Get all enrollments for this day to calculate counts
+      const { data: allEnrollments } = await supabase
+        .from('class_enrollments')
+        .select('class_id')
+        .eq('session_date', dateStr)
+        .eq('status', 'active');
+
+      const enrollmentCounts = new Map();
+      allEnrollments?.forEach((e: any) => {
+        enrollmentCounts.set(e.class_id, (enrollmentCounts.get(e.class_id) || 0) + 1);
+      });
+
+      // 4. Process classes
       const processedClasses = (recurringClasses || []).map(cls => ({
         id: `${cls.id}_${dateStr}`, // Unique ID for list
         class_id: cls.id,
@@ -118,7 +130,7 @@ export const ClassesScreen: React.FC = () => {
         start_time: cls.start_time,
         end_time: cls.end_time,
         capacity: cls.capacity,
-        enrolled_count: 0, // TODO: Fetch real counts via RPC if needed
+        enrolled_count: enrollmentCounts.get(cls.id) || 0,
         lead_coach: Array.isArray(cls.lead_coach) ? cls.lead_coach[0] : cls.lead_coach,
         is_booked: bookedClassIds.has(cls.id),
         booking_id: bookingMap.get(cls.id),
