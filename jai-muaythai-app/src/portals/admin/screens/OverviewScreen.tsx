@@ -657,7 +657,7 @@ export const AdminOverviewScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.statCard}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('AdminTabs', { screen: 'Schedule' })}
+              onPress={() => (navigation as any).navigate('AdminTabs', { screen: 'Schedule' })}
             >
               <View style={[styles.statGlow, { backgroundColor: Colors.jaiBlue }]} />
               <Text style={[styles.statNumber, { color: Colors.jaiBlue }]}>{stats.classesToday}</Text>

@@ -119,7 +119,7 @@ export const ClassesScreen: React.FC = () => {
         end_time: cls.end_time,
         capacity: cls.capacity,
         enrolled_count: 0, // TODO: Fetch real counts via RPC if needed
-        lead_coach: cls.lead_coach,
+        lead_coach: Array.isArray(cls.lead_coach) ? cls.lead_coach[0] : cls.lead_coach,
         is_booked: bookedClassIds.has(cls.id),
         booking_id: bookingMap.get(cls.id),
         status: 'scheduled' as const,

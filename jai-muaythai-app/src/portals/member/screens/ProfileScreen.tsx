@@ -47,7 +47,12 @@ export const ProfileScreen: React.FC = () => {
         .eq('status', 'active')
         .limit(1)
         .single();
-      setMembership(data);
+      if (data) {
+        setMembership({
+          ...data,
+          type: Array.isArray(data.type) ? data.type[0] : data.type
+        } as Membership);
+      }
     } catch (err) {
       // No active membership
     } finally {

@@ -43,7 +43,7 @@ export const GradientButton: React.FC<{
     style={[disabled && { opacity: 0.5 }]}
   >
     <LinearGradient
-      colors={colors}
+      colors={colors as [string, string, ...string[]]}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 0 }}
       style={[styles.gradientButton, style]}

@@ -221,9 +221,10 @@ export const CoachScheduleScreen: React.FC = () => {
 
         return {
           ...cls,
+          lead_coach: Array.isArray(cls.lead_coach) ? cls.lead_coach[0] : cls.lead_coach,
           isMyClass: myClassIds.has(cls.id),
           assignedCoaches,
-          myRole: myAssignment ? (myAssignment.is_lead ? 'lead' : 'assistant') : null,
+          myRole: (myAssignment ? (myAssignment.is_lead ? 'lead' : 'assistant') : null) as 'lead' | 'assistant' | null,
         };
       })
     );
@@ -333,7 +334,6 @@ export const CoachScheduleScreen: React.FC = () => {
     weekData?.forEach((d, i) => {
       console.log(`  [${i + 1}] id=${d.id}`);
       console.log(`      scheduled_at=${d.scheduled_at}`);
-      console.log(`      member_id=${d.member_id}`);
       console.log(`      member_name=${(d.member as any)?.full_name}`);
       console.log(`      session_type=${d.session_type}`);
       console.log(`      commission_amount=${d.commission_amount}`);

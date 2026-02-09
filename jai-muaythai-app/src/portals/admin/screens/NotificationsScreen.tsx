@@ -238,7 +238,7 @@ export const AdminNotificationsScreen: React.FC = () => {
       }
     } else if (notification.reference_type === 'class' || notification.notification_type === 'class_assignment') {
       // Navigate to Schedule tab
-      navigation.navigate('AdminTabs', { screen: 'Schedule' });
+      (navigation as any).navigate('AdminTabs', { screen: 'Schedule' });
     } else if (notification.reference_type === 'pt_session' || notification.notification_type.startsWith('pt_')) {
       // Show detail modal
       setSelectedNotification(notification);

@@ -73,6 +73,7 @@ interface AssignedCoach {
   coach_id: string;
   full_name: string;
   order: number;
+  is_lead?: boolean;
 }
 
 // PT Commission Rates (at 50% commission)
@@ -728,7 +729,7 @@ export const AdminScheduleScreen: React.FC = () => {
           return {
             user_id: coachId,
             title: isLead ? 'Assigned as Lead Coach' : 'Assigned to Class',
-            message: `You've been assigned to ${editName.trim()} on ${editDayOfWeek.charAt(0).toUpperCase() + editDayOfWeek.slice(1)}s at ${editStartTime}${isLead ? ' as Lead Coach' : ''}`,
+            message: `You've been assigned to ${className.trim()} on ${editDayOfWeek.charAt(0).toUpperCase() + editDayOfWeek.slice(1)}s at ${editTime}${isLead ? ' as Lead Coach' : ''}`,
             notification_type: 'system',
             is_read: false,
           };
@@ -956,7 +957,7 @@ export const AdminScheduleScreen: React.FC = () => {
     setEditPTSessionType(type);
     const sessionType = SESSION_TYPES.find(st => st.value === type);
     if (sessionType) {
-      setEditPTCommission(sessionType.defaultCommission.toString());
+      setEditPTCommission(getCommissionForSessionType(type).toString());
     }
   };
 

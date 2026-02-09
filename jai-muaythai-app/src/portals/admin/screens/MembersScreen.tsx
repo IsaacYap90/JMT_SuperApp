@@ -132,7 +132,11 @@ export const AdminMembersScreen: React.FC = () => {
       .limit(20);
 
     if (data) {
-      setPtSessions(data as PTSession[]);
+      const formattedData = data.map((item: any) => ({
+        ...item,
+        coach: Array.isArray(item.coach) ? item.coach[0] : item.coach
+      }));
+      setPtSessions(formattedData as PTSession[]);
     }
     setLoadingPT(false);
   };

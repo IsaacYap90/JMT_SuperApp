@@ -635,9 +635,10 @@ export const CoachOverviewScreen: React.FC = () => {
 
           return {
             ...cls,
+            lead_coach: Array.isArray(cls.lead_coach) ? cls.lead_coach[0] : cls.lead_coach,
             isMyClass: myClassIds.has(cls.id),
             assignedCoaches,
-            myRole: myAssignment ? (myAssignment.is_lead ? 'lead' : 'assistant') : null,
+            myRole: (myAssignment ? (myAssignment.is_lead ? 'lead' : 'assistant') : null) as 'lead' | 'assistant' | null,
           };
         })
     );
@@ -725,6 +726,7 @@ export const CoachOverviewScreen: React.FC = () => {
     const allWeekClasses: TodayClass[] = (allWeekClassesData || [])
       .map(cls => ({
         ...cls,
+        lead_coach: Array.isArray(cls.lead_coach) ? cls.lead_coach[0] : cls.lead_coach,
         isMyClass: myClassIds.has(cls.id),
       }))
       .sort((a, b) => a.start_time.localeCompare(b.start_time));
@@ -736,7 +738,9 @@ export const CoachOverviewScreen: React.FC = () => {
         id,
         scheduled_at,
         duration_minutes,
-        status
+        status,
+        session_type,
+        commission_amount
       `)
       .eq('coach_id', user.id)
       .eq('status', 'scheduled')
@@ -747,6 +751,8 @@ export const CoachOverviewScreen: React.FC = () => {
       scheduled_at: item.scheduled_at,
       duration_minutes: item.duration_minutes,
       status: item.status,
+      session_type: item.session_type,
+      commission_amount: item.commission_amount,
       member_name: '',
     }));
 
@@ -888,7 +894,7 @@ export const CoachOverviewScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.statCard}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('CoachTabs', { screen: 'Schedule' })}
+              onPress={() => (navigation as any).navigate('CoachTabs', { screen: 'Schedule' })}
             >
               <View style={[styles.statGlow, { backgroundColor: Colors.jaiBlue }]} />
               <Text style={[styles.statNumber, { color: Colors.jaiBlue }]}>{stats.weeklyClasses}</Text>
@@ -900,7 +906,7 @@ export const CoachOverviewScreen: React.FC = () => {
             <TouchableOpacity
               style={styles.statCard}
               activeOpacity={0.7}
-              onPress={() => navigation.navigate('CoachTabs', { screen: 'Schedule' })}
+              onPress={() => (navigation as any).navigate('CoachTabs', { screen: 'Schedule' })}
             >
               <View style={[styles.statGlow, { backgroundColor: Colors.success }]} />
               <Text style={[styles.statNumber, { color: Colors.success }]}>{stats.weeklyPTSessions}</Text>
