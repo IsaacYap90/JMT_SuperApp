@@ -7,15 +7,19 @@ import { ClassesScreen } from '../portals/member/screens/ClassesScreen';
 import { PTSessionsScreen } from '../portals/member/screens/PTSessionsScreen';
 import { ProfileScreen } from '../portals/member/screens/ProfileScreen';
 
-const Tab = createBottomTabNavigator();
+import { createStackNavigator } from '@react-navigation/stack';
+import { NotificationsScreen } from '../portals/member/screens/NotificationsScreen';
 
-export const MemberNavigator: React.FC = () => {
+const Tab = createBottomTabNavigator();
+const Stack = createStackNavigator();
+
+const MemberTabs = () => {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0A0A0F', // Dark background matching design
+          backgroundColor: '#0A0A0F',
           borderTopColor: '#2A2A35',
           paddingBottom: 8,
           paddingTop: 8,
@@ -38,27 +42,18 @@ export const MemberNavigator: React.FC = () => {
         },
       })}
     >
-      <Tab.Screen
-        name="Classes"
-        component={ClassesScreen}
-        options={{
-          tabBarLabel: 'Schedule',
-        }}
-      />
-      <Tab.Screen
-        name="PT"
-        component={PTSessionsScreen}
-        options={{
-          tabBarLabel: 'My PT',
-        }}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          tabBarLabel: 'Profile',
-        }}
-      />
+      <Tab.Screen name="Classes" component={ClassesScreen} options={{ tabBarLabel: 'Schedule' }} />
+      <Tab.Screen name="PT" component={PTSessionsScreen} options={{ tabBarLabel: 'My PT' }} />
+      <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: 'Profile' }} />
     </Tab.Navigator>
+  );
+};
+
+export const MemberNavigator: React.FC = () => {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="MemberTabs" component={MemberTabs} />
+      <Stack.Screen name="Notifications" component={NotificationsScreen} />
+    </Stack.Navigator>
   );
 };

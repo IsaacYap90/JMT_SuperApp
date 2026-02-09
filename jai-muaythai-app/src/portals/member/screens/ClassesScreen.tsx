@@ -15,6 +15,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../shared/services/supabase';
 import { useAuth } from '../../../shared/services/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 import { Colors, Spacing } from '../../../shared/constants/Colors';
 
 interface ClassSession {
@@ -40,6 +41,7 @@ interface Membership {
 
 export const ClassesScreen: React.FC = () => {
   const { user } = useAuth();
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [classes, setClasses] = useState<ClassSession[]>([]);
@@ -202,7 +204,10 @@ export const ClassesScreen: React.FC = () => {
             <Text style={styles.subtitle}>Ready to train?</Text>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.iconButton}>
+            <TouchableOpacity 
+              style={styles.iconButton} 
+              onPress={() => (navigation as any).navigate('Notifications')}
+            >
               <Ionicons name="notifications-outline" size={24} color={Colors.white} />
             </TouchableOpacity>
             <View style={styles.avatar}>
