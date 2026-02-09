@@ -7,8 +7,6 @@ import { Login } from './pages/Login';
 import { Overview } from './pages/Overview';
 import { Schedule } from './pages/Schedule';
 import { Members } from './pages/Members';
-import { Bookings } from './pages/Bookings';
-import { Coaches } from './pages/Coaches';
 import { Earnings } from './pages/Earnings';
 import { HR } from './pages/HR';
 
@@ -25,11 +23,9 @@ export const App = () => (
               <Route path="overview" element={<Overview />} />
               <Route path="schedule" element={<Schedule />} />
               <Route path="members" element={<Members />} />
-              <Route path="bookings" element={<Bookings />} />
             </Route>
 
             <Route element={<RequireRole allow={['master_admin']} />}>
-              <Route path="coaches" element={<Coaches />} />
               <Route path="earnings" element={<Earnings />} />
               <Route path="hr" element={<HR />} />
             </Route>
