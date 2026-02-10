@@ -1731,6 +1731,41 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.white,
   },
+  // Earnings Breakdown
+  takeHomeContainer: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  takeHomeLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.lightGray,
+    marginBottom: 4,
+    letterSpacing: 1,
+  },
+  takeHomeAmount: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: Colors.white,
+  },
+  breakdownToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: 8,
+  },
+  breakdownToggleText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.jaiBlue,
+  },
+  breakdownContainer: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+  },
 });
 
 export default CoachPTSessionsScreen;
