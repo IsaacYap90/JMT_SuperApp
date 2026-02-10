@@ -161,6 +161,20 @@ export const LoginScreen: React.FC = () => {
               <Text style={styles.signInButtonText}>Sign In</Text>
             )}
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.forgotPasswordButton}
+            onPress={() => {
+              if (!email) {
+                setError('Please enter your email address first');
+                return;
+              }
+              supabase.auth.resetPasswordForEmail(email);
+              setError('Password reset email sent (if account exists)');
+            }}
+          >
+            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Dev Mode - Hidden */}
@@ -285,6 +299,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Fonts.bold,
     color: '#000000',
+  },
+  forgotPasswordButton: {
+    marginTop: 16,
+    alignSelf: 'center',
+  },
+  forgotPasswordText: {
+    color: Colors.jaiBlue,
+    fontSize: 14,
+    fontFamily: Fonts.medium,
   },
   devContainer: {
     width: '100%',

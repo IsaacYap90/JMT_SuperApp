@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabaseClient';
 
 export const Login = () => {
   const { signIn } = useAuth();
@@ -9,6 +10,7 @@ export const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [msg, setMsg] = useState('');
   const [loading, setLoading] = useState(false);
 
   const from = location.state?.from?.pathname || '/';
@@ -24,6 +26,21 @@ export const Login = () => {
       setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgot = async () => {
+    if (!email) {
+      setError('Please enter your email first');
+      return;
+    }
+    setMsg('');
+    setError('');
+    try {
+      await supabase.auth.resetPasswordForEmail(email);
+      setMsg('Check email for password reset link');
+    } catch (e) {
+      setError('Failed to send reset email');
     }
   };
 
@@ -62,12 +79,25 @@ export const Login = () => {
               {error}
             </div>
           ) : null}
+          {msg ? (
+            <div className="text-sm text-green-400 border border-green-900/60 bg-green-950/50 p-2 rounded">
+              {msg}
+            </div>
+          ) : null}
           <button
             type="submit"
             disabled={loading}
             className="w-full bg-jai-blue hover:bg-[#141b63] transition text-white py-2 rounded-lg font-medium"
           >
             {loading ? 'Signing in...' : 'Sign In'}
+          </button>
+          
+          <button
+            type="button"
+            onClick={handleForgot}
+            className="w-full text-sm text-jai-blue hover:text-white mt-4"
+          >
+            Forgot Password?
           </button>
         </form>
       </div>
