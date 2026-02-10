@@ -15,7 +15,7 @@ export const Sidebar = () => {
   return (
     <aside className="w-64 bg-slate-900/80 border-r border-slate-800 min-h-screen p-6">
       <div className="mb-8">
-        <div className="text-sm uppercase tracking-[0.2em] text-slate-400">JMT</div>
+        <div className="text-sm uppercase tracking-[0.2em] text-slate-400">Jai Muay Thai</div>
         <div className="text-xl font-semibold text-white">Admin Portal</div>
       </div>
       <nav className="flex flex-col gap-2">
