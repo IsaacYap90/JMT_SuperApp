@@ -800,6 +800,8 @@ export const CoachPTSessionsScreen: React.FC = () => {
   };
 
   // Render earnings summary card
+  const [showBreakdown, setShowBreakdown] = useState(false);
+
   const renderEarningsSummary = () => (
     <View style={styles.earningsSummaryCard}>
       <LinearGradient
@@ -808,30 +810,42 @@ export const CoachPTSessionsScreen: React.FC = () => {
         end={{ x: 1, y: 1 }}
         style={styles.earningsGradient}
       >
-        <Text style={styles.earningsTitle}>Earnings Summary</Text>
-
-        <View style={styles.earningsRow}>
-          <View style={styles.earningsItem}>
-            <View style={[styles.earningsDot, { backgroundColor: '#FFB300' }]} />
-            <Text style={styles.earningsLabel}>Pending Verification</Text>
-            <Text style={styles.earningsValue}>{formatCurrency(earningsSummary.pendingVerification)}</Text>
-          </View>
-          <View style={styles.earningsItem}>
-            <View style={[styles.earningsDot, { backgroundColor: Colors.success }]} />
-            <Text style={styles.earningsLabel}>Pending Payment</Text>
-            <Text style={styles.earningsValue}>{formatCurrency(earningsSummary.pendingPayment)}</Text>
-          </View>
-          <View style={styles.earningsItem}>
-            <View style={[styles.earningsDot, { backgroundColor: '#0096FF' }]} />
-            <Text style={styles.earningsLabel}>Paid This Week</Text>
-            <Text style={[styles.earningsValue, { color: '#0096FF' }]}>{formatCurrency(earningsSummary.paidThisWeek)}</Text>
-          </View>
+        <View style={styles.takeHomeContainer}>
+          <Text style={styles.takeHomeLabel}>TAKE HOME THIS WEEK</Text>
+          <Text style={styles.takeHomeAmount}>{formatCurrency(earningsSummary.paidThisWeek)}</Text>
         </View>
 
-        <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total Pending</Text>
-          <Text style={styles.totalValue}>{formatCurrency(earningsSummary.totalPending)}</Text>
-        </View>
+        <TouchableOpacity 
+          style={styles.breakdownToggle} 
+          onPress={() => setShowBreakdown(!showBreakdown)}
+        >
+          <Text style={styles.breakdownToggleText}>
+            {showBreakdown ? 'Hide Details' : 'See Breakdown'}
+          </Text>
+          <Ionicons name={showBreakdown ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.jaiBlue} />
+        </TouchableOpacity>
+
+        {showBreakdown && (
+          <View style={styles.breakdownContainer}>
+            <View style={styles.earningsRow}>
+              <View style={styles.earningsItem}>
+                <View style={[styles.earningsDot, { backgroundColor: '#FFB300' }]} />
+                <Text style={styles.earningsLabel}>Pending Verification</Text>
+                <Text style={styles.earningsValue}>{formatCurrency(earningsSummary.pendingVerification)}</Text>
+              </View>
+              <View style={styles.earningsItem}>
+                <View style={[styles.earningsDot, { backgroundColor: Colors.success }]} />
+                <Text style={styles.earningsLabel}>Pending Payment</Text>
+                <Text style={styles.earningsValue}>{formatCurrency(earningsSummary.pendingPayment)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total Pending</Text>
+              <Text style={styles.totalValue}>{formatCurrency(earningsSummary.totalPending)}</Text>
+            </View>
+          </View>
+        )}
       </LinearGradient>
     </View>
   );

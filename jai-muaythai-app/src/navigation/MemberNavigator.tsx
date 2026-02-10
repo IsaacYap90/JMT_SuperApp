@@ -10,6 +10,8 @@ import { ProfileScreen } from '../portals/member/screens/ProfileScreen';
 import { createStackNavigator } from '@react-navigation/stack';
 import { NotificationsScreen } from '../portals/member/screens/NotificationsScreen';
 
+import { UnifiedScheduleScreen } from '../portals/member/screens/UnifiedScheduleScreen';
+
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
@@ -30,8 +32,10 @@ const MemberTabs = () => {
         tabBarIcon: ({ focused, color, size }) => {
           let iconName;
 
-          if (route.name === 'Classes') {
+          if (route.name === 'Schedule') { // Changed name
             iconName = focused ? 'calendar' : 'calendar-outline';
+          } else if (route.name === 'Book') { // New name for Classes tab
+            iconName = focused ? 'add-circle' : 'add-circle-outline';
           } else if (route.name === 'PT') {
             iconName = focused ? 'fitness' : 'fitness-outline';
           } else if (route.name === 'Profile') {
@@ -42,7 +46,12 @@ const MemberTabs = () => {
         },
       })}
     >
-      <Tab.Screen name="Classes" component={ClassesScreen} options={{ tabBarLabel: 'Schedule' }} />
+      {/* Unified Schedule as Home */}
+      <Tab.Screen name="Schedule" component={UnifiedScheduleScreen} options={{ tabBarLabel: 'My Training' }} />
+      
+      {/* Booking Tab (was Classes) */}
+      <Tab.Screen name="Book" component={ClassesScreen} options={{ tabBarLabel: 'Book Class' }} />
+      
       <Tab.Screen name="PT" component={PTSessionsScreen} options={{ tabBarLabel: 'My PT' }} />
       <Tab.Screen name="Profile" component={ProfileScreen} options={{ tabBarLabel: 'Profile' }} />
     </Tab.Navigator>
