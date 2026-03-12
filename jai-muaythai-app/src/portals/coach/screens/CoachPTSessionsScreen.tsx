@@ -33,19 +33,19 @@ const SESSION_TYPE_CONFIG: Record<PTSessionType, { icon: string; badgeIcon: stri
   solo_single: {
     icon: 'person-outline',
     badgeIcon: 'person',
-    badgeColor: '#FFB300',
-    bgColor: '#FFB30020',
+    badgeColor: Colors.amber,
+    bgColor: `${Colors.amber}20`,
     label: 'Single',
-    commissionColor: '#FFB300',
+    commissionColor: Colors.amber,
     showBadge: true,
   },
   buddy: {
     icon: 'people-outline',
     badgeIcon: 'people',
-    badgeColor: '#FF6B35',
-    bgColor: '#FF6B3520',
+    badgeColor: Colors.orangeRed,
+    bgColor: `${Colors.orangeRed}20`,
     label: 'Buddy',
-    commissionColor: '#FF6B35',
+    commissionColor: Colors.orangeRed,
     showBadge: true,
   },
   house_call: {
@@ -103,8 +103,8 @@ const isSessionPast = (scheduledAt: string) => {
 const getVerificationBadge = (session: PTSession): { color: string; bgColor: string; text: string; icon: string } => {
   if (session.payment_approved) {
     return {
-      color: '#0096FF',
-      bgColor: '#0096FF20',
+      color: Colors.jaiBlue,
+      bgColor: `${Colors.jaiBlue}20`,
       text: 'Paid',
       icon: 'checkmark-circle',
     };
@@ -119,23 +119,23 @@ const getVerificationBadge = (session: PTSession): { color: string; bgColor: str
   }
   if (session.coach_verified && !session.member_verified) {
     return {
-      color: '#FFB300',
-      bgColor: '#FFB30020',
+      color: Colors.amber,
+      bgColor: `${Colors.amber}20`,
       text: 'Waiting for Member',
       icon: 'time',
     };
   }
   if (isSessionPast(session.scheduled_at) && session.status === 'scheduled') {
     return {
-      color: '#FF6B35',
-      bgColor: '#FF6B3520',
+      color: Colors.orangeRed,
+      bgColor: `${Colors.orangeRed}20`,
       text: 'Mark Attended',
       icon: 'checkmark-circle-outline',
     };
   }
   return {
-    color: '#FF6B35',
-    bgColor: '#FF6B3520',
+    color: Colors.orangeRed,
+    bgColor: `${Colors.orangeRed}20`,
     text: 'Upcoming',
     icon: 'calendar-outline',
   };
@@ -668,7 +668,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
           {/* Cancelled Badge */}
           {isCancelled && (
             <View style={styles.cancelledBadge}>
-              <Ionicons name="close-circle" size={12} color="#FF6B6B" />
+              <Ionicons name="close-circle" size={12} color={Colors.coral} />
               <Text style={styles.cancelledBadgeText}>CANCELLED</Text>
             </View>
           )}
@@ -719,7 +719,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
         {/* Cancellation reason display */}
         {isCancelled && session.cancellation_reason && (
           <View style={styles.cancellationReasonContainer}>
-            <Ionicons name="information-circle-outline" size={14} color="#FF6B6B" />
+            <Ionicons name="information-circle-outline" size={14} color={Colors.coral} />
             <Text style={styles.cancellationReasonText}>
               Cancelled: {session.cancellation_reason}
             </Text>
@@ -742,7 +742,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
               </View>
             ) : (
               <View style={styles.verificationItem}>
-                <Ionicons name="time-outline" size={14} color="#FFB300" />
+                <Ionicons name="time-outline" size={14} color={Colors.amber} />
                 <Text style={styles.verificationText}>Waiting for member verification</Text>
               </View>
             )}
@@ -766,7 +766,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
                 style={styles.undoButton}
                 onPress={() => handleUndoVerification(session)}
               >
-                <Ionicons name="refresh-circle-outline" size={18} color="#FF6B6B" />
+                <Ionicons name="refresh-circle-outline" size={18} color={Colors.coral} />
                 <Text style={styles.undoButtonText}>Undo</Text>
               </TouchableOpacity>
             )}
@@ -784,7 +784,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
                 style={styles.cancelButton}
                 onPress={() => handleCancelClick(session)}
               >
-                <Ionicons name="close-circle-outline" size={18} color="#FF6B6B" />
+                <Ionicons name="close-circle-outline" size={18} color={Colors.coral} />
                 <Text style={styles.cancelButtonText}>Cancel</Text>
               </TouchableOpacity>
             )}
@@ -829,7 +829,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
           <View style={styles.breakdownContainer}>
             <View style={styles.earningsRow}>
               <View style={styles.earningsItem}>
-                <View style={[styles.earningsDot, { backgroundColor: '#FFB300' }]} />
+                <View style={[styles.earningsDot, { backgroundColor: Colors.amber }]} />
                 <Text style={styles.earningsLabel}>Pending Verification</Text>
                 <Text style={styles.earningsValue}>{formatCurrency(earningsSummary.pendingVerification)}</Text>
               </View>
@@ -1071,7 +1071,7 @@ export const CoachPTSessionsScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#0A0A0F', '#0A0A0F', '#0A1520']}
+        colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -1374,11 +1374,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,107,107,0.1)',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#FF6B6B',
+    borderColor: Colors.coral,
   },
   undoButtonText: {
     fontSize: 12,
-    color: '#FF6B6B',
+    color: Colors.coral,
   },
   waitingNote: {
     fontSize: 10,
@@ -1405,7 +1405,7 @@ const styles = StyleSheet.create({
   // Cancelled session styles
   cancelledSessionCard: {
     opacity: 0.6,
-    borderColor: '#FF6B6B',
+    borderColor: Colors.coral,
   },
   cancelledText: {
     textDecorationLine: 'line-through',
@@ -1418,27 +1418,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#FF6B6B20',
+    backgroundColor: `${Colors.coral}20`,
     borderWidth: 1,
-    borderColor: '#FF6B6B',
+    borderColor: Colors.coral,
   },
   cancelledBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#FF6B6B',
+    color: Colors.coral,
   },
   cancellationReasonContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 6,
-    backgroundColor: '#FF6B6B10',
+    backgroundColor: `${Colors.coral}10`,
     borderRadius: 8,
     padding: 8,
     marginBottom: Spacing.sm,
   },
   cancellationReasonText: {
     fontSize: 11,
-    color: '#FF6B6B',
+    color: Colors.coral,
     flex: 1,
     fontStyle: 'italic',
   },
@@ -1451,11 +1451,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,107,107,0.1)',
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#FF6B6B',
+    borderColor: Colors.coral,
   },
   cancelButtonText: {
     fontSize: 12,
-    color: '#FF6B6B',
+    color: Colors.coral,
     fontWeight: '600',
   },
   // Cancellation Modal
@@ -1522,7 +1522,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
   modalConfirmButton: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: Colors.coral,
   },
   modalCancelButtonText: {
     fontSize: 14,

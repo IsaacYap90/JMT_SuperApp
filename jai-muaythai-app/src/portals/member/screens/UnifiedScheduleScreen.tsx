@@ -152,7 +152,7 @@ export const UnifiedScheduleScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#0A0A0F', '#0A1520']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea}>
         
         <View style={styles.header}>

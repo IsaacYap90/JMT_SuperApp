@@ -396,7 +396,7 @@ export const PayslipViewer: React.FC<PayslipViewerProps> = ({
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#0A0A0F', '#0A0A0F', '#0A1520']}
+        colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -1218,7 +1218,7 @@ const styles = StyleSheet.create({
   paymentDetailsBox: {
     backgroundColor: '#FFF9E6',
     borderWidth: 1,
-    borderColor: '#FFB300',
+    borderColor: Colors.amber,
     borderRadius: 8,
     padding: 12,
   },

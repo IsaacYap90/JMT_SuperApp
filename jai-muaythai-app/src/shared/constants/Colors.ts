@@ -7,8 +7,11 @@ export const Colors = {
 
   // Background colors
   black: '#0A0A0F',
+  blackPure: '#0A0A0A',
+  darkNavy: '#0a0a1a',
   darkCharcoal: '#121218',
   charcoal: '#1A1A24',
+  charcoalDark: '#1A1A1A',
   cardBg: '#1E1E2A',
   surface: '#242432',
 
@@ -18,6 +21,7 @@ export const Colors = {
   neonPink: '#FF66B8',
   neonGreen: '#00FF88',
   cyan: '#00E5FF',
+  skyBlue: '#00BFFF',
   magenta: '#FF00FF',
   yellow: '#FFD700',
 
@@ -25,18 +29,27 @@ export const Colors = {
   success: '#00E676',
   successLight: '#69F0AE',
   successDark: '#00C853',
+  successMuted: '#27AE60',
   warning: '#FFAB00',
   warningLight: '#FFD180',
   warningDark: '#FF8F00',
+  amber: '#FFB300',
   error: '#FF1744',
   errorLight: '#FF616F',
   errorDark: '#D50000',
+  errorSoft: '#FF4444',
+  coral: '#FF6B6B',
+  orangeRed: '#FF6B35',
+  iosRed: '#FF3B30',
   info: '#00B0FF',
 
   // Text colors
   white: '#FFFFFF',
   lightGray: '#B3B3CC',
+  silverGray: '#B3B3B3',
   mediumGray: '#808099',
+  mutedGray: '#888888',
+  textMuted: '#666666',
   darkGray: '#4D4D66',
   placeholder: '#3D3D4D',
 
@@ -44,6 +57,8 @@ export const Colors = {
   border: '#2C2C3D',
   borderLight: '#3D3D4D',
   borderDark: '#1C1C2D',
+  borderNavy: '#1a1a2e',
+  borderSurface: '#2A2A35',
   divider: 'rgba(255,255,255,0.08)',
   dividerLight: 'rgba(255,255,255,0.15)',
 

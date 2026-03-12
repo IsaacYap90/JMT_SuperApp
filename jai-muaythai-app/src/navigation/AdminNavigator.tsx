@@ -52,9 +52,9 @@ const AdminTabs: React.FC = () => {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0a0a1a',
+          backgroundColor: Colors.darkNavy,
           borderTopWidth: 1,
-          borderTopColor: '#1a1a2e',
+          borderTopColor: Colors.borderNavy,
           height: 85,
           paddingBottom: 20,
           paddingTop: 10,
@@ -114,7 +114,7 @@ const AdminTabs: React.FC = () => {
             ) : null,
             tabBarBadge: pendingLeaveCount > 0 ? pendingLeaveCount : undefined,
             tabBarBadgeStyle: {
-              backgroundColor: '#FF3B30',
+              backgroundColor: Colors.iosRed,
               fontSize: 10,
               fontWeight: '700',
               minWidth: 18,

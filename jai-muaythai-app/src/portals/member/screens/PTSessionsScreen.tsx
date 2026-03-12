@@ -162,7 +162,7 @@ export const PTSessionsScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#0A0A0F', '#0A1520']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <Text style={styles.title}>My PT</Text>
@@ -341,9 +341,9 @@ const styles = StyleSheet.create({
   sessionCoach: { color: Colors.jaiBlue, fontSize: 12 },
   cancelButton: { 
     paddingVertical: 6, paddingHorizontal: 12, borderRadius: 6, 
-    backgroundColor: 'rgba(255,107,107,0.1)', borderWidth: 1, borderColor: '#FF6B6B' 
+    backgroundColor: 'rgba(255,107,107,0.1)', borderWidth: 1, borderColor: Colors.coral
   },
-  cancelText: { color: '#FF6B6B', fontSize: 11, fontWeight: '600' },
+  cancelText: { color: Colors.coral, fontSize: 11, fontWeight: '600' },
 
   // Book Coach
   coachList: { marginRight: -Spacing.lg },

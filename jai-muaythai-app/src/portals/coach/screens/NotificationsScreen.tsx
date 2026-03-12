@@ -129,22 +129,22 @@ export const CoachNotificationsScreen: React.FC = () => {
 
   const getNotificationColor = (type: string) => {
     const colorMap: Record<string, string> = {
-      class_assignment: '#00BFFF',
-      lead_coach_assignment: '#00BFFF',
-      class: '#00BFFF',
-      class_unassignment: '#FF4444',
-      class_cancelled: '#FF4444',
+      class_assignment: Colors.skyBlue,
+      lead_coach_assignment: Colors.skyBlue,
+      class: Colors.skyBlue,
+      class_unassignment: Colors.errorSoft,
+      class_cancelled: Colors.errorSoft,
       pt_created: '#FF8C00',
       pt_updated: '#FF8C00',
-      pt_cancelled: '#FF4444',
-      pt_deleted: '#FF4444',
+      pt_cancelled: Colors.errorSoft,
+      pt_deleted: Colors.errorSoft,
       booking: '#FF8C00',
       leave_request: '#9B59B6',
       leave_status: '#9B59B6',
-      system: '#888888',
-      broadcast: '#888888',
+      system: Colors.mutedGray,
+      broadcast: Colors.mutedGray,
     };
-    return colorMap[type] || '#888888';
+    return colorMap[type] || Colors.mutedGray;
   };
 
   const getNotificationIcon = (type: string) => {

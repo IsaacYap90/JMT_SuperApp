@@ -580,7 +580,7 @@ export const AdminOverviewScreen: React.FC = () => {
     <View style={styles.container}>
       {/* Background Gradient */}
       <LinearGradient
-        colors={['#0A0A0F', '#0A0A0F', '#0A1520']}
+        colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]}
         style={StyleSheet.absoluteFill}
       />
 
@@ -1845,7 +1845,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    backgroundColor: '#FFD700',
+    backgroundColor: Colors.yellow,
   },
   leadBadgeText: {
     fontSize: 10,
@@ -1966,7 +1966,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.darkGray,
   },
   coachDotLead: {
-    backgroundColor: '#FFD700',
+    backgroundColor: Colors.yellow,
   },
   coachDotAssistant: {
     backgroundColor: Colors.lightGray,
@@ -1983,7 +1983,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
-    backgroundColor: '#FFD700',
+    backgroundColor: Colors.yellow,
   },
   leadBadgeSmallText: {
     fontSize: 10,

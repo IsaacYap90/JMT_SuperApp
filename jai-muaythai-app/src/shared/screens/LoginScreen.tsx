@@ -66,7 +66,7 @@ export const LoginScreen: React.FC = () => {
     <View style={styles.containerWrapper}>
       {/* Background */}
       <LinearGradient
-        colors={['#0A0A0A', '#0A0A15', '#0A1525']}
+        colors={[Colors.blackPure, '#0A0A15', '#0A1525']}
         style={StyleSheet.absoluteFill}
       />
 
@@ -212,18 +212,18 @@ export const LoginScreen: React.FC = () => {
 const styles = StyleSheet.create({
   containerWrapper: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: Colors.blackPure,
   },
   safeArea: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: Colors.blackPure,
   },
   keyboardView: {
     flex: 1,
   },
   scrollView: {
     flex: 1,
-    backgroundColor: '#0A0A0A',
+    backgroundColor: Colors.blackPure,
   },
   scrollContent: {
     flexGrow: 1,

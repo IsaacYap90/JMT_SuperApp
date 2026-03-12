@@ -69,7 +69,7 @@ export const ProfileScreen: React.FC = () => {
   };
 
   const daysLeft = getDaysRemaining();
-  const statusColor = daysLeft > 30 ? Colors.success : daysLeft > 7 ? '#FFB300' : '#FF6B6B';
+  const statusColor = daysLeft > 30 ? Colors.success : daysLeft > 7 ? Colors.amber : Colors.coral;
 
   const handleRenew = () => {
     Alert.alert('Renew Membership', 'Payment integration coming soon! Please visit the counter.');
@@ -82,7 +82,7 @@ export const ProfileScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#0A0A0F', '#0A1520']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <Text style={styles.title}>Profile</Text>
@@ -245,8 +245,8 @@ const styles = StyleSheet.create({
   logoutButton: {
     backgroundColor: 'rgba(255, 107, 107, 0.1)', borderRadius: 12, 
     paddingVertical: 16, alignItems: 'center', marginTop: 20,
-    borderWidth: 1, borderColor: '#FF6B6B',
+    borderWidth: 1, borderColor: Colors.coral,
   },
-  logoutText: { color: '#FF6B6B', fontWeight: '700', fontSize: 16 },
+  logoutText: { color: Colors.coral, fontWeight: '700', fontSize: 16 },
   versionText: { textAlign: 'center', color: Colors.darkGray, fontSize: 12, marginTop: 24 },
 });

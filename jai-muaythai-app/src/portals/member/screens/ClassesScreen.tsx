@@ -206,7 +206,7 @@ export const ClassesScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <LinearGradient colors={['#0A0A0F', '#0A0A0F', '#0A1520']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]} style={StyleSheet.absoluteFill} />
       <SafeAreaView style={styles.safeArea}>
         
         {/* Top Bar */}
@@ -418,15 +418,15 @@ const styles = StyleSheet.create({
   },
   bookText: { color: Colors.white, fontWeight: '600', fontSize: 12 },
   cancelButton: {
-    backgroundColor: 'rgba(255,107,107,0.1)', paddingHorizontal: 16, paddingVertical: 8, 
-    borderRadius: 8, borderWidth: 1, borderColor: '#FF6B6B',
+    backgroundColor: 'rgba(255,107,107,0.1)', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 8, borderWidth: 1, borderColor: Colors.coral,
   },
-  cancelText: { color: '#FF6B6B', fontWeight: '600', fontSize: 12 },
+  cancelText: { color: Colors.coral, fontWeight: '600', fontSize: 12 },
   waitlistButton: {
     backgroundColor: 'rgba(255,179,0,0.1)', paddingHorizontal: 12, paddingVertical: 8,
-    borderRadius: 8, borderWidth: 1, borderColor: '#FFB300',
+    borderRadius: 8, borderWidth: 1, borderColor: Colors.amber,
   },
-  waitlistText: { color: '#FFB300', fontWeight: '600', fontSize: 12 },
+  waitlistText: { color: Colors.amber, fontWeight: '600', fontSize: 12 },
   completedBadge: {
     backgroundColor: Colors.darkGray, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
   },

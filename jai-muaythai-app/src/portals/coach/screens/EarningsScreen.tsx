@@ -387,7 +387,7 @@ export const CoachEarningsScreen: React.FC = () => {
     return (
       <View style={styles.container}>
         <LinearGradient
-          colors={['#0A0A0F', '#0A0A0F', '#0A1520']}
+          colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]}
           style={StyleSheet.absoluteFill}
         />
       </View>
@@ -409,7 +409,7 @@ export const CoachEarningsScreen: React.FC = () => {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#0A0A0F', '#0A0A0F', '#0A1520']}
+        colors={[Colors.gradientStart, Colors.gradientStart, Colors.gradientEnd]}
         style={StyleSheet.absoluteFill}
       />
 

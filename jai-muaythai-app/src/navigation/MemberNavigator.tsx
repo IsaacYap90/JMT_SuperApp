@@ -21,8 +21,8 @@ const MemberTabs = () => {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0A0A0F',
-          borderTopColor: '#2A2A35',
+          backgroundColor: Colors.black,
+          borderTopColor: Colors.borderSurface,
           paddingBottom: 8,
           paddingTop: 8,
           height: 60,
