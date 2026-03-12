@@ -21,6 +21,7 @@ import * as Sharing from 'expo-sharing';
 import { supabase } from '../../../shared/services/supabase';
 import { useAuth } from '../../../shared/services/AuthContext';
 import { Colors, Spacing } from '../../../shared/constants/Colors';
+import { getCoachColorByEmail } from '../../../shared/constants/CoachColors';
 
 interface ClassItem {
   id: string;
@@ -71,22 +72,6 @@ interface TimelineItem {
 
 const DAY_COLUMN_WIDTH = 120;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Coach Color Mapping - Each coach gets a unique color for visual distinction
-const COACH_COLORS: Record<string, string> = {
-  'jeremy@jmt.com': '#00BFFF',  // Jai Blue (the boss)
-  'isaac@jmt.com': '#FFD700',   // Yellow/Gold
-  'shafiq@jmt.com': '#9B59B6',  // Purple
-  'sasi@jmt.com': '#2ECC71',    // Green
-  'heng@jmt.com': '#FF8C00',    // Orange
-  'larvin@jmt.com': '#FF69B4',  // Pink
-};
-
-// Helper function to get coach color by email
-const getCoachColorByEmail = (email: string): string => {
-  if (!email) return Colors.jaiBlue; // fallback to Jai Blue
-  return COACH_COLORS[email.toLowerCase()] || Colors.jaiBlue;
-};
 
 export const CoachScheduleScreen: React.FC = () => {
   const { user } = useAuth();

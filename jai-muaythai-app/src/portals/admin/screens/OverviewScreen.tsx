@@ -17,6 +17,7 @@ import { useNavigation } from '@react-navigation/native';
 import { supabase } from '../../../shared/services/supabase';
 import { useAuth } from '../../../shared/services/AuthContext';
 import { Colors, Spacing } from '../../../shared/constants/Colors';
+import { getCoachColor } from '../../../shared/constants/CoachColors';
 import { GlassCard, SectionHeader, Badge } from '../../../shared/components/FuturisticUI';
 
 interface ClassItem {
@@ -56,23 +57,6 @@ interface Coach {
   email: string;
   full_name: string;
 }
-
-// Coach Color Mapping - Each coach gets a unique color for visual distinction
-const COACH_COLORS: Record<string, string> = {
-  'jeremy@jmt.com': '#00BFFF',  // Jai Blue (the boss)
-  'isaac@jmt.com': '#FFD700',   // Yellow/Gold
-  'shafiq@jmt.com': '#9B59B6',  // Purple
-  'sasi@jmt.com': '#2ECC71',    // Green
-  'heng@jmt.com': '#FF8C00',    // Orange
-  'larvin@jmt.com': '#FF69B4',  // Pink
-};
-
-// Helper function to get coach color by ID
-const getCoachColor = (coachId: string, coaches: Coach[]): string => {
-  const coach = coaches.find(c => c.id === coachId);
-  if (!coach?.email) return Colors.jaiBlue; // fallback to Jai Blue
-  return COACH_COLORS[coach.email.toLowerCase()] || Colors.jaiBlue;
-};
 
 // PT Commission Rates (at 50% commission)
 const PT_RATES = {

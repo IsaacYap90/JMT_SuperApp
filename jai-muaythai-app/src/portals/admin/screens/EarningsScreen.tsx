@@ -12,21 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../shared/services/supabase';
 import { Colors, Spacing } from '../../../shared/constants/Colors';
-
-// Coach Color Mapping - Each coach gets a unique color for visual distinction
-const COACH_COLORS: Record<string, string> = {
-  'jeremy@jmt.com': '#00BFFF',
-  'isaac@jmt.com': '#FFD700',
-  'shafiq@jmt.com': '#9B59B6',
-  'sasi@jmt.com': '#2ECC71',
-  'heng@jmt.com': '#FF8C00',
-  'larvin@jmt.com': '#FF69B4',
-};
-
-const getCoachColorByEmail = (email: string): string => {
-  if (!email) return Colors.jaiBlue;
-  return COACH_COLORS[email.toLowerCase()] || Colors.jaiBlue;
-};
+import { getCoachColorByEmail } from '../../../shared/constants/CoachColors';
 
 interface CoachEarning {
   id: string;
