@@ -11,6 +11,7 @@ import {
 } from '@expo-google-fonts/montserrat';
 import { AuthProvider } from './src/shared/services/AuthContext';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { ErrorBoundary } from './src/shared/components/ErrorBoundary';
 import { Colors } from './src/shared/constants/Colors';
 
 export default function App() {
@@ -32,9 +33,11 @@ export default function App() {
   }
 
   return (
-    <AuthProvider>
-      <StatusBar style="light" />
-      <RootNavigator />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <StatusBar style="light" />
+        <RootNavigator />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
