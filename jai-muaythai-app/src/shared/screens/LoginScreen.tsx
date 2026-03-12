@@ -47,8 +47,8 @@ export const LoginScreen: React.FC = () => {
     setLoading(false);
   };
 
-  // Dev quick login
-  const devLogin = async (role: 'master_admin' | 'coach') => {
+  // Dev quick login — only available in development builds
+  const devLogin = __DEV__ ? async (role: 'master_admin' | 'coach') => {
     setLoading(true);
     const credentials = {
       master_admin: { email: 'test.master_admin@jaimuaythai.dev', password: 'password123' },
@@ -60,7 +60,7 @@ export const LoginScreen: React.FC = () => {
       Alert.alert('Login Failed', error.message);
     }
     setLoading(false);
-  };
+  } : null;
 
   return (
     <View style={styles.containerWrapper}>
@@ -171,9 +171,10 @@ export const LoginScreen: React.FC = () => {
             </BlurView>
           </View>
 
-          {/* Dev Quick Login */}
+          {/* Dev Quick Login — only visible in development builds */}
+          {__DEV__ && devLogin && (
           <View style={styles.devSection}>
-            <Text style={styles.devTitle}>Quick Access</Text>
+            <Text style={styles.devTitle}>Quick Access (DEV)</Text>
             <View style={styles.devButtons}>
               <TouchableOpacity
                 style={styles.devButton}
@@ -193,6 +194,7 @@ export const LoginScreen: React.FC = () => {
               </TouchableOpacity>
             </View>
           </View>
+          )}
 
           {/* Footer */}
           <View style={styles.footer}>
