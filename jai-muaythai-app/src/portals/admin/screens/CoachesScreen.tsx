@@ -6,58 +6,23 @@ import {
   FlatList,
   TouchableOpacity,
   RefreshControl,
-  Modal,
-  TextInput,
   Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../../shared/services/supabase';
 import { useAuth } from '../../../shared/services/AuthContext';
-import { Colors, Spacing, Fonts } from '../../../shared/constants/Colors';
+import { Colors, Spacing } from '../../../shared/constants/Colors';
 import { Payslip } from '../../../types';
 import { PayslipViewer } from '../../coach/components/PayslipViewer';
 
-interface Coach {
-  id: string;
-  full_name: string;
-  email: string;
-  phone: string | null;
-  is_active: boolean;
-  employment_type: 'full_time' | 'part_time' | null;
-  hourly_rate: number | null;
-  base_salary: number | null;
-  pt_commission_rate: number | null;
-  solo_rate: number | null;
-  buddy_rate: number | null;
-  house_call_rate: number | null;
-  certifications: string | null;
-  start_date: string | null;
-  emergency_contact_name: string | null;
-  emergency_contact_phone: string | null;
-  avatar_url: string | null;
-  created_at: string;
-}
-
-interface LeaveRequest {
-  id: string;
-  coach_id: string;
-  start_date: string;
-  end_date: string;
-  leave_type: string;
-  reason: string;
-  status: string;
-  created_at: string;
-  coach?: {
-    full_name: string;
-    email: string;
-  };
-}
+import { Coach, LeaveRequest } from '../components/coaches/types';
+import { AddCoachModal } from '../components/coaches/AddCoachModal';
+import { EditCoachModal } from '../components/coaches/EditCoachModal';
+import { LeaveDetailModal } from '../components/coaches/LeaveDetailModal';
+import { CoachCard } from '../components/coaches/CoachCard';
 
 export const AdminCoachesScreen: React.FC = () => {
   const { user } = useAuth();
@@ -65,10 +30,6 @@ export const AdminCoachesScreen: React.FC = () => {
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const formatCurrency = (amount: number) => {
-    return `S$${amount.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
 
   // Add Coach Modal
   const [showAddModal, setShowAddModal] = useState(false);
@@ -339,13 +300,7 @@ export const AdminCoachesScreen: React.FC = () => {
           `Account created for ${fullName}\n\nEmail: ${email}\nDefault password: JMT1234\n\nThey will be asked to change it on first login.`,
           [{ text: 'OK' }]
         );
-        setShowAddModal(false);
-        setNewEmail('');
-        setNewFullName('');
-        setNewPhone('');
-        setNewHourlyRate('');
-        setNewBaseSalary('');
-        setNewStartDate('');
+        resetAddModal();
         // Wait a moment for the trigger to create the records
         setTimeout(() => fetchCoaches(), 1500);
       }
@@ -358,6 +313,16 @@ export const AdminCoachesScreen: React.FC = () => {
     } finally {
       setCreating(false);
     }
+  };
+
+  const resetAddModal = () => {
+    setShowAddModal(false);
+    setNewEmail('');
+    setNewFullName('');
+    setNewPhone('');
+    setNewHourlyRate('');
+    setNewBaseSalary('');
+    setNewStartDate('');
   };
 
   // ===== EDIT COACH =====
@@ -575,90 +540,13 @@ export const AdminCoachesScreen: React.FC = () => {
   };
 
   // ===== RENDER COACH CARD =====
-  const renderCoach = ({ item }: { item: Coach }) => {
-    const hasEmploymentDetails = item.employment_type &&
-      ((item.employment_type === 'part_time' && item.hourly_rate) ||
-       (item.employment_type === 'full_time' && item.base_salary));
-
-    return (
-      <TouchableOpacity style={styles.coachCard} onPress={() => openEditModal(item)} activeOpacity={0.7}>
-        <View style={styles.coachHeader}>
-          <LinearGradient colors={[Colors.jaiBlue, Colors.jaiBlue]} style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {item.full_name?.charAt(0)?.toUpperCase() || '?'}
-            </Text>
-          </LinearGradient>
-          <View style={styles.coachInfo}>
-            <Text style={styles.coachName}>{item.full_name || 'New Coach'}</Text>
-            <Text style={styles.coachEmail}>{item.email}</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={Colors.lightGray} />
-        </View>
-
-        {/* Badges */}
-        <View style={styles.badgeRow}>
-          <View style={[styles.badge, {
-            backgroundColor: item.employment_type === 'full_time' ? Colors.success + '15' : Colors.warning + '15',
-          }]}>
-            <Text style={[styles.badgeText, {
-              color: item.employment_type === 'full_time' ? Colors.success : Colors.warning,
-            }]}>
-              {item.employment_type === 'full_time' ? 'Full-Time' : 'Part-Time'}
-            </Text>
-          </View>
-          {item.start_date && (
-            <View style={[styles.badge, {
-              backgroundColor: Colors.jaiBlue + '15',
-            }]}>
-              <Text style={[styles.badgeText, { color: Colors.jaiBlue }]}>
-                Started {new Date(item.start_date).toLocaleDateString('en-SG', { month: 'short', year: 'numeric' })}
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Rates */}
-        <View style={styles.ratesRow}>
-          {item.employment_type === 'part_time' ? (
-            <>
-              <View style={styles.rateItem}>
-                <Text style={styles.rateLabel}>Hourly Rate</Text>
-                <Text style={[styles.rateValue, !hasEmploymentDetails && styles.rateNotSet]}>
-                  {item.hourly_rate ? formatCurrency(item.hourly_rate) : 'Not set'}
-                </Text>
-              </View>
-              <View style={styles.rateDivider} />
-            </>
-          ) : (
-            <>
-              <View style={styles.rateItem}>
-                <Text style={styles.rateLabel}>Base Salary</Text>
-                <Text style={[styles.rateValue, !hasEmploymentDetails && styles.rateNotSet]}>
-                  {item.base_salary ? formatCurrency(item.base_salary) : 'Not set'}
-                </Text>
-              </View>
-              <View style={styles.rateDivider} />
-            </>
-          )}
-          <View style={styles.rateItem}>
-            <Text style={styles.rateLabel}>Phone</Text>
-            <Text style={[styles.rateValue, !item.phone && styles.rateNotSet]}>
-              {item.phone || 'Not set'}
-            </Text>
-          </View>
-          <View style={styles.rateDivider} />
-          <View style={styles.rateItem}>
-            <Text style={styles.rateLabel}>Active</Text>
-            <Ionicons
-              name={item.is_active ? 'checkmark-circle' : 'close-circle'}
-              size={20}
-              color={item.is_active ? Colors.success : Colors.error}
-            />
-          </View>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const renderCoach = ({ item }: { item: Coach }) => (
+    <CoachCard
+      coach={item}
+      isMasterAdmin={isMasterAdmin}
+      onPress={openEditModal}
+    />
+  );
 
   // Show PayslipViewer when a payslip is selected
   if (selectedPayslip && selectedCoach) {
@@ -763,610 +651,83 @@ export const AdminCoachesScreen: React.FC = () => {
         )}
 
         {/* ===== ADD COACH MODAL ===== */}
-        <Modal visible={showAddModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Add New Coach</Text>
-                  <Text style={styles.modalSubtitle}>Fill in coach details to create account</Text>
-
-                  <Text style={styles.modalLabel}>Full Name</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="person-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={newFullName}
-                      onChangeText={setNewFullName}
-                      placeholder="Full Name"
-                      placeholderTextColor={Colors.darkGray}
-                      autoFocus
-                    />
-                  </View>
-
-                  <Text style={styles.modalLabel}>Email Address</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="mail-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={newEmail}
-                      onChangeText={setNewEmail}
-                      placeholder="coach@email.com"
-                      placeholderTextColor={Colors.darkGray}
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                    />
-                  </View>
-
-                  <Text style={styles.modalLabel}>Phone (optional)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="call-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={newPhone}
-                      onChangeText={setNewPhone}
-                      placeholder="+65 1234 5678"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="phone-pad"
-                    />
-                  </View>
-
-                  <Text style={styles.modalLabel}>Employment Type</Text>
-                  <View style={styles.toggleRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.toggleButton,
-                        newEmploymentType === 'full_time' && styles.toggleButtonActive,
-                      ]}
-                      onPress={() => setNewEmploymentType('full_time')}
-                    >
-                      <Text style={[
-                        styles.toggleText,
-                        newEmploymentType === 'full_time' && styles.toggleTextActive,
-                      ]}>Full-Time</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.toggleButton,
-                        newEmploymentType === 'part_time' && styles.toggleButtonActive,
-                      ]}
-                      onPress={() => setNewEmploymentType('part_time')}
-                    >
-                      <Text style={[
-                        styles.toggleText,
-                        newEmploymentType === 'part_time' && styles.toggleTextActive,
-                      ]}>Part-Time</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {newEmploymentType === 'part_time' ? (
-                    <>
-                      <Text style={styles.modalLabel}>Hourly Rate (SGD)</Text>
-                      <View style={styles.modalInputContainer}>
-                        <Text style={styles.currencyPrefix}>S$</Text>
-                        <TextInput
-                          style={styles.modalInput}
-                          value={newHourlyRate}
-                          onChangeText={setNewHourlyRate}
-                          placeholder="50"
-                          placeholderTextColor={Colors.darkGray}
-                          keyboardType="numeric"
-                        />
-                      </View>
-                    </>
-                  ) : (
-                    <>
-                      <Text style={styles.modalLabel}>Base Salary (S$/month)</Text>
-                      <View style={styles.modalInputContainer}>
-                        <Text style={styles.currencyPrefix}>S$</Text>
-                        <TextInput
-                          style={styles.modalInput}
-                          value={newBaseSalary}
-                          onChangeText={setNewBaseSalary}
-                          placeholder="3000"
-                          placeholderTextColor={Colors.darkGray}
-                          keyboardType="numeric"
-                        />
-                      </View>
-                    </>
-                  )}
-
-                  <Text style={styles.modalLabel}>Start Date (optional)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="calendar-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={newStartDate}
-                      onChangeText={setNewStartDate}
-                      placeholder="YYYY-MM-DD (defaults to today)"
-                      placeholderTextColor={Colors.darkGray}
-                    />
-                  </View>
-
-                  <View style={styles.infoBox}>
-                    <Ionicons name="information-circle" size={18} color={Colors.jaiBlue} />
-                    <Text style={styles.infoText}>
-                      Default password: JMT1234{'\n'}Coach will change it on first login
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity onPress={handleAddCoach} disabled={creating}>
-                    <LinearGradient
-                      colors={[Colors.jaiBlue, Colors.jaiBlue]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.modalButton}
-                    >
-                      {creating ? (
-                        <ActivityIndicator color={Colors.white} />
-                      ) : (
-                        <Text style={styles.modalButtonText}>Create Coach Account</Text>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={() => {
-                      setShowAddModal(false);
-                      setNewEmail('');
-                      setNewFullName('');
-                      setNewPhone('');
-                      setNewHourlyRate('');
-                      setNewBaseSalary('');
-                      setNewStartDate('');
-                    }}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
+        <AddCoachModal
+          visible={showAddModal}
+          newFullName={newFullName}
+          newEmail={newEmail}
+          newPhone={newPhone}
+          newEmploymentType={newEmploymentType}
+          newHourlyRate={newHourlyRate}
+          newBaseSalary={newBaseSalary}
+          newStartDate={newStartDate}
+          creating={creating}
+          isMasterAdmin={isMasterAdmin}
+          onFullNameChange={setNewFullName}
+          onEmailChange={setNewEmail}
+          onPhoneChange={setNewPhone}
+          onEmploymentTypeChange={setNewEmploymentType}
+          onHourlyRateChange={setNewHourlyRate}
+          onBaseSalaryChange={setNewBaseSalary}
+          onStartDateChange={setNewStartDate}
+          onClose={resetAddModal}
+          onSubmit={handleAddCoach}
+        />
 
         {/* ===== EDIT COACH MODAL ===== */}
-        <Modal visible={showEditModal} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView>
-                <View style={styles.modalContent}>
-                  <Text style={styles.modalTitle}>Edit Coach</Text>
-
-                  {/* Coach Info (read-only) */}
-                  <View style={styles.editCoachHeader}>
-                    <LinearGradient colors={[Colors.jaiBlue, Colors.jaiBlue]} style={styles.editAvatar}>
-                      <Text style={styles.editAvatarText}>
-                        {selectedCoach?.full_name?.charAt(0)?.toUpperCase() || '?'}
-                      </Text>
-                    </LinearGradient>
-                    <View>
-                      <Text style={styles.editCoachName}>{selectedCoach?.full_name || 'New Coach'}</Text>
-                      <Text style={styles.editCoachEmail}>{selectedCoach?.email}</Text>
-                    </View>
-                  </View>
-
-                  {/* Full Name */}
-                  <Text style={styles.modalLabel}>Full Name</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="person-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editFullName}
-                      onChangeText={setEditFullName}
-                      placeholder="Full Name"
-                      placeholderTextColor={Colors.darkGray}
-                    />
-                  </View>
-
-                  {/* Phone */}
-                  <Text style={styles.modalLabel}>Phone</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="call-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editPhone}
-                      onChangeText={setEditPhone}
-                      placeholder="+65 1234 5678"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="phone-pad"
-                    />
-                  </View>
-
-                  {/* Employment Type Toggle */}
-                  <Text style={styles.modalLabel}>Employment Type</Text>
-                  <View style={styles.toggleRow}>
-                    <TouchableOpacity
-                      style={[
-                        styles.toggleButton,
-                        editEmploymentType === 'full_time' && styles.toggleButtonActive,
-                      ]}
-                      onPress={() => setEditEmploymentType('full_time')}
-                    >
-                      <Text style={[
-                        styles.toggleText,
-                        editEmploymentType === 'full_time' && styles.toggleTextActive,
-                      ]}>Full-Time</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[
-                        styles.toggleButton,
-                        editEmploymentType === 'part_time' && styles.toggleButtonActive,
-                      ]}
-                      onPress={() => setEditEmploymentType('part_time')}
-                    >
-                      <Text style={[
-                        styles.toggleText,
-                        editEmploymentType === 'part_time' && styles.toggleTextActive,
-                      ]}>Part-Time</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {/* Hourly Rate (Part-Time) or Base Salary (Full-Time) */}
-                  {editEmploymentType === 'part_time' ? (
-                    <>
-                      <Text style={styles.modalLabel}>Hourly Rate (SGD)</Text>
-                      <View style={styles.modalInputContainer}>
-                        <Text style={styles.currencyPrefix}>S$</Text>
-                        <TextInput
-                          style={styles.modalInput}
-                          value={editHourlyRate}
-                          onChangeText={setEditHourlyRate}
-                          placeholder="50"
-                          placeholderTextColor={Colors.darkGray}
-                          keyboardType="numeric"
-                        />
-                      </View>
-                    </>
-                  ) : (
-                    <>
-                      <View style={styles.salaryFieldContainer}>
-                        <View style={styles.salaryFieldHeader}>
-                          <Text style={styles.modalLabel}>Base Salary (S$/month)</Text>
-                          {isMasterAdmin && (
-                            <View style={styles.confidentialBadge}>
-                              <Ionicons name="lock-closed" size={10} color={Colors.warning} />
-                              <Text style={styles.confidentialText}>Private</Text>
-                            </View>
-                          )}
-                        </View>
-                        <View style={styles.modalInputContainer}>
-                          <Text style={styles.currencyPrefix}>S$</Text>
-                          <TextInput
-                            style={styles.modalInput}
-                            value={editBaseSalary}
-                            onChangeText={setEditBaseSalary}
-                            placeholder="3000"
-                            placeholderTextColor={Colors.darkGray}
-                            keyboardType="numeric"
-                          />
-                        </View>
-                      </View>
-                    </>
-                  )}
-
-                  {/* PT Commission Rate */}
-                  <Text style={styles.modalLabel}>PT Commission Rate (%)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="wallet-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editPTCommissionRate}
-                      onChangeText={setEditPTCommissionRate}
-                      placeholder="50"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="numeric"
-                    />
-                    <Text style={styles.percentageSymbol}>%</Text>
-                  </View>
-                  <Text style={styles.helperText}>Default: 50% • Senior coaches may receive higher rates</Text>
-
-                  {/* PT Session Rates Section */}
-                  <View style={styles.modalDivider} />
-                  <View style={styles.payslipsSectionHeader}>
-                    <View style={styles.payslipsSectionAccent} />
-                    <Text style={styles.payslipsSectionTitle}>PT SESSION RATES (Client Pays)</Text>
-                  </View>
-                  <Text style={styles.helperText}>Set what clients pay for each session type. Coach earns: rate × commission %</Text>
-
-                  {/* Solo Rate */}
-                  <Text style={styles.modalLabel}>Solo Session Rate (S$)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="person-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editSoloRate}
-                      onChangeText={setEditSoloRate}
-                      placeholder="80"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="numeric"
-                    />
-                  </View>
-
-                  {/* Buddy Rate */}
-                  <Text style={styles.modalLabel}>Buddy Session Rate (S$)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="people-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editBuddyRate}
-                      onChangeText={setEditBuddyRate}
-                      placeholder="120"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="numeric"
-                    />
-                  </View>
-
-                  {/* House Call Rate */}
-                  <Text style={styles.modalLabel}>House Call Rate (S$)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="home-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editHouseCallRate}
-                      onChangeText={setEditHouseCallRate}
-                      placeholder="140"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="numeric"
-                    />
-                  </View>
-
-                  <View style={styles.modalDivider} />
-
-                  {/* Start Date */}
-                  <Text style={styles.modalLabel}>Start Date</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="calendar-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editStartDate}
-                      onChangeText={setEditStartDate}
-                      placeholder="YYYY-MM-DD"
-                      placeholderTextColor={Colors.darkGray}
-                    />
-                  </View>
-
-                  {/* Certifications */}
-                  <Text style={styles.modalLabel}>Certifications (optional)</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="ribbon-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editCertifications}
-                      onChangeText={setEditCertifications}
-                      placeholder="e.g., CPR, First Aid, Muay Thai Level 3"
-                      placeholderTextColor={Colors.darkGray}
-                    />
-                  </View>
-
-                  {/* Emergency Contact */}
-                  <View style={styles.modalDivider} />
-                  <Text style={styles.modalLabel}>Emergency Contact Name</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="person-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editEmergencyContactName}
-                      onChangeText={setEditEmergencyContactName}
-                      placeholder="Emergency contact name"
-                      placeholderTextColor={Colors.darkGray}
-                    />
-                  </View>
-
-                  <Text style={styles.modalLabel}>Emergency Contact Phone</Text>
-                  <View style={styles.modalInputContainer}>
-                    <Ionicons name="call-outline" size={20} color={Colors.lightGray} style={styles.modalInputIcon} />
-                    <TextInput
-                      style={styles.modalInput}
-                      value={editEmergencyContactPhone}
-                      onChangeText={setEditEmergencyContactPhone}
-                      placeholder="+65 1234 5678"
-                      placeholderTextColor={Colors.darkGray}
-                      keyboardType="phone-pad"
-                    />
-                  </View>
-
-                  {/* ===== PAYSLIPS SECTION (Master Admin only) ===== */}
-                  {isMasterAdmin && (
-                    <>
-                      <View style={styles.modalDivider} />
-
-                      <View style={styles.payslipsSectionHeader}>
-                        <View style={styles.payslipsSectionAccent} />
-                        <Text style={styles.payslipsSectionTitle}>PAYSLIPS</Text>
-                      </View>
-
-                      {loadingPayslips ? (
-                        <ActivityIndicator color={Colors.jaiBlue} style={{ padding: 20 }} />
-                      ) : coachPayslips.length === 0 ? (
-                        <View style={styles.noPayslipsContainer}>
-                          <Ionicons name="document-text-outline" size={32} color={Colors.darkGray} />
-                          <Text style={styles.noPayslipsText}>No payslips yet</Text>
-                        </View>
-                      ) : (
-                        <View style={styles.payslipsList}>
-                          {coachPayslips.slice(0, 6).map(payslip => (
-                            <TouchableOpacity
-                              key={payslip.id}
-                              style={styles.payslipItem}
-                              onPress={() => setSelectedPayslip(payslip)}
-                            >
-                              <View style={styles.payslipItemLeft}>
-                                <Text style={styles.payslipMonth}>
-                                  {MONTH_NAMES[payslip.month - 1]} {payslip.year}
-                                </Text>
-                                <Text style={styles.payslipGross}>
-                                  Gross: {formatCurrency(payslip.gross_pay)}
-                                </Text>
-                              </View>
-                              <View style={styles.payslipItemRight}>
-                                <Text style={styles.payslipNet}>{formatCurrency(payslip.net_pay)}</Text>
-                                <View style={[
-                                  styles.payslipStatusBadge,
-                                  { backgroundColor: payslip.status === 'paid' ? Colors.success + '20' : Colors.warning + '20' }
-                                ]}>
-                                  <Text style={[
-                                    styles.payslipStatusText,
-                                    { color: payslip.status === 'paid' ? Colors.success : Colors.warning }
-                                  ]}>
-                                    {payslip.status === 'paid' ? 'Paid' : 'Pending'}
-                                  </Text>
-                                </View>
-                              </View>
-                            </TouchableOpacity>
-                          ))}
-                          {coachPayslips.length > 6 && (
-                            <Text style={styles.payslipMore}>
-                              +{coachPayslips.length - 6} more payslips
-                            </Text>
-                          )}
-                        </View>
-                      )}
-
-                      <TouchableOpacity
-                        style={styles.generatePayslipButton}
-                        onPress={() => {
-                          Alert.alert(
-                            'Generate Payslip',
-                            `Create a payslip for ${selectedCoach?.full_name}?`,
-                            [
-                              { text: 'Cancel', style: 'cancel' },
-                              {
-                                text: 'Generate',
-                                onPress: () => generateCoachPayslip(),
-                              },
-                            ]
-                          );
-                        }}
-                      >
-                        <Ionicons name="add-circle-outline" size={18} color={Colors.jaiBlue} />
-                        <Text style={styles.generatePayslipText}>Generate Payslip</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-
-                  <TouchableOpacity onPress={handleSaveEdit} disabled={saving}>
-                    <LinearGradient
-                      colors={[Colors.jaiBlue, Colors.jaiBlue]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[styles.modalButton, { marginTop: 24 }]}
-                    >
-                      {saving ? (
-                        <ActivityIndicator color={Colors.white} />
-                      ) : (
-                        <Text style={styles.modalButtonText}>Save Changes</Text>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={() => { setShowEditModal(false); setSelectedCoach(null); }}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
+        <EditCoachModal
+          visible={showEditModal}
+          selectedCoach={selectedCoach}
+          editFullName={editFullName}
+          editPhone={editPhone}
+          editEmploymentType={editEmploymentType}
+          editHourlyRate={editHourlyRate}
+          editBaseSalary={editBaseSalary}
+          editPTCommissionRate={editPTCommissionRate}
+          editSoloRate={editSoloRate}
+          editBuddyRate={editBuddyRate}
+          editHouseCallRate={editHouseCallRate}
+          editCertifications={editCertifications}
+          editStartDate={editStartDate}
+          editEmergencyContactName={editEmergencyContactName}
+          editEmergencyContactPhone={editEmergencyContactPhone}
+          saving={saving}
+          coachPayslips={coachPayslips}
+          loadingPayslips={loadingPayslips}
+          isMasterAdmin={isMasterAdmin}
+          onFullNameChange={setEditFullName}
+          onPhoneChange={setEditPhone}
+          onEmploymentTypeChange={setEditEmploymentType}
+          onHourlyRateChange={setEditHourlyRate}
+          onBaseSalaryChange={setEditBaseSalary}
+          onPTCommissionRateChange={setEditPTCommissionRate}
+          onSoloRateChange={setEditSoloRate}
+          onBuddyRateChange={setEditBuddyRate}
+          onHouseCallRateChange={setEditHouseCallRate}
+          onCertificationsChange={setEditCertifications}
+          onStartDateChange={setEditStartDate}
+          onEmergencyContactNameChange={setEditEmergencyContactName}
+          onEmergencyContactPhoneChange={setEditEmergencyContactPhone}
+          onClose={() => { setShowEditModal(false); setSelectedCoach(null); }}
+          onSave={handleSaveEdit}
+          onGeneratePayslip={generateCoachPayslip}
+          onViewPayslip={setSelectedPayslip}
+        />
 
         {/* ===== LEAVE DETAIL MODAL ===== */}
-        <Modal
+        <LeaveDetailModal
           visible={leaveDetailVisible}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setLeaveDetailVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.leaveModalContent}>
-              <View style={styles.leaveModalHeader}>
-                <Text style={styles.leaveModalTitle}>Leave Request</Text>
-                <TouchableOpacity onPress={() => setLeaveDetailVisible(false)}>
-                  <Ionicons name="close" size={24} color={Colors.white} />
-                </TouchableOpacity>
-              </View>
-
-              {selectedLeave && (
-                <>
-                  <ScrollView style={styles.leaveModalBody}>
-                    <View style={styles.leaveDetailRow}>
-                      <Text style={styles.leaveDetailLabel}>Coach</Text>
-                      <Text style={styles.leaveDetailValue}>{selectedLeave.coach?.full_name || 'Unknown'}</Text>
-                    </View>
-                    <View style={styles.leaveDetailRow}>
-                      <Text style={styles.leaveDetailLabel}>Leave Type</Text>
-                      <Text style={styles.leaveDetailValue}>
-                        {selectedLeave.leave_type
-                          ? selectedLeave.leave_type.charAt(0).toUpperCase() + selectedLeave.leave_type.slice(1)
-                          : 'Not specified'}
-                      </Text>
-                    </View>
-                    <View style={styles.leaveDetailRow}>
-                      <Text style={styles.leaveDetailLabel}>Date Range</Text>
-                      <Text style={styles.leaveDetailValue}>
-                        {selectedLeave.start_date} - {selectedLeave.end_date}
-                      </Text>
-                    </View>
-                    <View style={styles.leaveDetailRow}>
-                      <Text style={styles.leaveDetailLabel}>Reason</Text>
-                      <Text style={styles.leaveDetailValue}>{selectedLeave.reason}</Text>
-                    </View>
-                    <View style={styles.leaveDetailRow}>
-                      <Text style={styles.leaveDetailLabel}>Applied</Text>
-                      <Text style={styles.leaveDetailValue}>
-                        {new Date(selectedLeave.created_at).toLocaleDateString('en-US', {
-                          month: 'short', day: 'numeric', year: 'numeric',
-                          hour: 'numeric', minute: '2-digit',
-                        })}
-                      </Text>
-                    </View>
-
-                    <Text style={[styles.leaveDetailLabel, { marginTop: 16, marginBottom: 8 }]}>
-                      Notes (optional):
-                    </Text>
-                    <TextInput
-                      style={styles.leaveNotesInput}
-                      placeholder="Add notes for the coach..."
-                      placeholderTextColor={Colors.darkGray}
-                      value={approvalNotes}
-                      onChangeText={setApprovalNotes}
-                      multiline
-                      numberOfLines={3}
-                    />
-                  </ScrollView>
-
-                  <View style={styles.leaveActions}>
-                    <TouchableOpacity
-                      style={[styles.leaveActionButton, { backgroundColor: Colors.error }]}
-                      onPress={handleRejectLeave}
-                    >
-                      <Ionicons name="close-circle" size={18} color={Colors.white} />
-                      <Text style={styles.leaveActionText}>Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.leaveActionButton, { backgroundColor: Colors.success }]}
-                      onPress={handleApproveLeave}
-                    >
-                      <Ionicons name="checkmark-circle" size={18} color={Colors.white} />
-                      <Text style={styles.leaveActionText}>Approve</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-            </View>
-          </View>
-        </Modal>
+          selectedLeave={selectedLeave}
+          approvalNotes={approvalNotes}
+          loading={false}
+          onClose={() => setLeaveDetailVisible(false)}
+          onApprove={handleApproveLeave}
+          onReject={handleRejectLeave}
+          onNotesChange={setApprovalNotes}
+        />
       </SafeAreaView>
     </LinearGradient>
   );
 };
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
 
 const styles = StyleSheet.create({
   gradient: { flex: 1 },
@@ -1406,85 +767,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: 100,
   },
-  coachCard: {
-    backgroundColor: Colors.cardBg,
-    borderRadius: 14,
-    padding: Spacing.md,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  coachHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  avatar: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  coachInfo: { flex: 1 },
-  coachName: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  coachEmail: {
-    fontSize: 13,
-    color: Colors.lightGray,
-    marginTop: 2,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 12,
-  },
-  badge: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  badgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  ratesRow: {
-    flexDirection: 'row',
-    backgroundColor: Colors.black,
-    borderRadius: 12,
-    padding: 12,
-  },
-  rateItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  rateDivider: {
-    width: 1,
-    backgroundColor: Colors.border,
-  },
-  rateLabel: {
-    fontSize: 11,
-    color: Colors.lightGray,
-    marginBottom: 4,
-  },
-  rateValue: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  rateNotSet: {
-    color: Colors.warning,
-    fontSize: 13,
-  },
   emptyContainer: {
     alignItems: 'center',
     paddingTop: 80,
@@ -1499,315 +781,6 @@ const styles = StyleSheet.create({
     color: Colors.lightGray,
     fontSize: 14,
     marginTop: 4,
-  },
-
-  // Modal styles
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-  },
-  modalContent: {
-    backgroundColor: Colors.cardBg,
-    borderRadius: 20,
-    padding: Spacing.lg,
-    marginBottom: 100,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: Colors.white,
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: Colors.lightGray,
-    textAlign: 'center',
-    marginBottom: Spacing.lg,
-  },
-  modalLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.lightGray,
-    marginBottom: 8,
-    marginTop: Spacing.md,
-  },
-  modalInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.black,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    paddingHorizontal: 14,
-  },
-  modalInputIcon: {
-    marginRight: 10,
-  },
-  modalInput: {
-    flex: 1,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: Colors.white,
-  },
-  currencyPrefix: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.jaiBlue,
-    marginRight: 10,
-  },
-  percentageSymbol: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.jaiBlue,
-    marginLeft: 10,
-  },
-  helperText: {
-    fontSize: 12,
-    color: Colors.darkGray,
-    marginTop: 4,
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Colors.jaiBlue + '15',
-    borderRadius: 12,
-    padding: Spacing.md,
-    marginTop: Spacing.md,
-    gap: 10,
-  },
-  infoText: {
-    flex: 1,
-    fontSize: 13,
-    color: Colors.lightGray,
-    lineHeight: 20,
-  },
-  modalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: Spacing.lg,
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  cancelButton: {
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: Spacing.sm,
-  },
-  cancelButtonText: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: Colors.lightGray,
-  },
-  editCoachHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.black,
-    borderRadius: 12,
-    padding: Spacing.md,
-    marginBottom: 8,
-    marginTop: Spacing.md,
-  },
-  editAvatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  editAvatarText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  editCoachName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  editCoachEmail: {
-    fontSize: 13,
-    color: Colors.lightGray,
-    marginTop: 2,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  toggleButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-    backgroundColor: Colors.black,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  toggleButtonActive: {
-    backgroundColor: Colors.jaiBlue + '15',
-    borderColor: Colors.jaiBlue,
-  },
-  toggleText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: Colors.lightGray,
-  },
-  toggleTextActive: {
-    color: Colors.jaiBlue,
-  },
-  // Salary field styles
-  salaryDivider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginVertical: Spacing.lg,
-  },
-  salaryFieldContainer: {
-    marginTop: Spacing.sm,
-  },
-  salaryFieldHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  confidentialBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: Colors.warning + '20',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  confidentialText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: Colors.warning,
-  },
-  salaryHelperText: {
-    fontSize: 11,
-    color: Colors.lightGray,
-    marginTop: 6,
-    fontStyle: 'italic',
-  },
-  modalDivider: {
-    height: 1,
-    backgroundColor: Colors.border,
-    marginVertical: Spacing.lg,
-  },
-  // Payslips section styles
-  payslipsSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  payslipsSectionAccent: {
-    width: 3,
-    height: 16,
-    backgroundColor: Colors.jaiBlue,
-    borderRadius: 2,
-    marginRight: 8,
-  },
-  payslipsSectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.lightGray,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  noPayslipsContainer: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    backgroundColor: Colors.black,
-    borderRadius: 12,
-  },
-  noPayslipsText: {
-    fontSize: 14,
-    color: Colors.lightGray,
-    marginTop: 8,
-  },
-  payslipsList: {
-    backgroundColor: Colors.black,
-    borderRadius: 12,
-    padding: 8,
-  },
-  payslipItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 12,
-    borderRadius: 8,
-    backgroundColor: Colors.cardBg,
-    marginBottom: 6,
-  },
-  payslipItemLeft: {
-    flex: 1,
-  },
-  payslipMonth: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  payslipGross: {
-    fontSize: 12,
-    color: Colors.lightGray,
-    marginTop: 2,
-  },
-  payslipItemRight: {
-    alignItems: 'flex-end',
-  },
-  payslipNet: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Colors.success,
-  },
-  payslipStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginTop: 4,
-  },
-  payslipStatusText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  payslipMore: {
-    fontSize: 12,
-    color: Colors.lightGray,
-    textAlign: 'center',
-    marginTop: 8,
-    fontStyle: 'italic',
-  },
-  generatePayslipButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 12,
-    backgroundColor: Colors.jaiBlue + '15',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.jaiBlue + '40',
-    borderStyle: 'dashed',
-  },
-  generatePayslipText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.jaiBlue,
-    marginLeft: 8,
   },
   // Pending Leave Section styles
   leaveSection: {
@@ -1903,78 +876,5 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.border,
     marginTop: Spacing.sm,
     marginBottom: Spacing.sm,
-  },
-  // Leave Detail Modal styles
-  leaveModalContent: {
-    backgroundColor: Colors.cardBg,
-    borderRadius: 20,
-    padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    maxHeight: '70%',
-    marginBottom: 100,
-  },
-  leaveModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  leaveModalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.white,
-  },
-  leaveModalBody: {
-    marginBottom: Spacing.md,
-  },
-  leaveDetailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  leaveDetailLabel: {
-    fontSize: 13,
-    color: Colors.lightGray,
-    flex: 1,
-  },
-  leaveDetailValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.white,
-    flex: 2,
-    textAlign: 'right',
-  },
-  leaveNotesInput: {
-    backgroundColor: Colors.black,
-    borderRadius: 10,
-    padding: Spacing.md,
-    fontSize: 14,
-    color: Colors.white,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  leaveActions: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  leaveActionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 6,
-  },
-  leaveActionText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.white,
   },
 });
