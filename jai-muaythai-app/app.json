@@ -5,23 +5,30 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#000000"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jaimuaythai.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Jai Muay Thai to access your camera for profile photos and document scanning.",
+        "NSPhotoLibraryUsageDescription": "Allow Jai Muay Thai to access your photo library to upload profile photos.",
+        "NSPhotoLibraryAddUsageDescription": "Allow Jai Muay Thai to save photos to your photo library."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.jaimuaythai.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -29,7 +36,14 @@
     "plugins": [
       "expo-web-browser",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0096FF"
+        }
+      ]
     ]
   }
 }
