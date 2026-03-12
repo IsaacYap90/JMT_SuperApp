@@ -2,7 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { useAuth } from '../shared/services/AuthContext';
-import { LoginScreen } from '../screens/LoginScreen';
+import { LoginScreen } from '../shared/screens/LoginScreen';
 import { FirstLoginScreen } from '../shared/screens/FirstLoginScreen';
 import { MemberNavigator } from './MemberNavigator';
 import { CoachNavigator } from './CoachNavigator';
