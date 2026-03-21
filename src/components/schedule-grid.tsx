@@ -16,6 +16,30 @@ const DAY_LABELS: Record<DayOfWeek, string> = {
   sunday: "Sun",
 };
 
+const DAY_INDEX: Record<DayOfWeek, number> = {
+  monday: 1, tuesday: 2, wednesday: 3, thursday: 4,
+  friday: 5, saturday: 6, sunday: 0,
+};
+
+function getWeekDates(): Record<DayOfWeek, string> {
+  const now = new Date();
+  const currentDay = now.getDay(); // 0=Sun
+  // Find Monday of current week
+  const diffToMon = currentDay === 0 ? -6 : 1 - currentDay;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMon);
+
+  const result: Record<string, string> = {};
+  for (const day of DAYS) {
+    const target = DAY_INDEX[day];
+    const offset = target === 0 ? 6 : target - 1; // Mon=0 offset
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + offset);
+    result[day] = date.toLocaleDateString("en-GB", { day: "numeric", month: "short" }).toUpperCase();
+  }
+  return result as Record<DayOfWeek, string>;
+}
+
 function getCoachNames(cls: Class): string {
   const names: string[] = [];
   if (cls.lead_coach) names.push(cls.lead_coach.full_name);
@@ -41,6 +65,8 @@ export function ScheduleGrid({
   onEdit?: (cls: Class) => void;
   showActions?: boolean;
 }) {
+  const weekDates = getWeekDates();
+
   return (
     <>
       {/* Desktop: 7-column grid */}
@@ -49,9 +75,10 @@ export function ScheduleGrid({
           {DAYS.map((day) => (
             <div
               key={day}
-              className="p-3 text-center text-sm font-medium text-jai-text border-r border-jai-border last:border-r-0"
+              className="p-3 text-center border-r border-jai-border last:border-r-0"
             >
-              {DAY_LABELS[day]}
+              <p className="text-sm font-medium text-jai-text">{DAY_LABELS[day]}</p>
+              <p className="text-[10px] text-jai-text/60">{weekDates[day]}</p>
             </div>
           ))}
         </div>
@@ -108,7 +135,7 @@ export function ScheduleGrid({
           return (
             <div key={day}>
               <h3 className="text-sm font-semibold text-jai-text mb-2 uppercase tracking-wide">
-                {day.charAt(0).toUpperCase() + day.slice(1)}
+                {day.charAt(0).toUpperCase() + day.slice(1)}, {weekDates[day]}
               </h3>
               <div className="space-y-2">
                 {dayClasses.map((cls) => {
