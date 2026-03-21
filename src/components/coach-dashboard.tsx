@@ -3,6 +3,13 @@
 import { Class, PtPackage } from "@/lib/types/database";
 import { ScheduleGrid } from "./schedule-grid";
 
+function getSgtGreeting(): string {
+  const hour = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" })).getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export function CoachDashboard({
   classes,
   ptPackages,
@@ -21,7 +28,7 @@ export function CoachDashboard({
   return (
     <div className="space-y-6 md:space-y-8">
       <div>
-        <h1 className="text-xl md:text-2xl font-bold">Welcome, {coachName}</h1>
+        <h1 className="text-xl md:text-2xl font-bold">{getSgtGreeting()}, {coachName}</h1>
         <p className="text-jai-text text-sm mt-1">Your schedule and PT clients</p>
       </div>
 

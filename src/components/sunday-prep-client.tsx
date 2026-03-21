@@ -37,11 +37,13 @@ export function SundayPrepClient({
   confirmations,
   weekStart,
   weekLabel,
+  lastWeekStats,
 }: {
   sessions: PtSession[];
   confirmations: PtConfirmation[];
   weekStart: string;
   weekLabel: string;
+  lastWeekStats: { total: number; sent: number; replied: number };
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -120,6 +122,25 @@ export function SundayPrepClient({
         <h1 className="text-xl md:text-2xl font-bold">Sunday Prep</h1>
         <p className="text-jai-text text-sm mt-1">PT confirmations for {weekLabel}</p>
       </div>
+
+      {/* Last week stats */}
+      {lastWeekStats.total > 0 && (
+        <div className="bg-jai-card border border-jai-border rounded-xl p-4 md:p-5 space-y-2">
+          <h3 className="text-sm font-semibold text-jai-text uppercase tracking-wide mb-2">Last Week</h3>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-jai-text">Clients contacted</span>
+            <span className="font-medium">{lastWeekStats.sent}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-jai-text">Marked as sent</span>
+            <span className="font-medium text-yellow-400">{lastWeekStats.sent}</span>
+          </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-jai-text">Marked as replied</span>
+            <span className="font-medium text-green-400">{lastWeekStats.replied}</span>
+          </div>
+        </div>
+      )}
 
       {/* Progress bar */}
       {totalSessions > 0 && (

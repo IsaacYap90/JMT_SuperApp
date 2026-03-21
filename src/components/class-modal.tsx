@@ -264,7 +264,7 @@ export function ClassModal({
                     }`}
                   >
                     {i === 0 && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide mr-0.5">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide mr-0.5 bg-jai-blue text-white px-1.5 py-0.5 rounded">
                         Lead
                       </span>
                     )}

@@ -46,6 +46,11 @@ export default async function SundayPrepPage() {
 
   const { weekStart, mondayISO, saturdayISO, mondayLabel, saturdayLabel } = getWeekRange();
 
+  // Last week's date range for stats
+  const lastWeekMonday = new Date(mondayISO);
+  lastWeekMonday.setDate(lastWeekMonday.getDate() - 7);
+  const lastWeekStart = lastWeekMonday.toISOString().split("T")[0];
+
   // Fetch PT sessions for the coming week
   const { data: sessionsData } = await supabase
     .from("pt_sessions")
@@ -71,12 +76,25 @@ export default async function SundayPrepPage() {
     confirmations = (confData || []) as unknown as PtConfirmation[];
   }
 
+  // Fetch last week's confirmations for stats
+  const { data: lastWeekData } = await supabase
+    .from("pt_confirmations")
+    .select("status")
+    .eq("week_start", lastWeekStart);
+  const lastWeekConfs = (lastWeekData || []) as { status: string }[];
+  const lastWeekStats = {
+    total: lastWeekConfs.length,
+    sent: lastWeekConfs.filter((c) => c.status === "sent" || c.status === "replied").length,
+    replied: lastWeekConfs.filter((c) => c.status === "replied").length,
+  };
+
   return (
     <SundayPrepClient
       sessions={sessions}
       confirmations={confirmations}
       weekStart={weekStart}
       weekLabel={`${mondayLabel} – ${saturdayLabel}`}
+      lastWeekStats={lastWeekStats}
     />
   );
 }

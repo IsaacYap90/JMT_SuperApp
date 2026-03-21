@@ -10,12 +10,20 @@ import { createClient } from "@/lib/supabase/client";
 const CLASS_SELECT =
   "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
 
+function getSgtGreeting(): string {
+  const hour = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" })).getHours();
+  if (hour >= 5 && hour < 12) return "Good morning";
+  if (hour >= 12 && hour < 17) return "Good afternoon";
+  return "Good evening";
+}
+
 export function AdminDashboard({
   allClasses,
   ptPackages,
   ptSessions,
   coaches,
   activePtPackages,
+  pendingLeaves,
   today,
 }: {
   allClasses: Class[];
@@ -23,6 +31,7 @@ export function AdminDashboard({
   ptSessions: PtSession[];
   coaches: User[];
   activePtPackages: number;
+  pendingLeaves: number;
   today: string;
 }) {
   const [sundayReminder, setSundayReminder] = useState(true);
@@ -53,7 +62,7 @@ export function AdminDashboard({
   return (
     <div className="space-y-6 md:space-y-8">
       <div>
-        <h1 className="text-xl md:text-2xl font-bold">Dashboard</h1>
+        <h1 className="text-xl md:text-2xl font-bold">{getSgtGreeting()}</h1>
         <p className="text-jai-text text-sm mt-1 capitalize">
           {today} &middot;{" "}
           {new Date().toLocaleDateString("en-GB", {
@@ -70,6 +79,23 @@ export function AdminDashboard({
         <MetricCard title="Weekly Classes" value={classes.length} />
         <MetricCard title="Active PT" value={activePtPackages} />
         <MetricCard title="Upcoming PT" value={upcomingSessions.length} />
+      </div>
+
+      {/* This Week Summary */}
+      <div className="bg-jai-card border border-jai-border rounded-xl p-4 md:p-5 space-y-2">
+        <h3 className="text-sm font-semibold text-jai-text uppercase tracking-wide mb-2">This Week</h3>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-jai-text">Total classes</span>
+          <span className="font-medium">{classes.length}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-jai-text">PT sessions scheduled</span>
+          <span className="font-medium">{upcomingSessions.length}</span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-jai-text">Pending leave requests</span>
+          <span className={`font-medium ${pendingLeaves > 0 ? "text-yellow-400" : ""}`}>{pendingLeaves}</span>
+        </div>
       </div>
 
       {/* Today's Schedule */}

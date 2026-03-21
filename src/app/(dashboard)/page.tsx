@@ -30,7 +30,7 @@ export default async function HomePage() {
       .toLocaleDateString("en-US", { weekday: "long" })
       .toLowerCase();
 
-    const [classesRes, ptPackagesRes, ptSessionsRes, coachesRes] =
+    const [classesRes, ptPackagesRes, ptSessionsRes, coachesRes, leavesRes] =
       await Promise.all([
         supabase
           .from("classes")
@@ -56,6 +56,10 @@ export default async function HomePage() {
           .in("role", ["coach", "admin", "master_admin"])
           .eq("is_active", true)
           .order("full_name"),
+        supabase
+          .from("leaves")
+          .select("id")
+          .eq("status", "pending"),
       ]);
 
     const classes = (classesRes.data || []) as unknown as Class[];
@@ -74,6 +78,8 @@ export default async function HomePage() {
       (pt) => pt.status === "active" && pt.sessions_used < pt.total_sessions
     );
 
+    const pendingLeaves = (leavesRes.data || []).length;
+
     return (
       <AdminDashboard
         allClasses={classes}
@@ -81,6 +87,7 @@ export default async function HomePage() {
         ptSessions={ptSessions}
         coaches={coaches}
         activePtPackages={activePtPackages.length}
+        pendingLeaves={pendingLeaves}
         today={today}
       />
     );
