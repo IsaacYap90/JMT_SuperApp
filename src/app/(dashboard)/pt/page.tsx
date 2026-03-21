@@ -39,7 +39,47 @@ export default async function PtPage() {
         {isAdmin(profile.role) ? "PT Packages" : "My PT Clients"}
       </h1>
 
-      <div className="bg-jai-card border border-jai-border rounded-xl overflow-hidden">
+      {/* Mobile stacked cards */}
+      <div className="md:hidden space-y-2">
+        {ptPackages.map((pt) => {
+          const remaining = pt.total_sessions - pt.sessions_used;
+          return (
+            <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-3">
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-sm">{pt.member?.full_name || "—"}</p>
+                <span className={`text-sm font-medium ${remaining <= 0 ? "text-red-400" : remaining <= 2 ? "text-yellow-400" : "text-jai-blue"}`}>
+                  {pt.sessions_used}/{pt.total_sessions}
+                </span>
+              </div>
+              {isAdmin(profile.role) && pt.coach?.full_name && (
+                <p className="text-jai-blue text-xs mt-1">Coach: {pt.coach.full_name}</p>
+              )}
+              <div className="flex items-center justify-between mt-1">
+                <p className="text-jai-text text-xs">
+                  {remaining} remaining{pt.expiry_date ? ` · Exp: ${pt.expiry_date}` : ""}
+                </p>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                  pt.status === "active"
+                    ? "bg-green-500/10 text-green-400"
+                    : pt.status === "expired"
+                    ? "bg-red-500/10 text-red-400"
+                    : "bg-jai-text/10 text-jai-text"
+                }`}>
+                  {pt.status}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+        {ptPackages.length === 0 && (
+          <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center">
+            No PT packages found
+          </div>
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block bg-jai-card border border-jai-border rounded-xl overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="border-b border-jai-border text-left text-sm text-jai-text">
