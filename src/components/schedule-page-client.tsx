@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Class, User } from "@/lib/types/database";
 import { ScheduleGrid } from "./schedule-grid";
 import { ClassModal } from "./class-modal";
-import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+
+const CLASS_SELECT =
+  "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
 
 export function SchedulePageClient({
-  classes,
+  classes: initialClasses,
   coaches,
   isAdmin,
 }: {
@@ -17,7 +20,17 @@ export function SchedulePageClient({
 }) {
   const [editingClass, setEditingClass] = useState<Class | null>(null);
   const [showAddClass, setShowAddClass] = useState(false);
-  const router = useRouter();
+  const [classes, setClasses] = useState<Class[]>(initialClasses);
+
+  const refetchClasses = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("classes")
+      .select(CLASS_SELECT)
+      .eq("is_active", true)
+      .order("start_time");
+    if (data) setClasses(data as unknown as Class[]);
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -47,10 +60,10 @@ export function SchedulePageClient({
             setEditingClass(null);
             setShowAddClass(false);
           }}
-          onSaved={() => {
+          onSaved={async () => {
             setEditingClass(null);
             setShowAddClass(false);
-            router.refresh();
+            await refetchClasses();
           }}
         />
       )}

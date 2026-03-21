@@ -70,19 +70,16 @@ export default async function HomePage() {
       return true;
     });
 
-    const todayClasses = classes.filter((c) => c.day_of_week === today);
     const activePtPackages = ptPackages.filter(
       (pt) => pt.status === "active" && pt.sessions_used < pt.total_sessions
     );
 
     return (
       <AdminDashboard
-        todayClasses={todayClasses}
         allClasses={classes}
         ptPackages={ptPackages}
         ptSessions={ptSessions}
         coaches={coaches}
-        totalActiveClasses={classes.length}
         activePtPackages={activePtPackages.length}
         today={today}
       />

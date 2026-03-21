@@ -1,35 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Class, PtPackage, PtSession, User } from "@/lib/types/database";
 import { MetricCard } from "./metric-card";
 import { ScheduleGrid } from "./schedule-grid";
 import { ClassModal } from "./class-modal";
-import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+
+const CLASS_SELECT =
+  "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
 
 export function AdminDashboard({
-  todayClasses,
   allClasses,
   ptPackages,
   ptSessions,
   coaches,
-  totalActiveClasses,
   activePtPackages,
   today,
 }: {
-  todayClasses: Class[];
   allClasses: Class[];
   ptPackages: PtPackage[];
   ptSessions: PtSession[];
   coaches: User[];
-  totalActiveClasses: number;
   activePtPackages: number;
   today: string;
 }) {
   const [sundayReminder, setSundayReminder] = useState(true);
   const [editingClass, setEditingClass] = useState<Class | null>(null);
   const [showAddClass, setShowAddClass] = useState(false);
-  const router = useRouter();
+  const [classes, setClasses] = useState<Class[]>(allClasses);
+
+  const refetchClasses = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("classes")
+      .select(CLASS_SELECT)
+      .eq("is_active", true)
+      .order("start_time");
+    if (data) setClasses(data as unknown as Class[]);
+  }, []);
+
+  const currentTodayClasses = classes.filter((c) => c.day_of_week === today);
 
   const activePackages = ptPackages.filter(
     (pt) => pt.status === "active" && pt.sessions_used < pt.total_sessions
@@ -55,8 +66,8 @@ export function AdminDashboard({
 
       {/* Metrics */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <MetricCard title="Today's Classes" value={todayClasses.length} />
-        <MetricCard title="Weekly Classes" value={totalActiveClasses} />
+        <MetricCard title="Today's Classes" value={currentTodayClasses.length} />
+        <MetricCard title="Weekly Classes" value={classes.length} />
         <MetricCard title="Active PT" value={activePtPackages} />
         <MetricCard title="Upcoming PT" value={upcomingSessions.length} />
       </div>
@@ -66,13 +77,13 @@ export function AdminDashboard({
         <h2 className="text-base md:text-lg font-semibold mb-3 md:mb-4">
           Today&apos;s Schedule
         </h2>
-        {todayClasses.length === 0 ? (
+        {currentTodayClasses.length === 0 ? (
           <div className="bg-jai-card border border-jai-border rounded-xl p-4 md:p-6 text-jai-text text-sm">
             No classes scheduled for today.
           </div>
         ) : (
           <div className="space-y-2 md:space-y-3">
-            {todayClasses.map((cls) => (
+            {currentTodayClasses.map((cls) => (
               <div
                 key={cls.id}
                 className="bg-jai-card border border-jai-border rounded-xl p-3 md:p-4"
@@ -198,7 +209,7 @@ export function AdminDashboard({
           </button>
         </div>
         <ScheduleGrid
-          classes={allClasses}
+          classes={classes}
           onEdit={setEditingClass}
           showActions
         />
@@ -212,10 +223,10 @@ export function AdminDashboard({
             setEditingClass(null);
             setShowAddClass(false);
           }}
-          onSaved={() => {
+          onSaved={async () => {
             setEditingClass(null);
             setShowAddClass(false);
-            router.refresh();
+            await refetchClasses();
           }}
         />
       )}
