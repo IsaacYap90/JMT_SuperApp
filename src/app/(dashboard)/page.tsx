@@ -120,11 +120,35 @@ export default async function HomePage() {
       classCoachClassIds.has(c.id)
   );
 
+  const ptPkgs = (ptPackagesRes.data || []) as unknown as PtPackage[];
+
+  // Fetch next sessions for each PT client
+  const nextSessions: Record<string, string> = {};
+  if (ptPkgs.length > 0) {
+    const memberIds = ptPkgs.map((p) => p.user_id);
+    const { data: sessData } = await supabase
+      .from("pt_sessions")
+      .select("member_id, scheduled_at")
+      .eq("coach_id", user.id)
+      .in("member_id", memberIds)
+      .gte("scheduled_at", new Date().toISOString().split("T")[0])
+      .in("status", ["scheduled", "confirmed"])
+      .order("scheduled_at");
+    if (sessData) {
+      for (const s of sessData as { member_id: string; scheduled_at: string }[]) {
+        if (!nextSessions[s.member_id]) {
+          nextSessions[s.member_id] = s.scheduled_at;
+        }
+      }
+    }
+  }
+
   return (
     <CoachDashboard
       classes={myClasses}
-      ptPackages={(ptPackagesRes.data || []) as unknown as PtPackage[]}
+      ptPackages={ptPkgs}
       coachName={profile.full_name}
+      nextSessions={nextSessions}
     />
   );
 }

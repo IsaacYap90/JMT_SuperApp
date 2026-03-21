@@ -93,6 +93,24 @@ export interface ClassSession {
   class?: Class;
 }
 
+export type LeaveType = "sick" | "annual" | "emergency";
+export type LeaveStatus = "pending" | "approved" | "rejected";
+
+export interface Leave {
+  id: string;
+  coach_id: string;
+  leave_date: string;
+  leave_type: LeaveType;
+  reason: string;
+  status: LeaveStatus;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  // joined
+  coach?: User;
+  reviewer?: User;
+}
+
 export function isAdmin(role: Role): boolean {
   return role === "admin" || role === "master_admin";
 }

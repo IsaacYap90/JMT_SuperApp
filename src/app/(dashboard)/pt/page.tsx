@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { User, PtPackage, isAdmin } from "@/lib/types/database";
+import { PtPageClient } from "@/components/pt-page-client";
 
 export default async function PtPage() {
   const supabase = createClient();
@@ -18,153 +19,67 @@ export default async function PtPage() {
 
   if (!profileData) redirect("/login");
   const profile = profileData as unknown as User;
+  const admin = isAdmin(profile.role);
 
-  let query = supabase
+  let pkgQuery = supabase
     .from("pt_packages")
     .select(
       "*, member:users!pt_packages_user_id_fkey(*), coach:users!pt_packages_preferred_coach_id_fkey(*)"
     )
     .order("created_at", { ascending: false });
 
-  if (profile.role === "coach") {
-    query = query.eq("preferred_coach_id", user.id);
+  if (!admin) {
+    pkgQuery = pkgQuery.eq("preferred_coach_id", user.id);
   }
 
-  const { data } = await query;
-  const ptPackages = (data || []) as unknown as PtPackage[];
+  const { data: pkgData } = await pkgQuery;
+  const ptPackages = (pkgData || []) as unknown as PtPackage[];
+
+  // Fetch next sessions for coach view
+  const nextSessions: Record<string, string> = {};
+  if (!admin && ptPackages.length > 0) {
+    const memberIds = ptPackages.map((p) => p.user_id);
+    const { data: sessData } = await supabase
+      .from("pt_sessions")
+      .select("member_id, scheduled_at")
+      .eq("coach_id", user.id)
+      .in("member_id", memberIds)
+      .gte("scheduled_at", new Date().toISOString().split("T")[0])
+      .in("status", ["scheduled", "confirmed"])
+      .order("scheduled_at");
+    if (sessData) {
+      for (const s of sessData as { member_id: string; scheduled_at: string }[]) {
+        if (!nextSessions[s.member_id]) {
+          nextSessions[s.member_id] = s.scheduled_at;
+        }
+      }
+    }
+  }
+
+  // Fetch members and coaches for admin add/edit form
+  let members: User[] = [];
+  let coaches: User[] = [];
+  if (admin) {
+    const [membersRes, coachesRes] = await Promise.all([
+      supabase.from("users").select("*").eq("is_active", true).order("full_name"),
+      supabase
+        .from("users")
+        .select("*")
+        .in("role", ["coach", "admin", "master_admin"])
+        .eq("is_active", true)
+        .order("full_name"),
+    ]);
+    members = (membersRes.data || []) as unknown as User[];
+    coaches = (coachesRes.data || []) as unknown as User[];
+  }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">
-        {isAdmin(profile.role) ? "PT Packages" : "My PT Clients"}
-      </h1>
-
-      {/* Mobile stacked cards */}
-      <div className="md:hidden space-y-2">
-        {ptPackages.map((pt) => {
-          const remaining = pt.total_sessions - pt.sessions_used;
-          return (
-            <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-3">
-              <div className="flex items-center justify-between">
-                <p className="font-medium text-sm">{pt.member?.full_name || "—"}</p>
-                <span className={`text-sm font-medium ${remaining <= 0 ? "text-red-400" : remaining <= 2 ? "text-yellow-400" : "text-jai-blue"}`}>
-                  {pt.sessions_used}/{pt.total_sessions}
-                </span>
-              </div>
-              {isAdmin(profile.role) && pt.coach?.full_name && (
-                <p className="text-jai-blue text-xs mt-1">Coach: {pt.coach.full_name}</p>
-              )}
-              <div className="flex items-center justify-between mt-1">
-                <p className="text-jai-text text-xs">
-                  {remaining} remaining{pt.expiry_date ? ` · Exp: ${pt.expiry_date}` : ""}
-                </p>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
-                  pt.status === "active"
-                    ? "bg-green-500/10 text-green-400"
-                    : pt.status === "expired"
-                    ? "bg-red-500/10 text-red-400"
-                    : "bg-jai-text/10 text-jai-text"
-                }`}>
-                  {pt.status}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-        {ptPackages.length === 0 && (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center">
-            No PT packages found
-          </div>
-        )}
-      </div>
-
-      {/* Desktop table */}
-      <div className="hidden md:block bg-jai-card border border-jai-border rounded-xl overflow-hidden">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-jai-border text-left text-sm text-jai-text">
-              <th className="p-4">Member</th>
-              {isAdmin(profile.role) && <th className="p-4">Coach</th>}
-              <th className="p-4">Package</th>
-              <th className="p-4">Remaining</th>
-              <th className="p-4">Expiry</th>
-              <th className="p-4">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ptPackages.map((pt) => {
-              const remaining = pt.total_sessions - pt.sessions_used;
-              return (
-                <tr
-                  key={pt.id}
-                  className="border-b border-jai-border last:border-b-0"
-                >
-                  <td className="p-4 font-medium">
-                    {pt.member?.full_name || "—"}
-                  </td>
-                  {isAdmin(profile.role) && (
-                    <td className="p-4 text-jai-text">
-                      {pt.coach?.full_name || "—"}
-                    </td>
-                  )}
-                  <td className="p-4">
-                    <span
-                      className={
-                        remaining <= 0
-                          ? "text-red-400"
-                          : remaining <= 2
-                          ? "text-yellow-400"
-                          : "text-jai-blue"
-                      }
-                    >
-                      {pt.sessions_used}/{pt.total_sessions}
-                    </span>
-                  </td>
-                  <td className="p-4">
-                    <span
-                      className={
-                        remaining <= 0
-                          ? "text-red-400"
-                          : remaining <= 2
-                          ? "text-yellow-400"
-                          : ""
-                      }
-                    >
-                      {remaining}
-                    </span>
-                  </td>
-                  <td className="p-4 text-jai-text">
-                    {pt.expiry_date || "—"}
-                  </td>
-                  <td className="p-4">
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        pt.status === "active"
-                          ? "bg-green-500/10 text-green-400"
-                          : pt.status === "expired"
-                          ? "bg-red-500/10 text-red-400"
-                          : "bg-jai-text/10 text-jai-text"
-                      }`}
-                    >
-                      {pt.status}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-            {ptPackages.length === 0 && (
-              <tr>
-                <td
-                  colSpan={isAdmin(profile.role) ? 6 : 5}
-                  className="p-4 text-jai-text text-center"
-                >
-                  No PT packages found
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <PtPageClient
+      ptPackages={ptPackages}
+      profile={profile}
+      nextSessions={nextSessions}
+      members={members}
+      coaches={coaches}
+    />
   );
 }
