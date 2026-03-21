@@ -107,21 +107,25 @@ export function ClassModal({
     let classId = cls?.id;
 
     if (cls) {
+      console.log("[ClassModal] Updating class", cls.id, classData);
       const { error: updateErr } = await supabase
         .from("classes")
         .update(classData)
         .eq("id", cls.id);
+      console.log("[ClassModal] Update result:", updateErr ? updateErr.message : "success");
       if (updateErr) {
         setError(`Update failed: ${updateErr.message}`);
         setLoading(false);
         return;
       }
     } else {
+      console.log("[ClassModal] Inserting class", classData);
       const { data: inserted, error: insertErr } = await supabase
         .from("classes")
         .insert(classData)
         .select("id")
         .single();
+      console.log("[ClassModal] Insert result:", insertErr ? insertErr.message : inserted?.id);
       if (insertErr) {
         setError(`Insert failed: ${insertErr.message}`);
         setLoading(false);
@@ -131,20 +135,30 @@ export function ClassModal({
     }
 
     if (classId) {
-      await supabase.from("class_coaches").delete().eq("class_id", classId);
+      console.log("[ClassModal] Deleting old class_coaches for", classId);
+      const { error: deleteErr } = await supabase.from("class_coaches").delete().eq("class_id", classId);
+      if (deleteErr) {
+        console.error("[ClassModal] class_coaches delete failed:", deleteErr.message);
+        setError(`Failed to update coaches: ${deleteErr.message}`);
+        setLoading(false);
+        return;
+      }
       if (form.selectedCoachIds.length > 0) {
         const coachRows = form.selectedCoachIds.map((coachId, i) => ({
           class_id: classId!,
           coach_id: coachId,
           is_lead: i === 0,
         }));
+        console.log("[ClassModal] Inserting class_coaches", coachRows);
         const { error: ccErr } = await supabase.from("class_coaches").insert(coachRows);
         if (ccErr) {
+          console.error("[ClassModal] class_coaches insert failed:", ccErr.message);
           setError(`Coach assignment failed: ${ccErr.message}`);
           setLoading(false);
           return;
         }
       }
+      console.log("[ClassModal] All saves complete");
     }
 
     setLoading(false);
