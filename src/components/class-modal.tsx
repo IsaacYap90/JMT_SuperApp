@@ -108,13 +108,19 @@ export function ClassModal({
 
     if (cls) {
       console.log("[ClassModal] Updating class", cls.id, classData);
-      const { error: updateErr } = await supabase
+      const { data: updated, error: updateErr } = await supabase
         .from("classes")
         .update(classData)
-        .eq("id", cls.id);
-      console.log("[ClassModal] Update result:", updateErr ? updateErr.message : "success");
+        .eq("id", cls.id)
+        .select("id");
+      console.log("[ClassModal] Update result:", updateErr ? updateErr.message : "success", "rows:", updated?.length);
       if (updateErr) {
         setError(`Update failed: ${updateErr.message}`);
+        setLoading(false);
+        return;
+      }
+      if (!updated || updated.length === 0) {
+        setError("Update blocked — no rows changed. Check RLS policies on the classes table (admin needs UPDATE permission).");
         setLoading(false);
         return;
       }
@@ -136,10 +142,13 @@ export function ClassModal({
 
     if (classId) {
       console.log("[ClassModal] Deleting old class_coaches for", classId);
-      const { error: deleteErr } = await supabase.from("class_coaches").delete().eq("class_id", classId);
+      const { error: deleteErr } = await supabase
+        .from("class_coaches")
+        .delete()
+        .eq("class_id", classId);
       if (deleteErr) {
         console.error("[ClassModal] class_coaches delete failed:", deleteErr.message);
-        setError(`Failed to update coaches: ${deleteErr.message}`);
+        setError(`Failed to update coaches: ${deleteErr.message}. Check RLS policies on class_coaches table.`);
         setLoading(false);
         return;
       }
