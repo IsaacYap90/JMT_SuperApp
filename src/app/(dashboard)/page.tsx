@@ -27,7 +27,7 @@ export default async function HomePage() {
 
   if (isAdmin(profile.role)) {
     const today = new Date()
-      .toLocaleDateString("en-US", { weekday: "long" })
+      .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
       .toLowerCase();
 
     const [classesRes, ptPackagesRes, ptSessionsRes, coachesRes, leavesRes] =
@@ -89,6 +89,7 @@ export default async function HomePage() {
         activePtPackages={activePtPackages.length}
         pendingLeaves={pendingLeaves}
         today={today}
+        userName={profile.full_name}
       />
     );
   }

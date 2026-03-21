@@ -25,6 +25,7 @@ export function AdminDashboard({
   activePtPackages,
   pendingLeaves,
   today,
+  userName,
 }: {
   allClasses: Class[];
   ptPackages: PtPackage[];
@@ -33,6 +34,7 @@ export function AdminDashboard({
   activePtPackages: number;
   pendingLeaves: number;
   today: string;
+  userName: string;
 }) {
   const [sundayReminder, setSundayReminder] = useState(true);
   const [editingClass, setEditingClass] = useState<Class | null>(null);
@@ -62,13 +64,14 @@ export function AdminDashboard({
   return (
     <div className="space-y-6 md:space-y-8">
       <div>
-        <h1 className="text-xl md:text-2xl font-bold">{getSgtGreeting()}</h1>
+        <h1 className="text-xl md:text-2xl font-bold">{getSgtGreeting()}, {userName}</h1>
         <p className="text-jai-text text-sm mt-1 capitalize">
           {today} &middot;{" "}
           {new Date().toLocaleDateString("en-GB", {
             day: "numeric",
             month: "long",
             year: "numeric",
+            timeZone: "Asia/Singapore",
           })}
         </p>
       </div>
