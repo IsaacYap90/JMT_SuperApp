@@ -1,0 +1,98 @@
+export type Role = "admin" | "master_admin" | "coach" | "member";
+
+export type DayOfWeek =
+  | "monday"
+  | "tuesday"
+  | "wednesday"
+  | "thursday"
+  | "friday"
+  | "saturday"
+  | "sunday";
+
+export interface User {
+  id: string;
+  email: string;
+  full_name: string;
+  phone: string | null;
+  role: Role;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ClassCoach {
+  id: string;
+  class_id: string;
+  coach_id: string;
+  is_lead: boolean;
+  created_at: string;
+  // joined
+  coach?: User;
+}
+
+export interface Class {
+  id: string;
+  name: string;
+  description: string | null;
+  day_of_week: DayOfWeek;
+  start_time: string;
+  end_time: string;
+  capacity: number;
+  lead_coach_id: string | null;
+  assistant_coach_id: string | null;
+  is_active: boolean;
+  created_at: string;
+  schedule_id: string | null;
+  // joined
+  lead_coach?: User;
+  assistant_coach?: User;
+  class_coaches?: ClassCoach[];
+}
+
+export interface PtPackage {
+  id: string;
+  user_id: string;
+  package_type_id: string | null;
+  preferred_coach_id: string | null;
+  total_sessions: number;
+  sessions_used: number;
+  price_paid: number | null;
+  purchase_date: string | null;
+  expiry_date: string | null;
+  status: string;
+  created_at: string;
+  // joined
+  member?: User;
+  coach?: User;
+}
+
+export interface PtSession {
+  id: string;
+  package_id: string;
+  coach_id: string;
+  member_id: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  status: string;
+  coach_notes: string | null;
+  session_type: string | null;
+  notes: string | null;
+  created_at: string;
+  // joined
+  coach?: User;
+  member?: User;
+}
+
+export interface ClassSession {
+  id: string;
+  class_id: string;
+  session_date: string;
+  status: string;
+  cancellation_reason: string | null;
+  created_at: string;
+  // joined
+  class?: Class;
+}
+
+export function isAdmin(role: Role): boolean {
+  return role === "admin" || role === "master_admin";
+}

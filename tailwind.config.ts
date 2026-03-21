@@ -9,8 +9,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        "jai-blue": "#0096FF",
+        "jai-bg": "#000000",
+        "jai-card": "#121212",
+        "jai-text": "#B3B3B3",
+        "jai-border": "#1E1E1E",
+      },
+      fontFamily: {
+        sans: ["Inter", "sans-serif"],
       },
     },
   },

@@ -1,0 +1,20 @@
+-- JMT Dashboard: No migration needed!
+--
+-- This dashboard connects to the existing JMT Supabase instance
+-- (xioimcyqglfxqumvbqsg) which already has all required tables:
+--
+--   - users (profiles with role: admin/coach/member)
+--   - classes (weekly schedule with lead_coach_id, assistant_coach_id)
+--   - pt_packages (session packages with total/used counts)
+--   - pt_sessions (individual PT session records)
+--   - class_sessions (per-date class instances)
+--   - coach_profiles (coach-specific details)
+--   - bookings (class enrollments)
+--   - memberships (member subscriptions)
+--
+-- The existing RLS policies from the JMT super-app apply.
+--
+-- To use the dashboard:
+-- 1. Create auth users in Supabase for Jeremy (admin), Isaac, Shafiq, Heng (coach)
+-- 2. Ensure their `users` table entries have the correct `role` field
+-- 3. Log in at /login with email + password
