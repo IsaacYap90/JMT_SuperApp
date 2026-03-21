@@ -41,19 +41,23 @@ export function LeavePageClient({
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!leaveDate || !reason.trim()) return;
+    setError(null);
     setSaving(true);
-    const { error } = await supabase.from("leaves").insert({
+    const { error: insertError } = await supabase.from("leaves").insert({
       coach_id: userId,
       leave_date: leaveDate,
       leave_type: leaveType,
       reason: reason.trim(),
       status: "pending",
     });
-    if (!error) {
+    if (insertError) {
+      setError(`Failed to submit leave: ${insertError.message}`);
+    } else {
       setShowForm(false);
       setLeaveDate("");
       setReason("");
@@ -63,8 +67,9 @@ export function LeavePageClient({
   };
 
   const handleAction = async (leaveId: string, action: "approved" | "rejected") => {
+    setError(null);
     setActioningId(leaveId);
-    await supabase
+    const { error: updateError } = await supabase
       .from("leaves")
       .update({
         status: action,
@@ -72,8 +77,12 @@ export function LeavePageClient({
         reviewed_at: new Date().toISOString(),
       })
       .eq("id", leaveId);
+    if (updateError) {
+      setError(`Failed to ${action === "approved" ? "approve" : "reject"} leave: ${updateError.message}`);
+    } else {
+      router.refresh();
+    }
     setActioningId(null);
-    router.refresh();
   };
 
   return (
@@ -91,6 +100,12 @@ export function LeavePageClient({
           </button>
         )}
       </div>
+
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
 
       {/* Leave application form (coach only) */}
       {showForm && !admin && (

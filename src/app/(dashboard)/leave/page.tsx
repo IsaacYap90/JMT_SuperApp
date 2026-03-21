@@ -29,7 +29,10 @@ export default async function LeavePage() {
     query = query.eq("coach_id", user.id);
   }
 
-  const { data } = await query;
+  const { data, error } = await query;
+  if (error) {
+    console.error("Failed to fetch leaves:", error.message, error.details);
+  }
   const leaves = (data || []) as unknown as Leave[];
 
   return (

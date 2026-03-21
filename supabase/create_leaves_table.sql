@@ -1,12 +1,12 @@
 -- Create leaves table for JMT Dashboard leave management
 CREATE TABLE IF NOT EXISTS leaves (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  coach_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  coach_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   leave_date DATE NOT NULL,
   leave_type TEXT NOT NULL CHECK (leave_type IN ('sick', 'annual', 'emergency')),
   reason TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
-  reviewed_by UUID REFERENCES auth.users(id),
+  reviewed_by UUID REFERENCES public.users(id),
   reviewed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -33,6 +33,3 @@ CREATE POLICY "Admins can update leaves" ON leaves
   FOR UPDATE USING (
     EXISTS (SELECT 1 FROM users WHERE id = auth.uid() AND role IN ('admin', 'master_admin'))
   );
-
--- Add foreign key aliases for Supabase joins
-COMMENT ON CONSTRAINT leaves_coach_id_fkey ON leaves IS 'leaves_coach_id_fkey';
