@@ -9,6 +9,7 @@ const adminLinks = [
   { href: "/", label: "Dashboard", icon: "grid" },
   { href: "/schedule", label: "Schedule", icon: "calendar" },
   { href: "/pt", label: "PT Sessions", icon: "users" },
+  { href: "/sunday-prep", label: "Sunday Prep", icon: "send" },
   { href: "/leave", label: "Leave", icon: "leave" },
 ];
 
@@ -37,6 +38,12 @@ function IconComponent({ icon, className }: { icon: string; className?: string }
       return (
         <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      );
+    case "send":
+      return (
+        <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
         </svg>
       );
     case "leave":

@@ -111,6 +111,17 @@ export interface Leave {
   reviewer?: User;
 }
 
+export type ConfirmationStatus = "unsent" | "sent" | "replied";
+
+export interface PtConfirmation {
+  id: string;
+  pt_session_id: string;
+  status: ConfirmationStatus;
+  week_start: string;
+  updated_at: string;
+  created_at: string;
+}
+
 export function isAdmin(role: Role): boolean {
   return role === "admin" || role === "master_admin";
 }
