@@ -22,10 +22,11 @@ const DAY_INDEX: Record<DayOfWeek, number> = {
 };
 
 function getWeekDates(): Record<DayOfWeek, string> {
-  const now = new Date();
+  // Use SGT timezone to get correct current day
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
   const currentDay = now.getDay(); // 0=Sun
-  // Find Monday of current week
-  const diffToMon = currentDay === 0 ? -6 : 1 - currentDay;
+  // Find Monday: on Sunday show upcoming week, otherwise current week
+  const diffToMon = currentDay === 0 ? 1 : 1 - currentDay;
   const monday = new Date(now);
   monday.setDate(now.getDate() + diffToMon);
 
@@ -35,7 +36,7 @@ function getWeekDates(): Record<DayOfWeek, string> {
     const offset = target === 0 ? 6 : target - 1; // Mon=0 offset
     const date = new Date(monday);
     date.setDate(monday.getDate() + offset);
-    result[day] = date.toLocaleDateString("en-GB", { day: "numeric", month: "short" }).toUpperCase();
+    result[day] = date.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Singapore" }).toUpperCase();
   }
   return result as Record<DayOfWeek, string>;
 }
