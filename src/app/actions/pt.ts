@@ -154,6 +154,7 @@ export async function createPtSession(payload: {
 
   revalidatePath("/pt");
   revalidatePath("/");
+  revalidatePath("/schedule");
   return session;
 }
 
@@ -206,6 +207,7 @@ export async function updatePtSession(
 
   revalidatePath("/pt");
   revalidatePath("/");
+  revalidatePath("/schedule");
   return session;
 }
 
@@ -254,6 +256,7 @@ export async function updateSessionStatus(
 
   revalidatePath("/pt");
   revalidatePath("/");
+  revalidatePath("/schedule");
 }
 
 // Delete PT session
@@ -265,6 +268,7 @@ export async function deletePtSession(sessionId: string) {
   if (error) throw new Error(error.message);
   revalidatePath("/pt");
   revalidatePath("/");
+  revalidatePath("/schedule");
 }
 
 // Auto-expire packages (0 sessions left or past expiry)

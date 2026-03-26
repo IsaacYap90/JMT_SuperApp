@@ -5,6 +5,8 @@ import { CoachSchedule } from "@/components/coach-schedule";
 import { SchedulePageClient } from "@/components/schedule-page-client";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 
+export const dynamic = "force-dynamic";
+
 const CLASS_SELECT =
   "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
 
