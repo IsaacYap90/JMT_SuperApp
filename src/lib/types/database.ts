@@ -16,6 +16,7 @@ export interface User {
   phone: string | null;
   role: Role;
   is_active: boolean;
+  is_first_login: boolean;
   created_at: string;
 }
 
@@ -42,6 +43,7 @@ export interface Class {
   is_active: boolean;
   created_at: string;
   schedule_id: string | null;
+  programme: Programme | null;
   // joined
   lead_coach?: User;
   assistant_coach?: User;
@@ -120,6 +122,45 @@ export interface PtConfirmation {
   week_start: string;
   updated_at: string;
   created_at: string;
+}
+
+export type EarningType = "salary" | "pt_weekly" | "bonus" | "other";
+
+export interface Earning {
+  id: string;
+  coach_id: string;
+  date: string;
+  type: EarningType;
+  amount: number;
+  description: string | null;
+  created_at: string;
+}
+
+export type Programme = "adult" | "kids" | "teens";
+
+export interface TrialSetting {
+  id: string;
+  class_id: string;
+  is_trial_enabled: boolean;
+  max_trial_spots: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TrialBookingStatus = "booked" | "showed" | "no_show" | "cancelled";
+
+export interface TrialBooking {
+  id: string;
+  name: string;
+  phone: string;
+  programme: Programme;
+  class_id: string;
+  booking_date: string;
+  time_slot: string;
+  status: TrialBookingStatus;
+  created_at: string;
+  // joined
+  class?: Class;
 }
 
 export function isAdmin(role: Role): boolean {

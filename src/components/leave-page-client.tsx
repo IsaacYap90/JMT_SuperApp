@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { User, Leave, LeaveType, isAdmin } from "@/lib/types/database";
+import { cancelLeave } from "@/app/actions/leave";
 
 const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
   { value: "sick", label: "Sick Leave" },
@@ -83,6 +84,24 @@ export function LeavePageClient({
       router.refresh();
     }
     setActioningId(null);
+  };
+
+  const handleCancel = async (leaveId: string) => {
+    setError(null);
+    setActioningId(leaveId);
+    try {
+      await cancelLeave(leaveId);
+      router.refresh();
+    } catch (err) {
+      setError(`Failed to cancel leave: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+    setActioningId(null);
+  };
+
+  const canCancel = (leave: Leave) => {
+    // Coaches can cancel their own leaves if the date hasn't passed
+    if (admin) return false; // Admin uses approve/reject
+    return leave.coach_id === userId && leave.leave_date >= new Date().toISOString().split("T")[0];
   };
 
   return (
@@ -188,6 +207,15 @@ export function LeavePageClient({
                 </button>
               </div>
             )}
+            {canCancel(leave) && (
+              <button
+                onClick={() => handleCancel(leave.id)}
+                disabled={actioningId === leave.id}
+                className="w-full mt-2 bg-red-500/10 text-red-400 border border-red-500/20 py-1.5 rounded-lg text-xs font-medium min-h-[44px] disabled:opacity-50"
+              >
+                Cancel Leave
+              </button>
+            )}
           </div>
         ))}
         {leaves.length === 0 && (
@@ -207,7 +235,7 @@ export function LeavePageClient({
               <th className="p-4">Type</th>
               <th className="p-4">Reason</th>
               <th className="p-4">Status</th>
-              {admin && <th className="p-4">Actions</th>}
+              <th className="p-4">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -224,37 +252,43 @@ export function LeavePageClient({
                     {leave.status}
                   </span>
                 </td>
-                {admin && (
-                  <td className="p-4">
-                    {leave.status === "pending" ? (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleAction(leave.id, "approved")}
-                          disabled={actioningId === leave.id}
-                          className="text-green-400 hover:text-green-300 text-sm font-medium min-h-[44px] min-w-[44px] disabled:opacity-50"
-                        >
-                          Approve
-                        </button>
-                        <button
-                          onClick={() => handleAction(leave.id, "rejected")}
-                          disabled={actioningId === leave.id}
-                          className="text-red-400 hover:text-red-300 text-sm font-medium min-h-[44px] min-w-[44px] disabled:opacity-50"
-                        >
-                          Reject
-                        </button>
-                      </div>
-                    ) : (
-                      <span className="text-jai-text text-sm">
-                        {leave.reviewer?.full_name || "—"}
-                      </span>
-                    )}
-                  </td>
-                )}
+                <td className="p-4">
+                  {admin && leave.status === "pending" ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleAction(leave.id, "approved")}
+                        disabled={actioningId === leave.id}
+                        className="text-green-400 hover:text-green-300 text-sm font-medium min-h-[44px] min-w-[44px] disabled:opacity-50"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleAction(leave.id, "rejected")}
+                        disabled={actioningId === leave.id}
+                        className="text-red-400 hover:text-red-300 text-sm font-medium min-h-[44px] min-w-[44px] disabled:opacity-50"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ) : canCancel(leave) ? (
+                    <button
+                      onClick={() => handleCancel(leave.id)}
+                      disabled={actioningId === leave.id}
+                      className="text-red-400 hover:text-red-300 text-sm font-medium disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  ) : admin ? (
+                    <span className="text-jai-text text-sm">
+                      {leave.reviewer?.full_name || "—"}
+                    </span>
+                  ) : null}
+                </td>
               </tr>
             ))}
             {leaves.length === 0 && (
               <tr>
-                <td colSpan={admin ? 6 : 4} className="p-4 text-jai-text text-center">
+                <td colSpan={admin ? 6 : 5} className="p-4 text-jai-text text-center">
                   No leave requests
                 </td>
               </tr>

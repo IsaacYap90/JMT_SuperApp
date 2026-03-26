@@ -38,15 +38,20 @@ export function SundayPrepClient({
   weekStart,
   weekLabel,
   lastWeekStats,
+  coaches,
 }: {
   sessions: PtSession[];
   confirmations: PtConfirmation[];
   weekStart: string;
   weekLabel: string;
   lastWeekStats: { total: number; sent: number; replied: number };
+  coaches?: { id: string; full_name: string }[];
 }) {
   const router = useRouter();
   const supabase = createClient();
+
+  // Coach filter
+  const [filterCoachId, setFilterCoachId] = useState("");
 
   // Build status map from confirmations
   const initialStatuses: Record<string, ConfirmationStatus> = {};
@@ -57,8 +62,13 @@ export function SundayPrepClient({
 
   const getStatus = (sessionId: string): ConfirmationStatus => statuses[sessionId] || "unsent";
 
-  const totalSessions = sessions.length;
-  const contacted = sessions.filter((s) => getStatus(s.id) !== "unsent").length;
+  // Apply coach filter
+  const filteredSessions = filterCoachId
+    ? sessions.filter((s) => s.coach_id === filterCoachId)
+    : sessions;
+
+  const totalSessions = filteredSessions.length;
+  const contacted = filteredSessions.filter((s) => getStatus(s.id) !== "unsent").length;
 
   const updateStatus = async (sessionId: string, newStatus: ConfirmationStatus) => {
     setStatuses((prev) => ({ ...prev, [sessionId]: newStatus }));
@@ -105,9 +115,9 @@ export function SundayPrepClient({
     updateStatus(sessionId, next);
   };
 
-  // Group sessions by day
+  // Group sessions by day (using filtered sessions)
   const sessionsByDay: Record<string, PtSession[]> = {};
-  for (const s of sessions) {
+  for (const s of filteredSessions) {
     const dt = new Date(s.scheduled_at);
     const dayKey = DAY_NAMES[dt.getDay()];
     if (!sessionsByDay[dayKey]) sessionsByDay[dayKey] = [];
@@ -122,6 +132,20 @@ export function SundayPrepClient({
         <h1 className="text-xl md:text-2xl font-bold">Sunday Prep</h1>
         <p className="text-jai-text text-sm mt-1">PT confirmations for {weekLabel}</p>
       </div>
+
+      {/* Coach filter */}
+      {coaches && coaches.length > 0 && (
+        <select
+          value={filterCoachId}
+          onChange={(e) => setFilterCoachId(e.target.value)}
+          className="w-full bg-jai-card border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+        >
+          <option value="">All Coaches</option>
+          {coaches.map((c) => (
+            <option key={c.id} value={c.id}>{c.full_name}</option>
+          ))}
+        </select>
+      )}
 
       {/* Last week stats */}
       {lastWeekStats.total > 0 && (

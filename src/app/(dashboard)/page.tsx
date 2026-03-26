@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { CoachDashboard } from "@/components/coach-dashboard";
-import { Class, User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
+import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 
 const CLASS_SELECT =
   "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
@@ -25,77 +26,82 @@ export default async function HomePage() {
   if (!profileData) redirect("/login");
   const profile = profileData as unknown as User;
 
-  if (isAdmin(profile.role)) {
-    const today = new Date()
-      .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
-      .toLowerCase();
+  const today = new Date()
+    .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
+    .toLowerCase();
+  const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const tomorrowDate = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
 
-    const [classesRes, ptPackagesRes, ptSessionsRes, coachesRes, leavesRes] =
+  if (isAdmin(profile.role)) {
+    const db = createAdminClient();
+
+    const [classesRes, ptPackagesRes, ptSessionsRes, leavesRes, coachesRes] =
       await Promise.all([
-        supabase
+        db
           .from("classes")
           .select(CLASS_SELECT)
           .eq("is_active", true)
           .order("start_time"),
-        supabase
+        db
           .from("pt_packages")
-          .select(
-            "*, member:users!pt_packages_user_id_fkey(*), coach:users!pt_packages_preferred_coach_id_fkey(*)"
-          )
-          .order("created_at", { ascending: false }),
-        supabase
+          .select("id, status, sessions_used, total_sessions")
+          .eq("status", "active"),
+        db
           .from("pt_sessions")
           .select(
             "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*)"
           )
-          .gte("scheduled_at", new Date().toISOString().split("T")[0])
+          .gte("scheduled_at", todayDate)
+          .lt("scheduled_at", tomorrowDate)
+          .in("status", ["scheduled", "confirmed"])
           .order("scheduled_at"),
-        supabase
+        db
+          .from("leaves")
+          .select("id")
+          .eq("status", "pending"),
+        db
           .from("users")
           .select("*")
           .in("role", ["coach", "admin", "master_admin"])
           .eq("is_active", true)
           .order("full_name"),
-        supabase
-          .from("leaves")
-          .select("id")
-          .eq("status", "pending"),
       ]);
 
-    const classes = (classesRes.data || []) as unknown as Class[];
-    const ptPackages = (ptPackagesRes.data || []) as unknown as PtPackage[];
-    const ptSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
-    // Deduplicate coaches by full_name (keep first occurrence)
-    const allCoaches = (coachesRes.data || []) as unknown as User[];
-    const seen = new Set<string>();
-    const coaches = allCoaches.filter((c) => {
-      if (seen.has(c.full_name)) return false;
-      seen.add(c.full_name);
-      return true;
-    });
+    const allClasses = (classesRes.data || []) as unknown as Class[];
+    const todayClasses = allClasses.filter((c) => c.day_of_week === today);
+    const todayPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
 
-    const activePtPackages = ptPackages.filter(
-      (pt) => pt.status === "active" && pt.sessions_used < pt.total_sessions
-    );
+    const activePtPackages = (ptPackagesRes.data || []).filter(
+      (pt: { sessions_used: number; total_sessions: number }) => pt.sessions_used < pt.total_sessions
+    ).length;
 
     const pendingLeaves = (leavesRes.data || []).length;
 
     return (
       <AdminDashboard
-        allClasses={classes}
-        ptPackages={ptPackages}
-        ptSessions={ptSessions}
-        coaches={coaches}
-        activePtPackages={activePtPackages.length}
+        todayClasses={todayClasses}
+        todayPtSessions={todayPtSessions}
+        activePtPackages={activePtPackages}
         pendingLeaves={pendingLeaves}
         today={today}
         userName={profile.full_name}
+        coaches={(coachesRes.data || []) as unknown as User[]}
       />
     );
   }
 
-  // Coach view — show classes where coach is lead, assistant, or in class_coaches
-  const [classesRes, classCoachesRes, ptPackagesRes] = await Promise.all([
+  // Coach view — compute week range (Mon–Sun)
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+  const dow = now.getDay();
+  const mondayOffset = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + mondayOffset);
+  const mondayDate = monday.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 7);
+  const sundayDate = sunday.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+
+  const [classesRes, classCoachesRes, todayPtRes, weekPtRes] = await Promise.all([
     supabase
       .from("classes")
       .select(CLASS_SELECT)
@@ -106,11 +112,20 @@ export default async function HomePage() {
       .select("class_id")
       .eq("coach_id", user.id),
     supabase
-      .from("pt_packages")
-      .select("*, member:users!pt_packages_user_id_fkey(*)")
-      .eq("preferred_coach_id", user.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: false }),
+      .from("pt_sessions")
+      .select("*, member:users!pt_sessions_member_id_fkey(*)")
+      .eq("coach_id", user.id)
+      .gte("scheduled_at", todayDate)
+      .lt("scheduled_at", tomorrowDate)
+      .in("status", ["scheduled", "confirmed"])
+      .order("scheduled_at"),
+    supabase
+      .from("pt_sessions")
+      .select("id")
+      .eq("coach_id", user.id)
+      .gte("scheduled_at", mondayDate)
+      .lt("scheduled_at", sundayDate)
+      .in("status", ["scheduled", "confirmed", "completed"]),
   ]);
 
   const allClasses = (classesRes.data || []) as unknown as Class[];
@@ -125,35 +140,18 @@ export default async function HomePage() {
       classCoachClassIds.has(c.id)
   );
 
-  const ptPkgs = (ptPackagesRes.data || []) as unknown as PtPackage[];
-
-  // Fetch next sessions for each PT client
-  const nextSessions: Record<string, string> = {};
-  if (ptPkgs.length > 0) {
-    const memberIds = ptPkgs.map((p) => p.user_id);
-    const { data: sessData } = await supabase
-      .from("pt_sessions")
-      .select("member_id, scheduled_at")
-      .eq("coach_id", user.id)
-      .in("member_id", memberIds)
-      .gte("scheduled_at", new Date().toISOString().split("T")[0])
-      .in("status", ["scheduled", "confirmed"])
-      .order("scheduled_at");
-    if (sessData) {
-      for (const s of sessData as { member_id: string; scheduled_at: string }[]) {
-        if (!nextSessions[s.member_id]) {
-          nextSessions[s.member_id] = s.scheduled_at;
-        }
-      }
-    }
-  }
+  const todayClasses = myClasses.filter((c) => c.day_of_week === today);
+  const todayPtSessions = (todayPtRes.data || []) as unknown as PtSession[];
+  const weekPtCount = (weekPtRes.data || []).length;
 
   return (
     <CoachDashboard
-      classes={myClasses}
-      ptPackages={ptPkgs}
+      todayClasses={todayClasses}
+      todayPtSessions={todayPtSessions}
+      totalWeekClasses={myClasses.length}
+      weekPtSessions={weekPtCount}
       coachName={profile.full_name}
-      nextSessions={nextSessions}
+      today={today}
     />
   );
 }

@@ -30,6 +30,10 @@ export default async function DashboardLayout({
 
   const profile = profileData as unknown as User;
 
+  if (profile.is_first_login) {
+    redirect("/change-password");
+  }
+
   return (
     <div className="flex min-h-screen bg-jai-bg">
       <Sidebar profile={profile} />

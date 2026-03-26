@@ -1,36 +1,38 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import dynamic from "next/dynamic";
+import Image from "next/image";
+import { changePassword } from "@/app/actions/auth";
 
-function LoginPageContent() {
-  const [email, setEmail] = useState("");
+export default function ChangePasswordPage() {
   const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
 
-    const { createClient } = await import("@/lib/supabase/client");
-    const supabase = createClient();
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+    if (password !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      setError(error.message);
-      setLoading(false);
-    } else {
+    setLoading(true);
+    try {
+      await changePassword(password);
       router.push("/");
       router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setLoading(false);
     }
   };
 
@@ -41,40 +43,44 @@ function LoginPageContent() {
           <Image
             src="/logo.jpg"
             alt="JAI Muay Thai"
-            width={140}
-            height={140}
+            width={100}
+            height={100}
             className="rounded-full mx-auto mb-4"
           />
-          <h1 className="text-3xl font-bold text-white">
-            JAI <span className="text-jai-blue">MUAY THAI</span>
-          </h1>
-          <p className="text-jai-text mt-2">Dashboard Login</p>
+          <h1 className="text-xl font-bold text-white">Set Your Password</h1>
+          <p className="text-jai-text text-sm mt-2">
+            Please change your password before continuing
+          </p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm text-jai-text mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-3 bg-jai-card border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue transition-colors"
-              placeholder="you@email.com"
-              required
-            />
-          </div>
-
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm text-jai-text mb-1">
-              Password
+              New Password
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-4 py-3 bg-jai-card border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue transition-colors"
-              placeholder="Enter password"
+              placeholder="Min 6 characters"
               required
+              minLength={6}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-jai-text mb-1">
+              Confirm Password
+            </label>
+            <input
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              className="w-full px-4 py-3 bg-jai-card border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue transition-colors"
+              placeholder="Re-enter password"
+              required
+              minLength={6}
             />
           </div>
 
@@ -85,14 +91,10 @@ function LoginPageContent() {
             disabled={loading}
             className="w-full py-3 bg-jai-blue text-white font-semibold rounded-lg hover:bg-jai-blue/90 disabled:opacity-50 transition-all"
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "Updating..." : "Set Password"}
           </button>
         </form>
       </div>
     </div>
   );
 }
-
-export default dynamic(() => Promise.resolve(LoginPageContent), {
-  ssr: false,
-});

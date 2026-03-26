@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { User, PtSession, PtConfirmation, isAdmin } from "@/lib/types/database";
 import { SundayPrepClient } from "@/components/sunday-prep-client";
@@ -44,6 +45,9 @@ export default async function SundayPrepPage() {
 
   if (!isAdmin(profile.role)) redirect("/");
 
+  // Use admin client to bypass RLS for full data access
+  const db = createAdminClient();
+
   const { weekStart, mondayISO, saturdayISO, mondayLabel, saturdayLabel } = getWeekRange();
 
   // Last week's date range for stats
@@ -51,8 +55,17 @@ export default async function SundayPrepPage() {
   lastWeekMonday.setDate(lastWeekMonday.getDate() - 7);
   const lastWeekStart = lastWeekMonday.toISOString().split("T")[0];
 
+  // Fetch coaches for filter dropdown
+  const { data: coachesData } = await db
+    .from("users")
+    .select("id, full_name")
+    .in("role", ["coach", "admin", "master_admin"])
+    .eq("is_active", true)
+    .order("full_name");
+  const coaches = (coachesData || []) as { id: string; full_name: string }[];
+
   // Fetch PT sessions for the coming week
-  const { data: sessionsData } = await supabase
+  const { data: sessionsData } = await db
     .from("pt_sessions")
     .select(
       "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*)"
@@ -68,7 +81,7 @@ export default async function SundayPrepPage() {
   const sessionIds = sessions.map((s) => s.id);
   let confirmations: PtConfirmation[] = [];
   if (sessionIds.length > 0) {
-    const { data: confData } = await supabase
+    const { data: confData } = await db
       .from("pt_confirmations")
       .select("*")
       .eq("week_start", weekStart)
@@ -77,7 +90,7 @@ export default async function SundayPrepPage() {
   }
 
   // Fetch last week's confirmations for stats
-  const { data: lastWeekData } = await supabase
+  const { data: lastWeekData } = await db
     .from("pt_confirmations")
     .select("status")
     .eq("week_start", lastWeekStart);
@@ -95,6 +108,7 @@ export default async function SundayPrepPage() {
       weekStart={weekStart}
       weekLabel={`${mondayLabel} – ${saturdayLabel}`}
       lastWeekStats={lastWeekStats}
+      coaches={coaches}
     />
   );
 }
