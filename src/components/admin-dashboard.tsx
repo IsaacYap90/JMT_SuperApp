@@ -17,6 +17,14 @@ function getSgtGreeting(): string {
   return "Good evening";
 }
 
+function isClassEnded(endTime: string): boolean {
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+  const [hours, minutes] = endTime.split(":").map(Number);
+  const end = new Date(now);
+  end.setHours(hours, minutes, 0, 0);
+  return now > end;
+}
+
 export function AdminDashboard({
   allClasses,
   ptPackages,
@@ -112,10 +120,12 @@ export function AdminDashboard({
           </div>
         ) : (
           <div className="space-y-2 md:space-y-3">
-            {currentTodayClasses.map((cls) => (
+            {currentTodayClasses.map((cls) => {
+              const ended = isClassEnded(cls.end_time);
+              return (
               <div
                 key={cls.id}
-                className="bg-jai-card border border-jai-border rounded-xl p-3 md:p-4"
+                className={`bg-jai-card border border-jai-border rounded-xl p-3 md:p-4 ${ended ? "opacity-40" : ""}`}
               >
                 <p className="font-medium text-sm md:text-base">{cls.name}</p>
                 <p className="text-jai-text text-sm">
@@ -130,7 +140,8 @@ export function AdminDashboard({
                     ` + ${cls.assistant_coach.full_name}`}
                 </p>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
