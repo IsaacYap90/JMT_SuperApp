@@ -163,15 +163,20 @@ export interface TrialBooking {
   class?: Class;
 }
 
-export type NotificationType = "class_assigned" | "pt_scheduled" | "class_cancelled" | "class_updated";
+export type NotificationType = "class_assigned" | "pt_scheduled" | "class_cancelled" | "class_updated" | "system";
 
 export interface Notification {
   id: string;
-  recipient_id: string;
-  type: NotificationType;
+  user_id: string | null;
   title: string;
   message: string;
-  read: boolean;
+  notification_type: NotificationType | string;
+  is_read: boolean;
+  action_url: string | null;
+  sender_id: string | null;
+  action_type: string | null;
+  reference_id: string | null;
+  reference_type: string | null;
   created_at: string;
 }
 

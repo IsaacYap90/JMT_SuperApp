@@ -2,21 +2,21 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { NotificationType } from "@/lib/types/database";
 
 // Insert a notification for a coach (called server-side by admin actions)
 export async function createNotification(
-  recipientId: string,
-  type: NotificationType,
+  userId: string,
+  notificationType: string,
   title: string,
   message: string
 ) {
   const admin = createAdminClient();
   await admin.from("notifications").insert({
-    recipient_id: recipientId,
-    type,
+    user_id: userId,
+    notification_type: notificationType,
     title,
     message,
+    is_read: false,
   });
 }
 
@@ -31,7 +31,7 @@ export async function getMyNotifications(limit = 30) {
   const { data } = await supabase
     .from("notifications")
     .select("*")
-    .eq("recipient_id", user.id)
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -49,8 +49,8 @@ export async function getUnreadCount() {
   const { count } = await supabase
     .from("notifications")
     .select("*", { count: "exact", head: true })
-    .eq("recipient_id", user.id)
-    .eq("read", false);
+    .eq("user_id", user.id)
+    .eq("is_read", false);
 
   return count || 0;
 }
@@ -60,7 +60,7 @@ export async function markNotificationRead(notificationId: string) {
   const supabase = createClient();
   await supabase
     .from("notifications")
-    .update({ read: true })
+    .update({ is_read: true })
     .eq("id", notificationId);
 }
 
@@ -74,7 +74,7 @@ export async function markAllNotificationsRead() {
 
   await supabase
     .from("notifications")
-    .update({ read: true })
-    .eq("recipient_id", user.id)
-    .eq("read", false);
+    .update({ is_read: true })
+    .eq("user_id", user.id)
+    .eq("is_read", false);
 }
