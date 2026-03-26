@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/types/database";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
+import { createNotification } from "./notifications";
 
 async function requireAdmin() {
   const supabase = createClient();
@@ -126,6 +127,31 @@ export async function createPtSession(payload: {
     .single();
 
   if (error) throw new Error(error.message);
+
+  // Notify the coach
+  if (session) {
+    const memberName = session.member?.full_name || "Client";
+    const dt = new Date(payload.scheduled_at);
+    const dateLabel = dt.toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      timeZone: "Asia/Singapore",
+    });
+    const timeLabel = dt.toLocaleTimeString("en-SG", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Singapore",
+    });
+    createNotification(
+      payload.coach_id,
+      "pt_scheduled",
+      "PT Session Scheduled",
+      `PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
+    ).catch(() => {});
+  }
+
   revalidatePath("/pt");
   revalidatePath("/");
   return session;
@@ -153,6 +179,31 @@ export async function updatePtSession(
     .single();
 
   if (error) throw new Error(error.message);
+
+  // Notify the coach about the update
+  if (session) {
+    const memberName = session.member?.full_name || "Client";
+    const dt = new Date(payload.scheduled_at);
+    const dateLabel = dt.toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      timeZone: "Asia/Singapore",
+    });
+    const timeLabel = dt.toLocaleTimeString("en-SG", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Singapore",
+    });
+    createNotification(
+      payload.coach_id,
+      "pt_scheduled",
+      "PT Session Updated",
+      `PT session with ${memberName} updated to ${dateLabel} at ${timeLabel}.`
+    ).catch(() => {});
+  }
+
   revalidatePath("/pt");
   revalidatePath("/");
   return session;

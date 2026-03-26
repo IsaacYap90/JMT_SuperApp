@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Class, DayOfWeek, User } from "@/lib/types/database";
 import { createClient } from "@/lib/supabase/client";
+import { createNotification } from "@/app/actions/notifications";
 
 const DAYS: DayOfWeek[] = [
   "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
@@ -168,6 +169,37 @@ export function ClassModal({
         }
       }
       console.log("[ClassModal] All saves complete");
+
+      // Notify newly assigned coaches
+      const previousCoachIds = getInitialCoachIds();
+      const dayLabel = form.day_of_week.charAt(0).toUpperCase() + form.day_of_week.slice(1);
+      const timeLabel = form.start_time;
+
+      for (const coachId of form.selectedCoachIds) {
+        if (!previousCoachIds.includes(coachId) || !cls) {
+          // New coach assignment (or new class)
+          createNotification(
+            coachId,
+            cls ? "class_updated" : "class_assigned",
+            cls ? "Class Updated" : "New Class Assigned",
+            `You've been assigned to ${form.name} on ${dayLabel} ${timeLabel}.`
+          ).catch(() => {});
+        }
+      }
+
+      // If editing and class details changed, notify all assigned coaches
+      if (cls && (cls.name !== form.name || cls.start_time?.slice(0, 5) !== form.start_time || cls.end_time?.slice(0, 5) !== form.end_time || cls.day_of_week !== form.day_of_week)) {
+        for (const coachId of form.selectedCoachIds) {
+          if (previousCoachIds.includes(coachId)) {
+            createNotification(
+              coachId,
+              "class_updated",
+              "Class Updated",
+              `${form.name} on ${dayLabel} has been updated to ${timeLabel} - ${form.end_time}.`
+            ).catch(() => {});
+          }
+        }
+      }
     }
 
     setLoading(false);

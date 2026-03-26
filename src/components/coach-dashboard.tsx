@@ -3,6 +3,7 @@
 import { Class, PtSession } from "@/lib/types/database";
 import { MetricCard } from "./metric-card";
 import { getTodayHoliday } from "@/lib/sg-holidays";
+import { NotificationBell } from "./notification-bell";
 
 function getSgtNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
@@ -63,19 +64,24 @@ export function CoachDashboard({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold">
-          {getSgtGreeting()}, {coachName}
-        </h1>
-        <p className="text-jai-text text-sm mt-1 capitalize">
-          {today} &middot;{" "}
-          {new Date().toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "Asia/Singapore",
-          })}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl md:text-2xl font-bold">
+            {getSgtGreeting()}, {coachName}
+          </h1>
+          <p className="text-jai-text text-sm mt-1 capitalize">
+            {today} &middot;{" "}
+            {new Date().toLocaleDateString("en-GB", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+              timeZone: "Asia/Singapore",
+            })}
+          </p>
+        </div>
+        <div className="md:hidden">
+          <NotificationBell />
+        </div>
       </div>
 
       {/* Metrics */}

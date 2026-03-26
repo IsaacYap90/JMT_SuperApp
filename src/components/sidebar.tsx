@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { User, isAdmin } from "@/lib/types/database";
+import { NotificationBell } from "./notification-bell";
 
 // All admin links for desktop sidebar
 const adminLinks = [
@@ -190,15 +191,18 @@ export function Sidebar({ profile }: { profile: User }) {
                 {profile.role === "master_admin" ? "Admin" : profile.role}
               </p>
             </div>
-            <button
-              onClick={handleLogout}
-              className="text-jai-text hover:text-white transition-colors p-2"
-              title="Sign out"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-            </button>
+            <div className="flex items-center gap-1">
+              {!admin && <NotificationBell />}
+              <button
+                onClick={handleLogout}
+                className="text-jai-text hover:text-white transition-colors p-2"
+                title="Sign out"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </aside>

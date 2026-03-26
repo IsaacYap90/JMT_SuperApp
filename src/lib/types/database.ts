@@ -163,6 +163,18 @@ export interface TrialBooking {
   class?: Class;
 }
 
+export type NotificationType = "class_assigned" | "pt_scheduled" | "class_cancelled" | "class_updated";
+
+export interface Notification {
+  id: string;
+  recipient_id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  created_at: string;
+}
+
 export function isAdmin(role: Role): boolean {
   return role === "admin" || role === "master_admin";
 }
