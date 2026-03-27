@@ -167,16 +167,11 @@ export type NotificationType = "class_assigned" | "pt_scheduled" | "class_cancel
 
 export interface Notification {
   id: string;
-  user_id: string | null;
+  recipient_id: string;
   title: string;
   message: string;
-  notification_type: NotificationType | string;
-  is_read: boolean;
-  action_url: string | null;
-  sender_id: string | null;
-  action_type: string | null;
-  reference_id: string | null;
-  reference_type: string | null;
+  type: NotificationType | string;
+  read: boolean;
   created_at: string;
 }
 

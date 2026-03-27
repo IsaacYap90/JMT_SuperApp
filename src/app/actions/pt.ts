@@ -15,12 +15,12 @@ async function requireAdmin() {
   if (!user) throw new Error("Not authenticated");
   const { data: profile } = await supabase
     .from("users")
-    .select("role")
+    .select("role, full_name")
     .eq("id", user.id)
     .single();
   if (!profile || !isAdmin(profile.role as "admin" | "master_admin" | "coach" | "member"))
     throw new Error("Not authorized");
-  return user.id;
+  return { id: user.id, name: profile.full_name || "Admin" };
 }
 
 // Create a PT client profile (name + phone, role=member)
@@ -167,7 +167,7 @@ export async function updatePtSession(
     duration_minutes: number;
   }
 ) {
-  await requireAdmin();
+  const adminUser = await requireAdmin();
   const admin = createAdminClient();
 
   const { data: session, error } = await admin
@@ -183,9 +183,8 @@ export async function updatePtSession(
 
   // Notify the coach about the update
   if (session) {
-    const memberName = session.member?.full_name || "Client";
     const dt = new Date(payload.scheduled_at);
-    const dateLabel = dt.toLocaleDateString("en-GB", {
+    const dayLabel = dt.toLocaleDateString("en-GB", {
       weekday: "long",
       day: "numeric",
       month: "long",
@@ -201,8 +200,8 @@ export async function updatePtSession(
       payload.coach_id,
       "pt_scheduled",
       "PT Session Updated",
-      `PT session with ${memberName} updated to ${dateLabel} at ${timeLabel}.`
-    ).catch(() => {});
+      `${adminUser.name} updated your PT session on ${dayLabel} at ${timeLabel}.`
+    ).catch((err) => console.error("Failed to create notification:", err));
   }
 
   revalidatePath("/pt");

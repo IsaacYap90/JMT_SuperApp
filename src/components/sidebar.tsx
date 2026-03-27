@@ -144,8 +144,8 @@ export function Sidebar({ profile }: { profile: User }) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex fixed top-0 left-0 h-full w-64 bg-jai-card border-r border-jai-border z-50 flex-col">
-        <div className="p-6 border-b border-jai-border flex items-center gap-3">
+      <aside className="hidden md:flex fixed top-0 left-0 h-screen w-64 bg-jai-card border-r border-jai-border z-50 flex-col overflow-hidden">
+        <div className="p-6 border-b border-jai-border flex items-center gap-3 flex-shrink-0">
           <Image
             src="/logo.jpg"
             alt="JAI Muay Thai"
@@ -163,7 +163,7 @@ export function Sidebar({ profile }: { profile: User }) {
           </div>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {desktopLinks.map((link) => {
             const active = pathname === link.href;
             return (
@@ -183,7 +183,7 @@ export function Sidebar({ profile }: { profile: User }) {
           })}
         </nav>
 
-        <div className="p-4 border-t border-jai-border">
+        <div className="p-4 border-t border-jai-border flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium">{profile.full_name}</p>
