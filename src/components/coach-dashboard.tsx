@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Class, PtSession } from "@/lib/types/database";
 import { MetricCard } from "./metric-card";
 import { getTodayHoliday } from "@/lib/sg-holidays";
 import { NotificationBell } from "./notification-bell";
+import { coachUpdatePtStatus } from "@/app/actions/pt";
 
 function getSgtNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
@@ -198,42 +201,118 @@ export function CoachDashboard({
 
       {/* Next Week PT */}
       {nextWeekPtSessions.length > 0 && (
-        <section>
-          <h2 className="text-base font-semibold mb-3">Next Week PT ({nextWeekPtSessions.length})</h2>
-          <div className="space-y-2">
-            {nextWeekPtSessions.map((s) => {
-              const dt = new Date(s.scheduled_at);
-              const dayLabel = dt.toLocaleDateString("en-GB", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-                timeZone: "Asia/Singapore",
-              });
-              const timeLabel = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
-              return (
-                <div
-                  key={s.id}
-                  className="bg-jai-card border border-jai-border rounded-xl p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium text-sm">
-                        PT — {s.member?.full_name || "Client"}
-                      </p>
-                      <p className="text-jai-text text-sm">
-                        {dayLabel} · {timeLabel} · {s.duration_minutes || 60}min
-                      </p>
-                    </div>
-                    <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                      PT
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
+        <NextWeekPtSection sessions={nextWeekPtSessions} />
       )}
     </div>
+  );
+}
+
+function NextWeekPtSection({ sessions: initialSessions }: { sessions: PtSession[] }) {
+  const [sessions, setSessions] = useState(initialSessions);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const router = useRouter();
+
+  const handleStatus = async (sessionId: string, status: "completed" | "cancelled") => {
+    setUpdatingId(sessionId);
+    try {
+      await coachUpdatePtStatus(sessionId, status);
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, status } : s)));
+      router.refresh();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update");
+    }
+    setUpdatingId(null);
+  };
+
+  const scheduledSessions = sessions.filter((s) => s.status === "scheduled" || s.status === "confirmed");
+  const resolvedSessions = sessions.filter((s) => s.status === "completed" || s.status === "cancelled");
+
+  return (
+    <section>
+      <h2 className="text-base font-semibold mb-3">Next Week PT ({scheduledSessions.length})</h2>
+      <div className="space-y-2">
+        {scheduledSessions.map((s) => {
+          const dt = new Date(s.scheduled_at);
+          const dayLabel = dt.toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            timeZone: "Asia/Singapore",
+          });
+          const timeLabel = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
+          const isUpdating = updatingId === s.id;
+          return (
+            <div
+              key={s.id}
+              className="bg-jai-card border border-jai-border rounded-xl p-4"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">
+                    PT — {s.member?.full_name || "Client"}
+                  </p>
+                  <p className="text-jai-text text-sm">
+                    {dayLabel} · {timeLabel} · {s.duration_minutes || 60}min
+                  </p>
+                </div>
+                <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                  PT
+                </span>
+              </div>
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => handleStatus(s.id, "completed")}
+                  disabled={isUpdating}
+                  className="flex-1 py-1.5 text-xs font-medium rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 disabled:opacity-50 transition-colors"
+                >
+                  {isUpdating ? "..." : "Completed"}
+                </button>
+                <button
+                  onClick={() => handleStatus(s.id, "cancelled")}
+                  disabled={isUpdating}
+                  className="flex-1 py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                >
+                  {isUpdating ? "..." : "Cancelled"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+        {resolvedSessions.map((s) => {
+          const dt = new Date(s.scheduled_at);
+          const dayLabel = dt.toLocaleDateString("en-GB", {
+            weekday: "short",
+            day: "numeric",
+            month: "short",
+            timeZone: "Asia/Singapore",
+          });
+          const timeLabel = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
+          return (
+            <div
+              key={s.id}
+              className="bg-jai-card border border-jai-border rounded-xl p-4 opacity-50"
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-sm">
+                    PT — {s.member?.full_name || "Client"}
+                  </p>
+                  <p className="text-jai-text text-sm">
+                    {dayLabel} · {timeLabel} · {s.duration_minutes || 60}min
+                  </p>
+                </div>
+                <span className={`text-[10px] px-2 py-1 rounded-full ${
+                  s.status === "completed"
+                    ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                    : "bg-red-500/10 text-red-400 border border-red-500/20"
+                }`}>
+                  {s.status === "completed" ? "Done" : "Cancelled"}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }

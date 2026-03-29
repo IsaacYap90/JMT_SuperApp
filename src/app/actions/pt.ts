@@ -475,3 +475,86 @@ export async function autoExpirePackages() {
 
   revalidatePath("/pt");
 }
+
+// Coach-facing: mark own PT session as completed or cancelled
+export async function coachUpdatePtStatus(
+  sessionId: string,
+  newStatus: "completed" | "cancelled"
+) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("full_name")
+    .eq("id", user.id)
+    .single();
+
+  const coachName = profile?.full_name || "Coach";
+  const admin = createAdminClient();
+
+  // Verify the session belongs to this coach
+  const { data: session } = await admin
+    .from("pt_sessions")
+    .select("id, coach_id, scheduled_at, duration_minutes, package_id, status, member:users!pt_sessions_member_id_fkey(full_name)")
+    .eq("id", sessionId)
+    .eq("coach_id", user.id)
+    .single();
+
+  if (!session) throw new Error("Session not found or not assigned to you");
+
+  // Update session status
+  const { error } = await admin
+    .from("pt_sessions")
+    .update({ status: newStatus })
+    .eq("id", sessionId);
+
+  if (error) throw new Error(error.message);
+
+  // If marking as completed, increment sessions_used on the package
+  if (newStatus === "completed" && session.package_id && session.status !== "completed") {
+    const { data: pkg } = await admin
+      .from("pt_packages")
+      .select("sessions_used, total_sessions")
+      .eq("id", session.package_id)
+      .single();
+
+    if (pkg) {
+      const newUsed = pkg.sessions_used + 1;
+      const pkgStatus = newUsed >= pkg.total_sessions ? "completed" : "active";
+      await admin
+        .from("pt_packages")
+        .update({ sessions_used: newUsed, status: pkgStatus })
+        .eq("id", session.package_id);
+    }
+  }
+
+  // Notify all admins
+  const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
+  const dt = new Date(session.scheduled_at);
+  const dateTime = `${formatSgtDate(dt)} at ${formatSgtTime(dt)}`;
+  const statusLabel = newStatus === "completed" ? "completed" : "cancelled";
+
+  const { data: admins } = await admin
+    .from("users")
+    .select("id")
+    .in("role", ["admin", "master_admin"]);
+
+  if (admins) {
+    for (const a of admins) {
+      createNotification(
+        a.id,
+        newStatus === "completed" ? "pt_scheduled" : "class_cancelled",
+        `PT Session ${newStatus === "completed" ? "Completed" : "Cancelled"}`,
+        `${coachName} marked PT session with ${memberName} on ${dateTime} as ${statusLabel}.`
+      ).catch((err) => console.error("Failed to notify admin:", err));
+    }
+  }
+
+  revalidatePath("/pt");
+  revalidatePath("/");
+  revalidatePath("/schedule");
+}
