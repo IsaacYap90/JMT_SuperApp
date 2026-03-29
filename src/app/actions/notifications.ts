@@ -12,11 +12,11 @@ export async function createNotification(
 ) {
   const admin = createAdminClient();
   const { error } = await admin.from("notifications").insert({
-    recipient_id: recipientId,
-    type: notificationType,
+    user_id: recipientId,
+    notification_type: notificationType,
     title,
     message,
-    read: false,
+    is_read: false,
   });
   if (error) {
     console.error("createNotification error:", error);
@@ -35,7 +35,7 @@ export async function getMyNotifications(limit = 30) {
   const { data } = await supabase
     .from("notifications")
     .select("*")
-    .eq("recipient_id", user.id)
+    .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(limit);
 
@@ -53,8 +53,8 @@ export async function getUnreadCount() {
   const { count } = await supabase
     .from("notifications")
     .select("*", { count: "exact", head: true })
-    .eq("recipient_id", user.id)
-    .eq("read", false);
+    .eq("user_id", user.id)
+    .eq("is_read", false);
 
   return count || 0;
 }
@@ -64,7 +64,7 @@ export async function markNotificationRead(notificationId: string) {
   const supabase = createClient();
   await supabase
     .from("notifications")
-    .update({ read: true })
+    .update({ is_read: true })
     .eq("id", notificationId);
 }
 
@@ -78,7 +78,7 @@ export async function markAllNotificationsRead() {
 
   await supabase
     .from("notifications")
-    .update({ read: true })
-    .eq("recipient_id", user.id)
-    .eq("read", false);
+    .update({ is_read: true })
+    .eq("user_id", user.id)
+    .eq("is_read", false);
 }

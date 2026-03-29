@@ -85,7 +85,7 @@ export function NotificationBell() {
   };
 
   const handleClickNotification = async (n: Notification) => {
-    if (!n.read) {
+    if (!n.is_read) {
       await markNotificationRead(n.id);
       setNotifications((prev) =>
         prev.map((item) => (item.id === n.id ? { ...item, read: true } : item))
@@ -151,17 +151,17 @@ export function NotificationBell() {
                   key={n.id}
                   onClick={() => handleClickNotification(n)}
                   className={`w-full text-left px-4 py-3 border-b border-jai-border last:border-b-0 transition-colors hover:bg-white/5 ${
-                    !n.read ? "bg-jai-blue/5" : ""
+                    !n.is_read ? "bg-jai-blue/5" : ""
                   }`}
                 >
                   <div className="flex gap-2.5">
-                    <span className="text-base mt-0.5 flex-shrink-0">{getTypeIcon(n.type)}</span>
+                    <span className="text-base mt-0.5 flex-shrink-0">{getTypeIcon(n.notification_type)}</span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className={`text-sm font-medium truncate ${!n.read ? "text-white" : "text-jai-text"}`}>
+                        <p className={`text-sm font-medium truncate ${!n.is_read ? "text-white" : "text-jai-text"}`}>
                           {n.title}
                         </p>
-                        {!n.read && (
+                        {!n.is_read && (
                           <span className="w-2 h-2 bg-jai-blue rounded-full flex-shrink-0" />
                         )}
                       </div>
