@@ -149,7 +149,7 @@ export async function createPtSession(payload: {
       "pt_scheduled",
       "PT Session Scheduled",
       `PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
-    ).catch(() => {});
+    ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 
   revalidatePath("/pt");
@@ -256,7 +256,7 @@ export async function updateSessionStatus(
       "class_cancelled",
       "PT Session Cancelled",
       `${adminUser.name} cancelled your PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
-    ).catch(() => {});
+    ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 
   // If marking as completed, increment sessions_used on the package
@@ -318,7 +318,7 @@ export async function deletePtSession(sessionId: string) {
       "class_cancelled",
       "PT Session Removed",
       `${adminUser.name} removed your PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
-    ).catch(() => {});
+    ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 
   revalidatePath("/pt");
