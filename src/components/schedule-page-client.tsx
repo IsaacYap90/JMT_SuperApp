@@ -5,7 +5,7 @@ import { Class, PtSession, User } from "@/lib/types/database";
 import { ClassModal } from "./class-modal";
 import { createClient } from "@/lib/supabase/client";
 import { isPublicHoliday } from "@/lib/sg-holidays";
-import { updatePtSession } from "@/app/actions/pt";
+import { updatePtSession, getNextWeekPtCount, copyPtSessionsToNextWeek } from "@/app/actions/pt";
 
 const CLASS_SELECT =
   "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
@@ -61,6 +61,7 @@ export function SchedulePageClient({
   const [editTime, setEditTime] = useState("");
   const [editDuration, setEditDuration] = useState(60);
   const [saving, setSaving] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -129,6 +130,32 @@ export function SchedulePageClient({
     }
   }
 
+  async function handleCopyToNextWeek() {
+    setCopying(true);
+    try {
+      const existingCount = await getNextWeekPtCount();
+      if (existingCount > 0) {
+        const proceed = confirm(
+          `Next week already has ${existingCount} PT session${existingCount > 1 ? "s" : ""}. Copy anyway?`
+        );
+        if (!proceed) {
+          setCopying(false);
+          return;
+        }
+      }
+      const { copied } = await copyPtSessionsToNextWeek();
+      if (copied === 0) {
+        alert("No PT sessions found in the current week to copy.");
+      } else {
+        alert(`Copied ${copied} PT session${copied > 1 ? "s" : ""} to next week.`);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to copy sessions");
+    } finally {
+      setCopying(false);
+    }
+  }
+
   // Check if selected date is past or today
   const sgtNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
   const sgtTodayStr = `${sgtNow.getFullYear()}-${String(sgtNow.getMonth() + 1).padStart(2, "0")}-${String(sgtNow.getDate()).padStart(2, "0")}`;
@@ -174,12 +201,21 @@ export function SchedulePageClient({
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">Schedule</h1>
         {isAdmin && (
-          <button
-            onClick={() => setShowAddClass(true)}
-            className="px-4 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
-          >
-            + Add Class
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCopyToNextWeek}
+              disabled={copying}
+              className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50"
+            >
+              {copying ? "Copying..." : "Copy PT → Next Week"}
+            </button>
+            <button
+              onClick={() => setShowAddClass(true)}
+              className="px-4 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
+            >
+              + Add Class
+            </button>
+          </div>
         )}
       </div>
 

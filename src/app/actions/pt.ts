@@ -326,6 +326,87 @@ export async function deletePtSession(sessionId: string) {
   revalidatePath("/schedule");
 }
 
+// Check if next week has PT sessions already
+export async function getNextWeekPtCount(): Promise<number> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  // Calculate next week Mon-Sun in SGT
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+  const daysUntilNextMon = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
+  const nextMon = new Date(now);
+  nextMon.setDate(now.getDate() + daysUntilNextMon);
+  nextMon.setHours(0, 0, 0, 0);
+  const nextSun = new Date(nextMon);
+  nextSun.setDate(nextMon.getDate() + 6);
+  nextSun.setHours(23, 59, 59, 999);
+
+  const startISO = new Date(nextMon.getTime() - 8 * 60 * 60 * 1000).toISOString(); // SGT to UTC
+  const endISO = new Date(nextSun.getTime() - 8 * 60 * 60 * 1000).toISOString();
+
+  const { count } = await admin
+    .from("pt_sessions")
+    .select("*", { count: "exact", head: true })
+    .gte("scheduled_at", startISO)
+    .lte("scheduled_at", endISO);
+
+  return count || 0;
+}
+
+// Copy PT sessions from current week to next week (+7 days)
+export async function copyPtSessionsToNextWeek(): Promise<{ copied: number }> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  // Calculate current week Mon-Sun in SGT
+  const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon...
+  const daysSinceMon = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  const thisMon = new Date(now);
+  thisMon.setDate(now.getDate() - daysSinceMon);
+  thisMon.setHours(0, 0, 0, 0);
+  const thisSun = new Date(thisMon);
+  thisSun.setDate(thisMon.getDate() + 6);
+  thisSun.setHours(23, 59, 59, 999);
+
+  const startISO = new Date(thisMon.getTime() - 8 * 60 * 60 * 1000).toISOString();
+  const endISO = new Date(thisSun.getTime() - 8 * 60 * 60 * 1000).toISOString();
+
+  // Fetch this week's sessions
+  const { data: sessions, error } = await admin
+    .from("pt_sessions")
+    .select("coach_id, member_id, scheduled_at, duration_minutes, package_id")
+    .gte("scheduled_at", startISO)
+    .lte("scheduled_at", endISO)
+    .neq("status", "cancelled");
+
+  if (error) throw new Error(error.message);
+  if (!sessions || sessions.length === 0) return { copied: 0 };
+
+  // Create new sessions shifted by +7 days
+  const newSessions = sessions.map((s) => {
+    const dt = new Date(s.scheduled_at);
+    dt.setDate(dt.getDate() + 7);
+    return {
+      coach_id: s.coach_id,
+      member_id: s.member_id,
+      scheduled_at: dt.toISOString(),
+      duration_minutes: s.duration_minutes,
+      package_id: s.package_id,
+      status: "scheduled",
+    };
+  });
+
+  const { error: insertErr } = await admin.from("pt_sessions").insert(newSessions);
+  if (insertErr) throw new Error(insertErr.message);
+
+  revalidatePath("/pt");
+  revalidatePath("/schedule");
+  revalidatePath("/");
+  return { copied: newSessions.length };
+}
+
 // Auto-expire packages (0 sessions left or past expiry)
 export async function autoExpirePackages() {
   await requireAdmin();

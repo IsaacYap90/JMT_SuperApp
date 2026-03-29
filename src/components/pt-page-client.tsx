@@ -12,6 +12,8 @@ import {
   updateSessionStatus,
   deletePtSession,
   autoExpirePackages,
+  getNextWeekPtCount,
+  copyPtSessionsToNextWeek,
 } from "@/app/actions/pt";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 
@@ -93,6 +95,34 @@ export function PtPageClient({
 
   // Tab state for admin
   const [tab, setTab] = useState<"packages" | "sessions">("sessions");
+  const [copying, setCopying] = useState(false);
+
+  async function handleCopyToNextWeek() {
+    setCopying(true);
+    try {
+      const existingCount = await getNextWeekPtCount();
+      if (existingCount > 0) {
+        const proceed = confirm(
+          `Next week already has ${existingCount} PT session${existingCount > 1 ? "s" : ""}. Copy anyway?`
+        );
+        if (!proceed) {
+          setCopying(false);
+          return;
+        }
+      }
+      const { copied } = await copyPtSessionsToNextWeek();
+      if (copied === 0) {
+        alert("No PT sessions found in the current week to copy.");
+      } else {
+        alert(`Copied ${copied} PT session${copied > 1 ? "s" : ""} to next week.`);
+        router.refresh();
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to copy sessions");
+    } finally {
+      setCopying(false);
+    }
+  }
 
   // Coach filter for sessions
   const [filterCoachId, setFilterCoachId] = useState("");
@@ -399,7 +429,16 @@ export function PtPageClient({
   // Admin view with tabs
   return (
     <div className="space-y-6">
-      <h1 className="text-xl md:text-2xl font-bold">PT Management</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl md:text-2xl font-bold">PT Management</h1>
+        <button
+          onClick={handleCopyToNextWeek}
+          disabled={copying}
+          className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50"
+        >
+          {copying ? "Copying..." : "Copy PT → Next Week"}
+        </button>
+      </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-jai-card border border-jai-border rounded-lg p-1">
