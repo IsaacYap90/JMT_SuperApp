@@ -40,6 +40,7 @@ export function CoachDashboard({
   todayPtSessions,
   totalWeekClasses,
   weekPtSessions,
+  nextWeekPtSessions,
   coachName,
   today,
 }: {
@@ -47,6 +48,7 @@ export function CoachDashboard({
   todayPtSessions: PtSession[];
   totalWeekClasses: number;
   weekPtSessions: number;
+  nextWeekPtSessions: PtSession[];
   coachName: string;
   today: string;
 }) {
@@ -193,6 +195,49 @@ export function CoachDashboard({
           </div>
         </div>
       </section>
+
+      {/* Next Week PT */}
+      {nextWeekPtSessions.length > 0 && (
+        <section>
+          <h2 className="text-base font-semibold mb-3">Next Week PT ({nextWeekPtSessions.length})</h2>
+          <div className="space-y-2">
+            {nextWeekPtSessions.map((s) => {
+              const dt = new Date(s.scheduled_at);
+              const dayLabel = dt.toLocaleDateString("en-GB", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+                timeZone: "Asia/Singapore",
+              });
+              const hours = parseInt(dt.toLocaleTimeString("en-GB", { hour: "numeric", hour12: false, timeZone: "Asia/Singapore" }));
+              const mins = dt.toLocaleTimeString("en-GB", { minute: "2-digit", timeZone: "Asia/Singapore" });
+              const period = hours >= 12 ? "PM" : "AM";
+              const h12 = hours % 12 || 12;
+              const timeLabel = `${h12}:${mins} ${period}`;
+              return (
+                <div
+                  key={s.id}
+                  className="bg-jai-card border border-jai-border rounded-xl p-4"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm">
+                        PT — {s.member?.full_name || "Client"}
+                      </p>
+                      <p className="text-jai-text text-sm">
+                        {dayLabel} · {timeLabel} · {s.duration_minutes || 60}min
+                      </p>
+                    </div>
+                    <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                      PT
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
     </div>
   );
 }

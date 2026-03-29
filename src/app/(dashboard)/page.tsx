@@ -102,8 +102,11 @@ export default async function HomePage() {
   const sunday = new Date(monday);
   sunday.setDate(monday.getDate() + 7);
   const sundayDate = sunday.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const nextSunday = new Date(monday);
+  nextSunday.setDate(monday.getDate() + 14);
+  const nextSundayDate = nextSunday.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
 
-  const [classesRes, classCoachesRes, todayPtRes, weekPtRes] = await Promise.all([
+  const [classesRes, classCoachesRes, todayPtRes, weekPtRes, nextWeekPtRes] = await Promise.all([
     supabase
       .from("classes")
       .select(CLASS_SELECT)
@@ -128,6 +131,14 @@ export default async function HomePage() {
       .gte("scheduled_at", mondayDate)
       .lt("scheduled_at", sundayDate)
       .in("status", ["scheduled", "confirmed", "completed"]),
+    supabase
+      .from("pt_sessions")
+      .select("*, member:users!pt_sessions_member_id_fkey(*)")
+      .eq("coach_id", user.id)
+      .gte("scheduled_at", sundayDate)
+      .lt("scheduled_at", nextSundayDate)
+      .in("status", ["scheduled", "confirmed"])
+      .order("scheduled_at"),
   ]);
 
   const allClasses = (classesRes.data || []) as unknown as Class[];
@@ -145,6 +156,7 @@ export default async function HomePage() {
   const todayClasses = myClasses.filter((c) => c.day_of_week === today);
   const todayPtSessions = (todayPtRes.data || []) as unknown as PtSession[];
   const weekPtCount = (weekPtRes.data || []).length;
+  const nextWeekPtSessions = (nextWeekPtRes.data || []) as unknown as PtSession[];
 
   return (
     <CoachDashboard
@@ -152,6 +164,7 @@ export default async function HomePage() {
       todayPtSessions={todayPtSessions}
       totalWeekClasses={myClasses.length}
       weekPtSessions={weekPtCount}
+      nextWeekPtSessions={nextWeekPtSessions}
       coachName={profile.full_name}
       today={today}
     />

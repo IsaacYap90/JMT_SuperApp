@@ -7,6 +7,21 @@ import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { createNotification } from "./notifications";
 
+function formatSgtDate(date: Date): string {
+  const weekday = date.toLocaleDateString("en-GB", { weekday: "long", timeZone: "Asia/Singapore" });
+  const day = date.toLocaleDateString("en-GB", { day: "numeric", timeZone: "Asia/Singapore" });
+  const month = date.toLocaleDateString("en-GB", { month: "long", timeZone: "Asia/Singapore" });
+  return `${weekday}, ${day} ${month}`;
+}
+
+function formatSgtTime(date: Date): string {
+  const hours = parseInt(date.toLocaleTimeString("en-GB", { hour: "numeric", hour12: false, timeZone: "Asia/Singapore" }));
+  const minutes = date.toLocaleTimeString("en-GB", { minute: "2-digit", timeZone: "Asia/Singapore" });
+  const period = hours >= 12 ? "PM" : "AM";
+  const h12 = hours % 12 || 12;
+  return `${h12}:${minutes} ${period}`;
+}
+
 async function requireAdmin() {
   const supabase = createClient();
   const {
@@ -132,23 +147,11 @@ export async function createPtSession(payload: {
   if (session) {
     const memberName = session.member?.full_name || "Client";
     const dt = new Date(payload.scheduled_at);
-    const dateLabel = dt.toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      timeZone: "Asia/Singapore",
-    });
-    const timeLabel = dt.toLocaleTimeString("en-SG", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Singapore",
-    });
     createNotification(
       payload.coach_id,
       "pt_scheduled",
       "PT Session Scheduled",
-      `PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
+      `PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 
@@ -184,23 +187,11 @@ export async function updatePtSession(
   // Notify the coach about the update
   if (session) {
     const dt = new Date(payload.scheduled_at);
-    const dayLabel = dt.toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      timeZone: "Asia/Singapore",
-    });
-    const timeLabel = dt.toLocaleTimeString("en-SG", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Singapore",
-    });
     createNotification(
       payload.coach_id,
       "pt_scheduled",
       "PT Session Updated",
-      `${adminUser.name} updated your PT session on ${dayLabel} at ${timeLabel}.`
+      `${adminUser.name} updated your PT session on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create notification:", err));
   }
 
@@ -239,23 +230,11 @@ export async function updateSessionStatus(
   if (newStatus === "cancelled" && session.coach_id) {
     const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
     const dt = new Date(session.scheduled_at);
-    const dateLabel = dt.toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      timeZone: "Asia/Singapore",
-    });
-    const timeLabel = dt.toLocaleTimeString("en-SG", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Singapore",
-    });
     createNotification(
       session.coach_id,
       "class_cancelled",
       "PT Session Cancelled",
-      `${adminUser.name} cancelled your PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
+      `${adminUser.name} cancelled your PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 
@@ -301,23 +280,11 @@ export async function deletePtSession(sessionId: string) {
   if (session?.coach_id) {
     const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
     const dt = new Date(session.scheduled_at);
-    const dateLabel = dt.toLocaleDateString("en-GB", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-      timeZone: "Asia/Singapore",
-    });
-    const timeLabel = dt.toLocaleTimeString("en-SG", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: true,
-      timeZone: "Asia/Singapore",
-    });
     createNotification(
       session.coach_id,
       "class_cancelled",
       "PT Session Removed",
-      `${adminUser.name} removed your PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
+      `${adminUser.name} removed your PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 

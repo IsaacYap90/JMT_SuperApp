@@ -173,7 +173,13 @@ export function ClassModal({
       // Notify coaches about changes
       const previousCoachIds = getInitialCoachIds();
       const dayLabel = form.day_of_week.charAt(0).toUpperCase() + form.day_of_week.slice(1);
-      const timeLabel = form.start_time;
+      const formatTime12 = (t: string) => {
+        const [h, m] = t.split(":").map(Number);
+        const period = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 || 12;
+        return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+      };
+      const timeLabel = formatTime12(form.start_time);
 
       for (const coachId of form.selectedCoachIds) {
         if (!previousCoachIds.includes(coachId) || !cls) {
@@ -183,7 +189,7 @@ export function ClassModal({
             cls ? "class_updated" : "class_assigned",
             cls ? "Class Updated" : "New Class Assigned",
             `You've been assigned to ${form.name} on ${dayLabel} ${timeLabel}.`
-          ).catch(() => {});
+          ).catch((err) => console.error("Failed to create class notification:", err));
         }
       }
 
@@ -196,7 +202,7 @@ export function ClassModal({
               "class_cancelled",
               "Removed from Class",
               `You've been removed from ${form.name} on ${dayLabel} ${timeLabel}.`
-            ).catch(() => {});
+            ).catch((err) => console.error("Failed to create class notification:", err));
           }
         }
       }
@@ -209,8 +215,8 @@ export function ClassModal({
               coachId,
               "class_updated",
               "Class Updated",
-              `${form.name} on ${dayLabel} has been updated to ${timeLabel} - ${form.end_time}.`
-            ).catch(() => {});
+              `${form.name} on ${dayLabel} has been updated to ${timeLabel} - ${formatTime12(form.end_time)}.`
+            ).catch((err) => console.error("Failed to create class notification:", err));
           }
         }
       }
