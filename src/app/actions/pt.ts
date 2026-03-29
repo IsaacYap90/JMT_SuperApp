@@ -15,11 +15,7 @@ function formatSgtDate(date: Date): string {
 }
 
 function formatSgtTime(date: Date): string {
-  const hours = parseInt(date.toLocaleTimeString("en-GB", { hour: "numeric", hour12: false, timeZone: "Asia/Singapore" }));
-  const minutes = date.toLocaleTimeString("en-GB", { minute: "2-digit", timeZone: "Asia/Singapore" });
-  const period = hours >= 12 ? "PM" : "AM";
-  const h12 = hours % 12 || 12;
-  return `${h12}:${minutes} ${period}`;
+  return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
 }
 
 async function requireAdmin() {

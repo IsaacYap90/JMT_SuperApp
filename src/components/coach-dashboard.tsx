@@ -209,11 +209,7 @@ export function CoachDashboard({
                 month: "short",
                 timeZone: "Asia/Singapore",
               });
-              const hours = parseInt(dt.toLocaleTimeString("en-GB", { hour: "numeric", hour12: false, timeZone: "Asia/Singapore" }));
-              const mins = dt.toLocaleTimeString("en-GB", { minute: "2-digit", timeZone: "Asia/Singapore" });
-              const period = hours >= 12 ? "PM" : "AM";
-              const h12 = hours % 12 || 12;
-              const timeLabel = `${h12}:${mins} ${period}`;
+              const timeLabel = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
               return (
                 <div
                   key={s.id}
