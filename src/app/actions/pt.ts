@@ -215,13 +215,13 @@ export async function updateSessionStatus(
   sessionId: string,
   newStatus: "completed" | "cancelled" | "no_show"
 ) {
-  await requireAdmin();
+  const adminUser = await requireAdmin();
   const admin = createAdminClient();
 
-  // Get the session to find its package
+  // Get the session to find its package and coach info
   const { data: session } = await admin
     .from("pt_sessions")
-    .select("package_id, status")
+    .select("package_id, status, coach_id, scheduled_at, duration_minutes, member:users!pt_sessions_member_id_fkey(full_name)")
     .eq("id", sessionId)
     .single();
 
@@ -234,6 +234,30 @@ export async function updateSessionStatus(
     .eq("id", sessionId);
 
   if (error) throw new Error(error.message);
+
+  // Notify coach about cancellation
+  if (newStatus === "cancelled" && session.coach_id) {
+    const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
+    const dt = new Date(session.scheduled_at);
+    const dateLabel = dt.toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      timeZone: "Asia/Singapore",
+    });
+    const timeLabel = dt.toLocaleTimeString("en-SG", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Singapore",
+    });
+    createNotification(
+      session.coach_id,
+      "class_cancelled",
+      "PT Session Cancelled",
+      `${adminUser.name} cancelled your PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
+    ).catch(() => {});
+  }
 
   // If marking as completed, increment sessions_used on the package
   if (newStatus === "completed" && session.package_id && session.status !== "completed") {
@@ -260,11 +284,43 @@ export async function updateSessionStatus(
 
 // Delete PT session
 export async function deletePtSession(sessionId: string) {
-  await requireAdmin();
+  const adminUser = await requireAdmin();
   const admin = createAdminClient();
+
+  // Get session details before deleting for notification
+  const { data: session } = await admin
+    .from("pt_sessions")
+    .select("coach_id, scheduled_at, member:users!pt_sessions_member_id_fkey(full_name)")
+    .eq("id", sessionId)
+    .single();
 
   const { error } = await admin.from("pt_sessions").delete().eq("id", sessionId);
   if (error) throw new Error(error.message);
+
+  // Notify coach about deletion
+  if (session?.coach_id) {
+    const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
+    const dt = new Date(session.scheduled_at);
+    const dateLabel = dt.toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      timeZone: "Asia/Singapore",
+    });
+    const timeLabel = dt.toLocaleTimeString("en-SG", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+      timeZone: "Asia/Singapore",
+    });
+    createNotification(
+      session.coach_id,
+      "class_cancelled",
+      "PT Session Removed",
+      `${adminUser.name} removed your PT session with ${memberName} on ${dateLabel} at ${timeLabel}.`
+    ).catch(() => {});
+  }
+
   revalidatePath("/pt");
   revalidatePath("/");
   revalidatePath("/schedule");

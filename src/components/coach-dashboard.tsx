@@ -79,7 +79,7 @@ export function CoachDashboard({
             })}
           </p>
         </div>
-        <div className="md:hidden">
+        <div className="lg:hidden">
           <NotificationBell />
         </div>
       </div>

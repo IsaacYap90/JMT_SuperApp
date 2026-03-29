@@ -170,7 +170,7 @@ export function ClassModal({
       }
       console.log("[ClassModal] All saves complete");
 
-      // Notify newly assigned coaches
+      // Notify coaches about changes
       const previousCoachIds = getInitialCoachIds();
       const dayLabel = form.day_of_week.charAt(0).toUpperCase() + form.day_of_week.slice(1);
       const timeLabel = form.start_time;
@@ -187,7 +187,21 @@ export function ClassModal({
         }
       }
 
-      // If editing and class details changed, notify all assigned coaches
+      // Notify coaches who were removed from the class
+      if (cls) {
+        for (const coachId of previousCoachIds) {
+          if (!form.selectedCoachIds.includes(coachId)) {
+            createNotification(
+              coachId,
+              "class_cancelled",
+              "Removed from Class",
+              `You've been removed from ${form.name} on ${dayLabel} ${timeLabel}.`
+            ).catch(() => {});
+          }
+        }
+      }
+
+      // If editing and class details changed, notify all remaining assigned coaches
       if (cls && (cls.name !== form.name || cls.start_time?.slice(0, 5) !== form.start_time || cls.end_time?.slice(0, 5) !== form.end_time || cls.day_of_week !== form.day_of_week)) {
         for (const coachId of form.selectedCoachIds) {
           if (previousCoachIds.includes(coachId)) {

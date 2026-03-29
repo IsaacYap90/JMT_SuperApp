@@ -144,7 +144,7 @@ export function Sidebar({ profile }: { profile: User }) {
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex fixed top-0 left-0 h-screen w-64 bg-jai-card border-r border-jai-border z-50 flex-col overflow-hidden">
+      <aside className="hidden lg:flex fixed top-0 left-0 h-screen w-64 bg-jai-card border-r border-jai-border z-50 flex-col overflow-hidden">
         <div className="p-6 border-b border-jai-border flex items-center gap-3 flex-shrink-0">
           <Image
             src="/logo.jpg"
@@ -207,8 +207,8 @@ export function Sidebar({ profile }: { profile: User }) {
         </div>
       </aside>
 
-      {/* Mobile bottom nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 grid pb-safe" style={{ gridTemplateColumns: `repeat(${mobileLinks.length + 1}, 1fr)` }}>
+      {/* Mobile/tablet bottom nav */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 grid pb-safe" style={{ gridTemplateColumns: `repeat(${mobileLinks.length + 1}, 1fr)` }}>
         {mobileLinks.map((link) => {
           const active = pathname === link.href;
           return (
@@ -237,7 +237,7 @@ export function Sidebar({ profile }: { profile: User }) {
 
       {/* Profile sheet overlay */}
       {showProfile && (
-        <div className="md:hidden fixed inset-0 z-[60]">
+        <div className="lg:hidden fixed inset-0 z-[60]">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/50"
