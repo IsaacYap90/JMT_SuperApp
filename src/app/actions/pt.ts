@@ -169,6 +169,13 @@ export async function updatePtSession(
   const adminUser = await requireAdmin();
   const admin = createAdminClient();
 
+  // Get old session to check if coach changed
+  const { data: oldSession } = await admin
+    .from("pt_sessions")
+    .select("coach_id, member:users!pt_sessions_member_id_fkey(full_name)")
+    .eq("id", sessionId)
+    .single();
+
   const { data: session, error } = await admin
     .from("pt_sessions")
     .update(payload)
@@ -180,15 +187,29 @@ export async function updatePtSession(
 
   if (error) throw new Error(error.message);
 
-  // Notify the coach about the update
   if (session) {
+    const memberName = session.member?.full_name || "Client";
     const dt = new Date(payload.scheduled_at);
+    const dateTime = `${formatSgtDate(dt)} at ${formatSgtTime(dt)}`;
+
+    // Notify the new/current coach about the update
     createNotification(
       payload.coach_id,
       "pt_scheduled",
       "PT Session Updated",
-      `${adminUser.name} updated your PT session on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
+      `${adminUser.name} updated your PT session with ${memberName} on ${dateTime}.`
     ).catch((err) => console.error("Failed to create notification:", err));
+
+    // If coach was changed, notify the old coach they've been removed
+    if (oldSession && oldSession.coach_id && oldSession.coach_id !== payload.coach_id) {
+      const oldMemberName = ((oldSession.member as unknown as { full_name: string } | null))?.full_name || "Client";
+      createNotification(
+        oldSession.coach_id,
+        "class_cancelled",
+        "PT Session Reassigned",
+        `${adminUser.name} reassigned your PT session with ${oldMemberName} on ${dateTime} to another coach.`
+      ).catch((err) => console.error("Failed to create notification:", err));
+    }
   }
 
   revalidatePath("/pt");
@@ -222,16 +243,34 @@ export async function updateSessionStatus(
 
   if (error) throw new Error(error.message);
 
-  // Notify coach about cancellation
-  if (newStatus === "cancelled" && session.coach_id) {
+  // Notify coach about status change
+  if (session.coach_id) {
     const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
     const dt = new Date(session.scheduled_at);
-    createNotification(
-      session.coach_id,
-      "class_cancelled",
-      "PT Session Cancelled",
-      `${adminUser.name} cancelled your PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
-    ).catch((err) => console.error("Failed to create PT notification:", err));
+    const dateTime = `${formatSgtDate(dt)} at ${formatSgtTime(dt)}`;
+
+    if (newStatus === "cancelled") {
+      createNotification(
+        session.coach_id,
+        "class_cancelled",
+        "PT Session Cancelled",
+        `${adminUser.name} cancelled your PT session with ${memberName} on ${dateTime}.`
+      ).catch((err) => console.error("Failed to create PT notification:", err));
+    } else if (newStatus === "completed") {
+      createNotification(
+        session.coach_id,
+        "pt_scheduled",
+        "PT Session Completed",
+        `Your PT session with ${memberName} on ${dateTime} has been marked as completed.`
+      ).catch((err) => console.error("Failed to create PT notification:", err));
+    } else if (newStatus === "no_show") {
+      createNotification(
+        session.coach_id,
+        "pt_scheduled",
+        "PT Session No-Show",
+        `Your PT session with ${memberName} on ${dateTime} was marked as no-show.`
+      ).catch((err) => console.error("Failed to create PT notification:", err));
+    }
   }
 
   // If marking as completed, increment sessions_used on the package
@@ -363,6 +402,29 @@ export async function copyPtSessionsToNextWeek(): Promise<{ copied: number }> {
 
   const { error: insertErr } = await admin.from("pt_sessions").insert(newSessions);
   if (insertErr) throw new Error(insertErr.message);
+
+  // Notify each coach about their copied sessions
+  const coachSessionMap = new Map<string, { memberIds: string[]; dates: Date[] }>();
+  for (const ns of newSessions) {
+    const entry = coachSessionMap.get(ns.coach_id) || { memberIds: [], dates: [] };
+    if (!entry.memberIds.includes(ns.member_id)) entry.memberIds.push(ns.member_id);
+    entry.dates.push(new Date(ns.scheduled_at));
+    coachSessionMap.set(ns.coach_id, entry);
+  }
+  for (const [coachId, info] of Array.from(coachSessionMap.entries())) {
+    const count = info.dates.length;
+    const firstDt = info.dates.sort((a: Date, b: Date) => a.getTime() - b.getTime())[0];
+    const lastDt = info.dates[info.dates.length - 1];
+    const range = count === 1
+      ? `on ${formatSgtDate(firstDt)} at ${formatSgtTime(firstDt)}`
+      : `from ${formatSgtDate(firstDt)} to ${formatSgtDate(lastDt)}`;
+    createNotification(
+      coachId,
+      "pt_scheduled",
+      "PT Sessions Copied",
+      `${count} PT session${count > 1 ? "s" : ""} copied to next week ${range}.`
+    ).catch((err) => console.error("Failed to create copy notification:", err));
+  }
 
   revalidatePath("/pt");
   revalidatePath("/schedule");
