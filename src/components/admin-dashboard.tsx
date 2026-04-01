@@ -126,10 +126,10 @@ export function AdminDashboard({
 
       {/* Metrics */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <MetricCard title="Today's Classes" value={classes.length} />
-        <MetricCard title="Today's PT" value={ptSessions.length} />
-        <MetricCard title="Active PT" value={activePtPackages} />
-        <MetricCard title="Pending Leave" value={pendingLeaves} />
+        <MetricCard title="Today's Classes" value={classes.length} href="/schedule" />
+        <MetricCard title="Today's PT" value={ptSessions.length} href="/pt" />
+        <MetricCard title="Active PT" value={activePtPackages} href="/pt" />
+        <MetricCard title="Pending Leave" value={pendingLeaves} href="/leave" highlight={pendingLeaves > 0} />
       </div>
 
       {/* Today's Schedule */}

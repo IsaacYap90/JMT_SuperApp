@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import {
   createPtClient,
+  updatePtClient,
   createPtPackage,
   updatePtPackage,
   createPtSession,
@@ -94,7 +95,7 @@ export function PtPageClient({
   const admin = isAdmin(profile.role);
 
   // Tab state for admin
-  const [tab, setTab] = useState<"packages" | "sessions">("sessions");
+  const [tab, setTab] = useState<"packages" | "sessions" | "clients">("sessions");
   const [copying, setCopying] = useState(false);
 
   async function handleCopyToNextWeek() {
@@ -458,6 +459,14 @@ export function PtPageClient({
         >
           Packages
         </button>
+        <button
+          onClick={() => setTab("clients")}
+          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+            tab === "clients" ? "bg-jai-blue text-white" : "text-jai-text hover:text-white"
+          }`}
+        >
+          Clients
+        </button>
       </div>
 
       {/* SESSIONS TAB */}
@@ -736,9 +745,9 @@ export function PtPageClient({
                         </span>
                       </div>
                       {s.member?.phone && (
-                        <p className="text-jai-text text-xs mt-0.5">
-                          +65{s.member.phone.replace(/\D/g, "").replace(/^65/, "")}
-                        </p>
+                        <a href={`tel:${s.member.phone}`} className="text-jai-blue text-xs mt-0.5 inline-block hover:underline">
+                          {s.member.phone}
+                        </a>
                       )}
                       <p className="text-jai-text text-sm mt-0.5">
                         {dateStr} · {timeStr} · {s.duration_minutes || 60}min
@@ -1217,6 +1226,162 @@ export function PtPageClient({
           </div>
         </div>
       )}
+
+      {/* CLIENTS TAB */}
+      {tab === "clients" && (
+        <ClientsTab members={members} ptPackages={ptPackages} onAddClient={() => { setShowNewClient(true); setTab("packages"); }} />
+      )}
+    </div>
+  );
+}
+
+function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptPackages: PtPackage[]; onAddClient: () => void }) {
+  const router = useRouter();
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+
+  function openEdit(m: User) {
+    setEditingId(m.id);
+    setEditName(m.full_name);
+    setEditPhone(m.phone || "");
+  }
+
+  async function handleSave(id: string) {
+    if (!editName.trim()) return;
+    setSaving(true);
+    try {
+      await updatePtClient(id, editName.trim(), editPhone.trim());
+      setEditingId(null);
+      router.refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to update");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const filtered = search
+    ? members.filter((m) => m.full_name.toLowerCase().includes(search.toLowerCase()) || m.phone?.includes(search))
+    : members;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-jai-text">{members.length} client{members.length !== 1 ? "s" : ""}</p>
+        <button
+          onClick={onAddClient}
+          className="px-3 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
+        >
+          + Add Client
+        </button>
+      </div>
+      <input
+        type="text"
+        placeholder="Search by name or phone..."
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="w-full px-3 py-2 bg-jai-bg border border-jai-border rounded-lg text-sm focus:border-jai-blue focus:outline-none"
+      />
+      <div className="space-y-2">
+        {filtered.map((m) => {
+          const memberPkgs = ptPackages.filter((p) => p.user_id === m.id);
+          const activePkg = memberPkgs.find((p) => p.status === "active");
+          const isEditing = editingId === m.id;
+          return (
+            <div
+              key={m.id}
+              className={`bg-jai-card border rounded-xl p-4 transition-colors ${
+                isEditing ? "border-jai-blue/40" : "border-jai-border hover:border-jai-blue/30 cursor-pointer"
+              }`}
+              onClick={() => !isEditing && openEdit(m)}
+            >
+              {isEditing ? (
+                <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <div>
+                    <label className="text-xs text-jai-text mb-1 block">Name</label>
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm focus:border-jai-blue focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-jai-text mb-1 block">Phone</label>
+                    <input
+                      type="tel"
+                      value={editPhone}
+                      onChange={(e) => setEditPhone(e.target.value)}
+                      placeholder="e.g. 91234567"
+                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm focus:border-jai-blue focus:outline-none"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleSave(m.id)}
+                      disabled={saving}
+                      className="flex-1 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors disabled:opacity-50"
+                    >
+                      {saving ? "Saving..." : "Save"}
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-sm">{m.full_name}</p>
+                    {m.phone && (
+                      <a href={`tel:${m.phone}`} onClick={(e) => e.stopPropagation()} className="text-jai-blue text-xs hover:underline">
+                        {m.phone}
+                      </a>
+                    )}
+                    {m.email && !m.email.endsWith("@jmt.local") && (
+                      <p className="text-jai-text text-xs">{m.email}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {activePkg ? (
+                      <div className="text-right">
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                          Active
+                        </span>
+                        <p className="text-xs text-jai-text mt-1">
+                          {activePkg.sessions_used}/{activePkg.total_sessions} used
+                        </p>
+                      </div>
+                    ) : memberPkgs.length > 0 ? (
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
+                        No active pkg
+                      </span>
+                    ) : (
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
+                        No package
+                      </span>
+                    )}
+                    <svg className="w-4 h-4 text-jai-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center text-sm">
+            {search ? "No clients match your search" : "No clients found"}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

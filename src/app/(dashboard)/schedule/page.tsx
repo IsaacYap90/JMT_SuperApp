@@ -58,6 +58,7 @@ export default async function SchedulePage() {
         coaches={(coachesRes.data || []) as unknown as User[]}
         ptSessions={(ptSessionsRes.data || []) as unknown as PtSession[]}
         isAdmin={true}
+        adminId={user.id}
       />
     );
   }
@@ -97,5 +98,5 @@ export default async function SchedulePage() {
 
   const ptSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
 
-  return <CoachSchedule classes={myClasses} ptSessions={ptSessions} showFilter />;
+  return <CoachSchedule classes={myClasses} ptSessions={ptSessions} showFilter coachId={user.id} />;
 }

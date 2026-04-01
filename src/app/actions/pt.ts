@@ -54,6 +54,20 @@ export async function createPtClient(fullName: string, phone: string) {
   return data;
 }
 
+// Update PT client
+export async function updatePtClient(id: string, fullName: string, phone: string) {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { error } = await admin.from("users").update({
+    full_name: fullName,
+    phone: phone || null,
+  }).eq("id", id);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/pt");
+}
+
 // Create PT package
 export async function createPtPackage(payload: {
   user_id: string;

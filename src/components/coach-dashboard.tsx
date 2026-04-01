@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Class, PtSession } from "@/lib/types/database";
-import { MetricCard } from "./metric-card";
-import { getTodayHoliday } from "@/lib/sg-holidays";
+import { getTodayHoliday, isPublicHoliday } from "@/lib/sg-holidays";
 import { NotificationBell } from "./notification-bell";
 import { coachUpdatePtStatus } from "@/app/actions/pt";
 
@@ -41,31 +40,43 @@ function calcHours(start: string, end: string): number {
 export function CoachDashboard({
   todayClasses,
   todayPtSessions,
-  totalWeekClasses,
-  weekPtSessions,
+  tomorrowClasses,
+  tomorrowPtSessions,
+  weekClasses,
+  weekPtCount,
+  weekPtHours,
   nextWeekPtSessions,
   coachName,
   today,
 }: {
   todayClasses: Class[];
   todayPtSessions: PtSession[];
-  totalWeekClasses: number;
-  weekPtSessions: number;
+  tomorrowClasses: Class[];
+  tomorrowPtSessions: PtSession[];
+  weekClasses: Class[];
+  weekPtCount: number;
+  weekPtHours: number;
   nextWeekPtSessions: PtSession[];
   coachName: string;
   today: string;
 }) {
   const todayHoliday = getTodayHoliday();
 
-  const totalClassHours = todayHoliday ? 0 : todayClasses.reduce(
+  const todayClassHours = todayHoliday ? 0 : todayClasses.reduce(
     (sum, c) => sum + calcHours(c.start_time, c.end_time),
     0
   );
-  const totalPtHours = todayHoliday ? 0 : todayPtSessions.reduce(
+  const todayPtHours = todayHoliday ? 0 : todayPtSessions.reduce(
     (sum, s) => sum + (s.duration_minutes || 60) / 60,
     0
   );
-  const totalHours = totalClassHours + totalPtHours;
+  const todayHours = todayClassHours + todayPtHours;
+
+  const weekClassHours = weekClasses.reduce(
+    (sum, c) => sum + calcHours(c.start_time, c.end_time),
+    0
+  );
+  const weekTotalHours = weekClassHours + weekPtHours;
 
   return (
     <div className="space-y-6">
@@ -89,12 +100,42 @@ export function CoachDashboard({
         </div>
       </div>
 
-      {/* Metrics */}
+      {/* Metrics — 2 summary cards */}
       <div className="grid grid-cols-2 gap-3">
-        <MetricCard title="Today's Classes" value={todayClasses.length} />
-        <MetricCard title="Today's PT" value={todayPtSessions.length} />
-        <MetricCard title="Working Hours" value={`${totalHours.toFixed(1)}h`} />
-        <MetricCard title="PT This Week" value={weekPtSessions} />
+        <div className="bg-jai-card border border-jai-border rounded-xl p-4">
+          <p className="text-jai-text text-xs mb-2">Today</p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-jai-text">Classes</span>
+              <span className="text-sm font-semibold text-jai-blue">{todayClasses.length}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-jai-text">PT</span>
+              <span className="text-sm font-semibold text-green-400">{todayPtSessions.length}</span>
+            </div>
+            <div className="border-t border-jai-border pt-1.5 flex items-center justify-between">
+              <span className="text-sm text-jai-text">Hours</span>
+              <span className="text-sm font-bold">{todayHours.toFixed(1)}h</span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-jai-card border border-jai-border rounded-xl p-4">
+          <p className="text-jai-text text-xs mb-2">This Week</p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-jai-text">Classes</span>
+              <span className="text-sm font-semibold text-jai-blue">{weekClasses.length}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-jai-text">PT</span>
+              <span className="text-sm font-semibold text-green-400">{weekPtCount}</span>
+            </div>
+            <div className="border-t border-jai-border pt-1.5 flex items-center justify-between">
+              <span className="text-sm text-jai-text">Hours</span>
+              <span className="text-sm font-bold">{weekTotalHours.toFixed(1)}h</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Today's Schedule */}
@@ -168,6 +209,11 @@ export function CoachDashboard({
                           <p className="text-jai-text text-sm">
                             {time} · {s.duration_minutes || 60}min
                           </p>
+                          {s.member?.phone && (
+                            <a href={`tel:${s.member.phone}`} className="text-jai-blue text-xs hover:underline">
+                              {s.member.phone}
+                            </a>
+                          )}
                         </div>
                         <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
                           PT
@@ -182,22 +228,110 @@ export function CoachDashboard({
         )}
       </section>
 
-      {/* This Week Summary */}
+      {/* Tomorrow's Schedule */}
       <section>
-        <div className="bg-jai-card border border-jai-border rounded-xl p-4 space-y-2">
-          <h3 className="text-sm font-semibold text-jai-text uppercase tracking-wide mb-2">
-            This Week
-          </h3>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-jai-text">Total classes</span>
-            <span className="font-medium">{totalWeekClasses}</span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-jai-text">Total PT sessions</span>
-            <span className="font-medium">{weekPtSessions}</span>
-          </div>
-        </div>
+        <h2 className="text-base md:text-lg font-semibold mb-3 md:mb-4">
+          Tomorrow&apos;s Schedule
+        </h2>
+        {(() => {
+          const tomorrowDateObj = new Date(Date.now() + 86400000);
+          const tomorrowStr = tomorrowDateObj.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+          const tomorrowHoliday = isPublicHoliday(tomorrowStr);
+          const tomorrowLabel = tomorrowDateObj.toLocaleDateString("en-GB", {
+            weekday: "long",
+            day: "numeric",
+            month: "long",
+            timeZone: "Asia/Singapore",
+          });
+
+          if (tomorrowHoliday) {
+            return (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
+                <p className="font-medium text-red-400">Gym Closed</p>
+                <p className="text-red-400/70 text-sm">{tomorrowHoliday.name}</p>
+              </div>
+            );
+          }
+
+          type TItem = { type: "class"; sortKey: string; data: Class } | { type: "pt"; sortKey: string; data: PtSession };
+          const tItems: TItem[] = [];
+          tomorrowClasses.forEach((cls) => tItems.push({ type: "class", sortKey: cls.start_time, data: cls }));
+          tomorrowPtSessions.forEach((s) => {
+            const dt = new Date(s.scheduled_at);
+            const sgt = new Date(dt.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+            const hh = sgt.getHours().toString().padStart(2, "0");
+            const mm = sgt.getMinutes().toString().padStart(2, "0");
+            tItems.push({ type: "pt", sortKey: `${hh}:${mm}`, data: s });
+          });
+          tItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+          if (tItems.length === 0) {
+            return (
+              <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-sm">
+                No classes or PT sessions tomorrow.
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2">
+              <p className="text-xs text-jai-text capitalize">{tomorrowLabel}</p>
+              {tItems.map((item) => {
+                if (item.type === "class") {
+                  const cls = item.data as Class;
+                  return (
+                    <div key={`tmr-class-${cls.id}`} className="bg-jai-card border border-jai-border rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-sm">{cls.name}</p>
+                          <p className="text-jai-text text-sm">
+                            {cls.start_time.slice(0, 5)} - {cls.end_time.slice(0, 5)}
+                          </p>
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-jai-blue/10 text-jai-blue border border-jai-blue/20">
+                          Class
+                        </span>
+                      </div>
+                    </div>
+                  );
+                } else {
+                  const s = item.data as PtSession;
+                  const dt = new Date(s.scheduled_at);
+                  const time = dt.toLocaleTimeString("en-SG", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                    timeZone: "Asia/Singapore",
+                  });
+                  return (
+                    <div key={`tmr-pt-${s.id}`} className="bg-jai-card border border-jai-border rounded-xl p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-sm">
+                            PT — {s.member?.full_name || "Client"}
+                          </p>
+                          <p className="text-jai-text text-sm">
+                            {time} · {s.duration_minutes || 60}min
+                          </p>
+                          {s.member?.phone && (
+                            <a href={`tel:${s.member.phone}`} className="text-jai-blue text-xs hover:underline">
+                              {s.member.phone}
+                            </a>
+                          )}
+                        </div>
+                        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
+                          PT
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+              })}
+            </div>
+          );
+        })()}
       </section>
+
 
       {/* Next Week PT */}
       {nextWeekPtSessions.length > 0 && (

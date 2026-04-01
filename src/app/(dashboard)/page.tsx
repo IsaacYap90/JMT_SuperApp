@@ -55,7 +55,7 @@ export default async function HomePage() {
           )
           .gte("scheduled_at", todayDate)
           .lt("scheduled_at", tomorrowDate)
-          .in("status", ["scheduled", "confirmed"])
+          .in("status", ["scheduled", "confirmed", "completed"])
           .order("scheduled_at"),
         db
           .from("leaves")
@@ -122,11 +122,11 @@ export default async function HomePage() {
       .eq("coach_id", user.id)
       .gte("scheduled_at", todayDate)
       .lt("scheduled_at", tomorrowDate)
-      .in("status", ["scheduled", "confirmed"])
+      .in("status", ["scheduled", "confirmed", "completed"])
       .order("scheduled_at"),
     supabase
       .from("pt_sessions")
-      .select("id")
+      .select("id, duration_minutes")
       .eq("coach_id", user.id)
       .gte("scheduled_at", mondayDate)
       .lt("scheduled_at", sundayDate)
@@ -155,15 +155,38 @@ export default async function HomePage() {
 
   const todayClasses = myClasses.filter((c) => c.day_of_week === today);
   const todayPtSessions = (todayPtRes.data || []) as unknown as PtSession[];
-  const weekPtCount = (weekPtRes.data || []).length;
+  const weekPtData = (weekPtRes.data || []) as { id: string; duration_minutes: number }[];
+  const weekPtCount = weekPtData.length;
+  const weekPtHours = weekPtData.reduce((sum, s) => sum + (s.duration_minutes || 60) / 60, 0);
   const nextWeekPtSessions = (nextWeekPtRes.data || []) as unknown as PtSession[];
+
+  // Tomorrow's data
+  const tomorrow = new Date(Date.now() + 86400000)
+    .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
+    .toLowerCase();
+  const dayAfterTomorrowDate = new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const tomorrowClasses = myClasses.filter((c) => c.day_of_week === tomorrow);
+
+  const { data: tomorrowPtData } = await supabase
+    .from("pt_sessions")
+    .select("*, member:users!pt_sessions_member_id_fkey(*)")
+    .eq("coach_id", user.id)
+    .gte("scheduled_at", tomorrowDate)
+    .lt("scheduled_at", dayAfterTomorrowDate)
+    .in("status", ["scheduled", "confirmed"])
+    .order("scheduled_at");
+
+  const tomorrowPtSessions = (tomorrowPtData || []) as unknown as PtSession[];
 
   return (
     <CoachDashboard
       todayClasses={todayClasses}
       todayPtSessions={todayPtSessions}
-      totalWeekClasses={myClasses.length}
-      weekPtSessions={weekPtCount}
+      tomorrowClasses={tomorrowClasses}
+      tomorrowPtSessions={tomorrowPtSessions}
+      weekClasses={myClasses}
+      weekPtCount={weekPtCount}
+      weekPtHours={weekPtHours}
       nextWeekPtSessions={nextWeekPtSessions}
       coachName={profile.full_name}
       today={today}

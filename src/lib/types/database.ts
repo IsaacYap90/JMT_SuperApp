@@ -103,6 +103,7 @@ export interface Leave {
   coach_id: string;
   leave_date: string;
   leave_type: LeaveType;
+  is_half_day: boolean;
   reason: string;
   status: LeaveStatus;
   reviewed_by: string | null;

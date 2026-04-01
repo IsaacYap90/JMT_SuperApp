@@ -39,6 +39,7 @@ export function LeavePageClient({
   const [showForm, setShowForm] = useState(false);
   const [leaveDate, setLeaveDate] = useState("");
   const [leaveType, setLeaveType] = useState<LeaveType>("annual");
+  const [isHalfDay, setIsHalfDay] = useState(false);
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
@@ -53,6 +54,7 @@ export function LeavePageClient({
       coach_id: userId,
       leave_date: leaveDate,
       leave_type: leaveType,
+      is_half_day: isHalfDay,
       reason: reason.trim(),
       status: "pending",
     });
@@ -61,6 +63,7 @@ export function LeavePageClient({
     } else {
       setShowForm(false);
       setLeaveDate("");
+      setIsHalfDay(false);
       setReason("");
       router.refresh();
     }
@@ -152,6 +155,17 @@ export function LeavePageClient({
             </select>
           </div>
           <div>
+            <label className="flex items-center gap-3 cursor-pointer py-1">
+              <div
+                onClick={() => setIsHalfDay(!isHalfDay)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${isHalfDay ? "bg-jai-blue" : "bg-jai-border"}`}
+              >
+                <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${isHalfDay ? "translate-x-5" : ""}`} />
+              </div>
+              <span className="text-sm text-white">Half Day</span>
+            </label>
+          </div>
+          <div>
             <label className="block text-sm text-jai-text mb-1">Reason</label>
             <textarea
               value={reason}
@@ -185,8 +199,11 @@ export function LeavePageClient({
                 {leave.status}
               </span>
             </div>
-            <div className="flex items-center justify-between mt-1">
+            <div className="flex items-center gap-2 mt-1">
               <p className="text-jai-text text-xs capitalize">{leave.leave_type.replace("_", " ")} leave</p>
+              {leave.is_half_day && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">Half Day</span>
+              )}
             </div>
             <p className="text-jai-text text-xs mt-1">{leave.reason}</p>
             {admin && leave.status === "pending" && (
@@ -233,6 +250,7 @@ export function LeavePageClient({
               {admin && <th className="p-4">Coach</th>}
               <th className="p-4">Date</th>
               <th className="p-4">Type</th>
+              <th className="p-4">Duration</th>
               <th className="p-4">Reason</th>
               <th className="p-4">Status</th>
               <th className="p-4">Actions</th>
@@ -246,6 +264,13 @@ export function LeavePageClient({
                 )}
                 <td className="p-4">{leave.leave_date}</td>
                 <td className="p-4 capitalize">{leave.leave_type.replace("_", " ")}</td>
+                <td className="p-4">
+                  {leave.is_half_day ? (
+                    <span className="text-xs px-2 py-1 rounded-full bg-blue-500/10 text-blue-400">Half Day</span>
+                  ) : (
+                    <span className="text-xs text-jai-text">Full Day</span>
+                  )}
+                </td>
                 <td className="p-4 text-jai-text">{leave.reason}</td>
                 <td className="p-4">
                   <span className={`text-xs px-2 py-1 rounded-full capitalize ${statusBadge(leave.status)}`}>
@@ -288,7 +313,7 @@ export function LeavePageClient({
             ))}
             {leaves.length === 0 && (
               <tr>
-                <td colSpan={admin ? 6 : 5} className="p-4 text-jai-text text-center">
+                <td colSpan={admin ? 7 : 6} className="p-4 text-jai-text text-center">
                   No leave requests
                 </td>
               </tr>
