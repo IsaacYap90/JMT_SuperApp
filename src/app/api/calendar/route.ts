@@ -98,9 +98,9 @@ export async function GET(req: NextRequest) {
     `X-WR-CALNAME:JAI - ${escapeIcs(userProfile.full_name)}${isAdminMode ? " (All)" : ""}`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    // Refresh every 6 hours
-    "X-PUBLISHED-TTL:PT6H",
-    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
+    // Refresh every 30 minutes
+    "X-PUBLISHED-TTL:PT30M",
+    "REFRESH-INTERVAL;VALUE=DURATION:PT30M",
   ];
 
   // Generate recurring class events for the next 8 weeks
