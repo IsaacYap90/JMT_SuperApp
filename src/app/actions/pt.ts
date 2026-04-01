@@ -160,7 +160,7 @@ export async function createPtSession(payload: {
     const dt = new Date(payload.scheduled_at);
     createNotification(
       payload.coach_id,
-      "pt_scheduled",
+      "pt_created",
       "PT Session Scheduled",
       `PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
@@ -176,7 +176,7 @@ export async function createPtSession(payload: {
         if (a.id !== currentAdmin?.id && a.id !== payload.coach_id) {
           createNotification(
             a.id,
-            "pt_scheduled",
+            "pt_created",
             "New PT Session Added",
             `${coachName} has a PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
           ).catch((err) => console.error("Failed to notify admin:", err));
@@ -229,7 +229,7 @@ export async function updatePtSession(
     // Notify the new/current coach about the update
     createNotification(
       payload.coach_id,
-      "pt_scheduled",
+      "pt_created",
       "PT Session Updated",
       `${adminUser.name} updated your PT session with ${memberName} on ${dateTime}.`
     ).catch((err) => console.error("Failed to create notification:", err));
@@ -293,14 +293,14 @@ export async function updateSessionStatus(
     } else if (newStatus === "completed") {
       createNotification(
         session.coach_id,
-        "pt_scheduled",
+        "pt_created",
         "PT Session Completed",
         `Your PT session with ${memberName} on ${dateTime} has been marked as completed.`
       ).catch((err) => console.error("Failed to create PT notification:", err));
     } else if (newStatus === "no_show") {
       createNotification(
         session.coach_id,
-        "pt_scheduled",
+        "pt_created",
         "PT Session No-Show",
         `Your PT session with ${memberName} on ${dateTime} was marked as no-show.`
       ).catch((err) => console.error("Failed to create PT notification:", err));
@@ -454,7 +454,7 @@ export async function copyPtSessionsToNextWeek(): Promise<{ copied: number }> {
       : `from ${formatSgtDate(firstDt)} to ${formatSgtDate(lastDt)}`;
     createNotification(
       coachId,
-      "pt_scheduled",
+      "pt_created",
       "PT Sessions Copied",
       `${count} PT session${count > 1 ? "s" : ""} copied to next week ${range}.`
     ).catch((err) => console.error("Failed to create copy notification:", err));
@@ -581,7 +581,7 @@ export async function coachUpdatePtStatus(
     for (const a of admins) {
       createNotification(
         a.id,
-        newStatus === "completed" ? "pt_scheduled" : "class_cancelled",
+        newStatus === "completed" ? "pt_created" : "class_cancelled",
         `PT Session ${newStatus === "completed" ? "Completed" : "Cancelled"}`,
         `${coachName} marked PT session with ${memberName} on ${dateTime} as ${statusLabel}.`
       ).catch((err) => console.error("Failed to notify admin:", err));
