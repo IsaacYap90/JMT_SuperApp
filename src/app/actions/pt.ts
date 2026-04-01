@@ -156,6 +156,7 @@ export async function createPtSession(payload: {
   // Notify the coach
   if (session) {
     const memberName = session.member?.full_name || "Client";
+    const coachName = session.coach?.full_name || "Coach";
     const dt = new Date(payload.scheduled_at);
     createNotification(
       payload.coach_id,
@@ -163,6 +164,25 @@ export async function createPtSession(payload: {
       "PT Session Scheduled",
       `PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
+
+    // Notify all other admins
+    const currentAdmin = await requireAdmin().catch(() => null);
+    const { data: admins } = await admin
+      .from("users")
+      .select("id")
+      .in("role", ["admin", "master_admin"]);
+    if (admins) {
+      for (const a of admins) {
+        if (a.id !== currentAdmin?.id && a.id !== payload.coach_id) {
+          createNotification(
+            a.id,
+            "pt_scheduled",
+            "New PT Session Added",
+            `${coachName} has a PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
+          ).catch((err) => console.error("Failed to notify admin:", err));
+        }
+      }
+    }
   }
 
   revalidatePath("/pt");
