@@ -33,16 +33,85 @@ function getDates() {
   return dates;
 }
 
+function CalendarSubscribeButton({ userId, isAdmin }: { userId: string; isAdmin?: boolean }) {
+  const [showModal, setShowModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const baseUrl = `${window.location.origin}/api/calendar?id=${userId}${isAdmin ? "&admin=1" : ""}`;
+  const calUrl = baseUrl.replace(/^https?:\/\//, "webcal://");
+
+  function handleCopy() {
+    navigator.clipboard.writeText(calUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        className="flex items-center gap-1.5 px-3 py-2 text-sm bg-jai-card border border-jai-border rounded-lg text-jai-text hover:text-white hover:border-jai-blue/40 transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        Sync
+      </button>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowModal(false)}>
+          <div className="bg-jai-card border border-jai-border rounded-2xl p-5 max-w-sm w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold">Sync to Phone Calendar</h3>
+            <div className="space-y-3 text-sm text-jai-text">
+              <div>
+                <p className="font-medium text-white mb-1">iPhone:</p>
+                <p>Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → paste the link below</p>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Android / Google Calendar:</p>
+                <p>Open Google Calendar → Settings → Add calendar → From URL → paste the link below</p>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Samsung Calendar:</p>
+                <p>Open Google Calendar on your browser → Settings ⚙️ → Add calendar → From URL → paste the link below → Subscribe. It will auto-sync to your Samsung Calendar app.</p>
+              </div>
+            </div>
+            <div className="bg-jai-bg border border-jai-border rounded-lg p-3 text-xs break-all text-jai-text font-mono">
+              {calUrl}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopy}
+                className="flex-1 py-2.5 bg-jai-blue text-white text-sm font-medium rounded-lg hover:bg-jai-blue/90 transition-colors"
+              >
+                {copied ? "Copied!" : "Copy Link"}
+              </button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2.5 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SchedulePageClient({
   classes: initialClasses,
   coaches,
   ptSessions: initialPtSessions,
   isAdmin,
+  adminId,
 }: {
   classes: Class[];
   coaches: User[];
   ptSessions: PtSession[];
   isAdmin: boolean;
+  adminId?: string;
 }) {
   const dates = getDates();
   const todayIdx = dates.findIndex((d) => d.isToday);
@@ -202,6 +271,7 @@ export function SchedulePageClient({
         <h1 className="text-xl md:text-2xl font-bold">Schedule</h1>
         {isAdmin && (
           <div className="flex gap-2">
+            {adminId && <CalendarSubscribeButton userId={adminId} isAdmin />}
             <button
               onClick={handleCopyToNextWeek}
               disabled={copying}

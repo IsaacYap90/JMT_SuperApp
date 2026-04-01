@@ -4,6 +4,73 @@ import { useState, useRef, useEffect } from "react";
 import { Class, PtSession } from "@/lib/types/database";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 
+function CalendarSubscribeButton({ coachId }: { coachId: string }) {
+  const [showModal, setShowModal] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const baseUrl = `${window.location.origin}/api/calendar?id=${coachId}`;
+  const calUrl = baseUrl.replace(/^https?:\/\//, "webcal://");
+
+  function handleCopy() {
+    navigator.clipboard.writeText(calUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setShowModal(true)}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-jai-card border border-jai-border rounded-lg text-jai-text hover:text-white hover:border-jai-blue/40 transition-colors"
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+        </svg>
+        Sync
+      </button>
+
+      {showModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setShowModal(false)}>
+          <div className="bg-jai-card border border-jai-border rounded-2xl p-5 max-w-sm w-full space-y-4" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold">Sync to Phone Calendar</h3>
+            <div className="space-y-3 text-sm text-jai-text">
+              <div>
+                <p className="font-medium text-white mb-1">iPhone:</p>
+                <p>Settings → Calendar → Accounts → Add Account → Other → Add Subscribed Calendar → paste the link below</p>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Android / Google Calendar:</p>
+                <p>Open Google Calendar → Settings → Add calendar → From URL → paste the link below</p>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Samsung Calendar:</p>
+                <p>Open Google Calendar on your browser → Settings ⚙️ → Add calendar → From URL → paste the link below → Subscribe. It will auto-sync to your Samsung Calendar app.</p>
+              </div>
+            </div>
+            <div className="bg-jai-bg border border-jai-border rounded-lg p-3 text-xs break-all text-jai-text font-mono">
+              {calUrl}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={handleCopy}
+                className="flex-1 py-2.5 bg-jai-blue text-white text-sm font-medium rounded-lg hover:bg-jai-blue/90 transition-colors"
+              >
+                {copied ? "Copied!" : "Copy Link"}
+              </button>
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2.5 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -35,6 +102,7 @@ type ScheduleItem = {
   startTime: string;
   endTime: string;
   subtitle?: string;
+  phone?: string | null;
   isPast: boolean;
 };
 
@@ -44,10 +112,12 @@ export function CoachSchedule({
   classes,
   ptSessions,
   showFilter = false,
+  coachId,
 }: {
   classes: Class[];
   ptSessions: PtSession[];
   showFilter?: boolean;
+  coachId?: string;
 }) {
   const dates = getDates();
   const todayIdx = dates.findIndex((d) => d.isToday);
@@ -117,6 +187,7 @@ export function CoachSchedule({
         startTime: start,
         endTime: end,
         subtitle: s.coach ? `Coach: ${s.coach.full_name} · ${s.duration_minutes || 60}min` : `${s.duration_minutes || 60}min`,
+        phone: s.member?.phone,
         isPast: isTimePast(end),
       };
     }),
@@ -145,26 +216,29 @@ export function CoachSchedule({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">Schedule</h1>
-        {showFilter && (
-          <div className="flex bg-jai-card border border-jai-border rounded-lg overflow-hidden">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === "all" ? "bg-jai-blue text-white" : "text-jai-text hover:text-white"
-              }`}
-            >
-              All
-            </button>
-            <button
-              onClick={() => setFilter("pt")}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === "pt" ? "bg-green-500 text-white" : "text-jai-text hover:text-white"
-              }`}
-            >
-              PT Only
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {coachId && <CalendarSubscribeButton coachId={coachId} />}
+          {showFilter && (
+            <div className="flex bg-jai-card border border-jai-border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setFilter("all")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  filter === "all" ? "bg-jai-blue text-white" : "text-jai-text hover:text-white"
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setFilter("pt")}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  filter === "pt" ? "bg-green-500 text-white" : "text-jai-text hover:text-white"
+                }`}
+              >
+                PT Only
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Week summary */}
@@ -248,6 +322,11 @@ export function CoachSchedule({
                   </p>
                   {item.subtitle && (
                     <p className="text-jai-text/60 text-xs mt-0.5">{item.subtitle}</p>
+                  )}
+                  {item.phone && (
+                    <a href={`tel:${item.phone}`} className="text-jai-blue text-xs hover:underline mt-0.5 inline-block">
+                      {item.phone}
+                    </a>
                   )}
                 </div>
                 <span
