@@ -1,16 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { User, Leave, LeaveType, isAdmin } from "@/lib/types/database";
 import { cancelLeave } from "@/app/actions/leave";
+import { DateRangePicker } from "./date-range-picker";
 
 const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
-  { value: "sick", label: "Sick Leave" },
   { value: "annual", label: "Annual Leave" },
+  { value: "sick", label: "MC (Medical Certificate)" },
+  { value: "hospital", label: "Hospital Leave" },
   { value: "emergency", label: "Emergency Leave" },
 ];
+
+// Annual entitlements (days per year)
+const LEAVE_ENTITLEMENTS: Record<string, { label: string; days: number; color: string }> = {
+  annual: { label: "Annual", days: 14, color: "bg-blue-500" },
+  sick: { label: "MC", days: 14, color: "bg-yellow-500" },
+  hospital: { label: "Hospital", days: 60, color: "bg-red-500" },
+};
 
 function statusBadge(status: string) {
   switch (status) {
@@ -21,6 +30,27 @@ function statusBadge(status: string) {
     default:
       return "bg-yellow-500/10 text-yellow-400";
   }
+}
+
+function countLeaveDays(startDate: string, endDate: string | null, isHalfDay: boolean): number {
+  const end = endDate || startDate;
+  const start = new Date(startDate);
+  const endD = new Date(end);
+  let days = 0;
+  const current = new Date(start);
+  while (current <= endD) {
+    // Skip Sundays (gym closed)
+    if (current.getDay() !== 0) {
+      days++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return isHalfDay ? days * 0.5 : days;
+}
+
+function formatDateRange(startDate: string, endDate: string | null): string {
+  if (!endDate || endDate === startDate) return startDate;
+  return `${startDate} → ${endDate}`;
 }
 
 export function LeavePageClient({
@@ -37,7 +67,8 @@ export function LeavePageClient({
   const admin = isAdmin(profile.role);
 
   const [showForm, setShowForm] = useState(false);
-  const [leaveDate, setLeaveDate] = useState("");
+  const [leaveStartDate, setLeaveStartDate] = useState("");
+  const [leaveEndDate, setLeaveEndDate] = useState("");
   const [leaveType, setLeaveType] = useState<LeaveType>("annual");
   const [isHalfDay, setIsHalfDay] = useState(false);
   const [reason, setReason] = useState("");
@@ -45,14 +76,37 @@ export function LeavePageClient({
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Calculate leave balances for the current year
+  const leaveBalances = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const approvedLeaves = leaves.filter(
+      (l) => l.status === "approved" && l.leave_date.startsWith(String(currentYear))
+    );
+
+    return Object.entries(LEAVE_ENTITLEMENTS).map(([type, config]) => {
+      const used = approvedLeaves
+        .filter((l) => l.leave_type === type)
+        .reduce((sum, l) => sum + countLeaveDays(l.leave_date, l.leave_end_date, l.is_half_day), 0);
+      return {
+        type,
+        label: config.label,
+        total: config.days,
+        used,
+        remaining: config.days - used,
+        color: config.color,
+      };
+    });
+  }, [leaves]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!leaveDate || !reason.trim()) return;
+    if (!leaveStartDate || !reason.trim()) return;
     setError(null);
     setSaving(true);
     const { error: insertError } = await supabase.from("leaves").insert({
       coach_id: userId,
-      leave_date: leaveDate,
+      leave_date: leaveStartDate,
+      leave_end_date: leaveEndDate || leaveStartDate,
       leave_type: leaveType,
       is_half_day: isHalfDay,
       reason: reason.trim(),
@@ -62,7 +116,8 @@ export function LeavePageClient({
       setError(`Failed to submit leave: ${insertError.message}`);
     } else {
       setShowForm(false);
-      setLeaveDate("");
+      setLeaveStartDate("");
+      setLeaveEndDate("");
       setIsHalfDay(false);
       setReason("");
       router.refresh();
@@ -102,8 +157,7 @@ export function LeavePageClient({
   };
 
   const canCancel = (leave: Leave) => {
-    // Coaches can cancel their own leaves if the date hasn't passed
-    if (admin) return false; // Admin uses approve/reject
+    if (admin) return false;
     return leave.coach_id === userId && leave.leave_date >= new Date().toISOString().split("T")[0];
   };
 
@@ -123,6 +177,29 @@ export function LeavePageClient({
         )}
       </div>
 
+      {/* Leave Balance Cards */}
+      {!admin && (
+        <div className="grid grid-cols-3 gap-3">
+          {leaveBalances.map((bal) => (
+            <div key={bal.type} className="bg-jai-card border border-jai-border rounded-xl p-3">
+              <p className="text-[10px] sm:text-xs text-jai-text mb-1">{bal.label}</p>
+              <p className="text-xl sm:text-2xl font-bold text-white">
+                {bal.remaining}
+                <span className="text-xs sm:text-sm text-jai-text font-normal">/{bal.total}</span>
+              </p>
+              {/* Progress bar */}
+              <div className="mt-2 h-1.5 bg-jai-border rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${bal.color}`}
+                  style={{ width: `${Math.max(0, Math.min(100, (bal.remaining / bal.total) * 100))}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-jai-text mt-1">{bal.used} used</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
           {error}
@@ -132,16 +209,17 @@ export function LeavePageClient({
       {/* Leave application form (coach only) */}
       {showForm && !admin && (
         <form onSubmit={handleSubmit} className="bg-jai-card border border-jai-border rounded-xl p-4 space-y-4">
-          <div>
-            <label className="block text-sm text-jai-text mb-1">Date</label>
-            <input
-              type="date"
-              value={leaveDate}
-              onChange={(e) => setLeaveDate(e.target.value)}
-              required
-              className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-white min-h-[44px]"
-            />
-          </div>
+          <DateRangePicker
+            startDate={leaveStartDate}
+            endDate={leaveEndDate}
+            onStartChange={setLeaveStartDate}
+            onEndChange={setLeaveEndDate}
+          />
+          {leaveStartDate && leaveEndDate && (
+            <p className="text-xs text-jai-text">
+              {countLeaveDays(leaveStartDate, leaveEndDate, isHalfDay)} day(s) <span className="text-jai-text/50">· Sundays excluded</span>
+            </p>
+          )}
           <div>
             <label className="block text-sm text-jai-text mb-1">Type</label>
             <select
@@ -194,7 +272,9 @@ export function LeavePageClient({
               {admin && (
                 <p className="font-medium text-sm">{leave.coach?.full_name || "—"}</p>
               )}
-              <p className={`text-sm ${admin ? "" : "font-medium"}`}>{leave.leave_date}</p>
+              <p className={`text-sm ${admin ? "" : "font-medium"}`}>
+                {formatDateRange(leave.leave_date, leave.leave_end_date)}
+              </p>
               <span className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${statusBadge(leave.status)}`}>
                 {leave.status}
               </span>
@@ -204,6 +284,9 @@ export function LeavePageClient({
               {leave.is_half_day && (
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400">Half Day</span>
               )}
+              <span className="text-[10px] text-jai-text">
+                ({countLeaveDays(leave.leave_date, leave.leave_end_date, leave.is_half_day)} day{countLeaveDays(leave.leave_date, leave.leave_end_date, leave.is_half_day) !== 1 ? "s" : ""})
+              </span>
             </div>
             <p className="text-jai-text text-xs mt-1">{leave.reason}</p>
             {admin && leave.status === "pending" && (
@@ -262,13 +345,14 @@ export function LeavePageClient({
                 {admin && (
                   <td className="p-4 font-medium">{leave.coach?.full_name || "—"}</td>
                 )}
-                <td className="p-4">{leave.leave_date}</td>
+                <td className="p-4">{formatDateRange(leave.leave_date, leave.leave_end_date)}</td>
                 <td className="p-4 capitalize">{leave.leave_type.replace("_", " ")}</td>
                 <td className="p-4">
-                  {leave.is_half_day ? (
-                    <span className="text-xs px-2 py-1 rounded-full bg-blue-500/10 text-blue-400">Half Day</span>
-                  ) : (
-                    <span className="text-xs text-jai-text">Full Day</span>
+                  <span className="text-xs text-jai-text">
+                    {countLeaveDays(leave.leave_date, leave.leave_end_date, leave.is_half_day)} day(s)
+                  </span>
+                  {leave.is_half_day && (
+                    <span className="ml-1 text-xs px-2 py-1 rounded-full bg-blue-500/10 text-blue-400">Half</span>
                   )}
                 </td>
                 <td className="p-4 text-jai-text">{leave.reason}</td>

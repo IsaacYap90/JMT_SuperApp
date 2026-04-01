@@ -95,13 +95,14 @@ export interface ClassSession {
   class?: Class;
 }
 
-export type LeaveType = "sick" | "annual" | "emergency";
+export type LeaveType = "sick" | "annual" | "emergency" | "hospital";
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
 export interface Leave {
   id: string;
   coach_id: string;
   leave_date: string;
+  leave_end_date: string | null;
   leave_type: LeaveType;
   is_half_day: boolean;
   reason: string;
