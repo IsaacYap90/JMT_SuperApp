@@ -2,9 +2,8 @@
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import { User, Leave, LeaveType, isAdmin } from "@/lib/types/database";
-import { cancelLeave } from "@/app/actions/leave";
+import { cancelLeave, submitLeave, reviewLeave } from "@/app/actions/leave";
 import { DateRangePicker } from "./date-range-picker";
 
 const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
@@ -63,7 +62,6 @@ export function LeavePageClient({
   userId: string;
 }) {
   const router = useRouter();
-  const supabase = createClient();
   const admin = isAdmin(profile.role);
 
   const [showForm, setShowForm] = useState(false);
@@ -103,24 +101,22 @@ export function LeavePageClient({
     if (!leaveStartDate || !reason.trim()) return;
     setError(null);
     setSaving(true);
-    const { error: insertError } = await supabase.from("leaves").insert({
-      coach_id: userId,
-      leave_date: leaveStartDate,
-      leave_end_date: leaveEndDate || leaveStartDate,
-      leave_type: leaveType,
-      is_half_day: isHalfDay,
-      reason: reason.trim(),
-      status: "pending",
-    });
-    if (insertError) {
-      setError(`Failed to submit leave: ${insertError.message}`);
-    } else {
+    try {
+      await submitLeave({
+        leave_date: leaveStartDate,
+        leave_end_date: leaveEndDate || leaveStartDate,
+        leave_type: leaveType,
+        is_half_day: isHalfDay,
+        reason: reason.trim(),
+      });
       setShowForm(false);
       setLeaveStartDate("");
       setLeaveEndDate("");
       setIsHalfDay(false);
       setReason("");
       router.refresh();
+    } catch (err) {
+      setError(`Failed to submit leave: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
     setSaving(false);
   };
@@ -128,18 +124,11 @@ export function LeavePageClient({
   const handleAction = async (leaveId: string, action: "approved" | "rejected") => {
     setError(null);
     setActioningId(leaveId);
-    const { error: updateError } = await supabase
-      .from("leaves")
-      .update({
-        status: action,
-        reviewed_by: userId,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", leaveId);
-    if (updateError) {
-      setError(`Failed to ${action === "approved" ? "approve" : "reject"} leave: ${updateError.message}`);
-    } else {
+    try {
+      await reviewLeave(leaveId, action);
       router.refresh();
+    } catch (err) {
+      setError(`Failed to ${action === "approved" ? "approve" : "reject"} leave: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
     setActioningId(null);
   };
@@ -240,7 +229,9 @@ export function LeavePageClient({
               >
                 <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${isHalfDay ? "translate-x-5" : ""}`} />
               </div>
-              <span className="text-sm text-white">Half Day</span>
+              <span className="text-sm text-white">
+                Half Day <span className="text-xs text-jai-text">(off before 6:30pm, teaching evening)</span>
+              </span>
             </label>
           </div>
           <div>

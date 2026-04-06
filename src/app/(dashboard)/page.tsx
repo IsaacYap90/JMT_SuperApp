@@ -126,18 +126,16 @@ export default async function HomePage() {
       .order("scheduled_at"),
     supabase
       .from("pt_sessions")
-      .select("id, duration_minutes")
+      .select("id, duration_minutes, status")
       .eq("coach_id", user.id)
       .gte("scheduled_at", mondayDate)
-      .lt("scheduled_at", sundayDate)
-      .in("status", ["scheduled", "confirmed", "completed"]),
+      .lt("scheduled_at", sundayDate),
     supabase
       .from("pt_sessions")
       .select("*, member:users!pt_sessions_member_id_fkey(*)")
       .eq("coach_id", user.id)
       .gte("scheduled_at", sundayDate)
       .lt("scheduled_at", nextSundayDate)
-      .in("status", ["scheduled", "confirmed"])
       .order("scheduled_at"),
   ]);
 
@@ -155,9 +153,15 @@ export default async function HomePage() {
 
   const todayClasses = myClasses.filter((c) => c.day_of_week === today);
   const todayPtSessions = (todayPtRes.data || []) as unknown as PtSession[];
-  const weekPtData = (weekPtRes.data || []) as { id: string; duration_minutes: number }[];
+  const weekPtData = (weekPtRes.data || []) as { id: string; duration_minutes: number; status: string }[];
   const weekPtCount = weekPtData.length;
   const weekPtHours = weekPtData.reduce((sum, s) => sum + (s.duration_minutes || 60) / 60, 0);
+  const weekPtStats = {
+    scheduled: weekPtData.filter((s) => s.status === "scheduled" || s.status === "confirmed").length,
+    completed: weekPtData.filter((s) => s.status === "completed").length,
+    cancelled: weekPtData.filter((s) => s.status === "cancelled").length,
+    noShow: weekPtData.filter((s) => s.status === "no_show").length,
+  };
   const nextWeekPtSessions = (nextWeekPtRes.data || []) as unknown as PtSession[];
 
   // Tomorrow's data
@@ -187,6 +191,7 @@ export default async function HomePage() {
       weekClasses={myClasses}
       weekPtCount={weekPtCount}
       weekPtHours={weekPtHours}
+      weekPtStats={weekPtStats}
       nextWeekPtSessions={nextWeekPtSessions}
       coachName={profile.full_name}
       today={today}

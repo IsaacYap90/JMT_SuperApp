@@ -1,11 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Class, PtSession } from "@/lib/types/database";
 import { getTodayHoliday, isPublicHoliday } from "@/lib/sg-holidays";
 import { NotificationBell } from "./notification-bell";
-import { coachUpdatePtStatus } from "@/app/actions/pt";
+import { PtCard } from "./pt-card";
 
 function getSgtNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
@@ -37,6 +35,7 @@ function calcHours(start: string, end: string): number {
   return (eh * 60 + em - sh * 60 - sm) / 60;
 }
 
+
 export function CoachDashboard({
   todayClasses,
   todayPtSessions,
@@ -45,6 +44,7 @@ export function CoachDashboard({
   weekClasses,
   weekPtCount,
   weekPtHours,
+  weekPtStats,
   nextWeekPtSessions,
   coachName,
   today,
@@ -56,6 +56,7 @@ export function CoachDashboard({
   weekClasses: Class[];
   weekPtCount: number;
   weekPtHours: number;
+  weekPtStats: { scheduled: number; completed: number; cancelled: number; noShow: number };
   nextWeekPtSessions: PtSession[];
   coachName: string;
   today: string;
@@ -127,8 +128,30 @@ export function CoachDashboard({
               <span className="text-sm font-semibold text-jai-blue">{weekClasses.length}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-jai-text">PT</span>
+              <span className="text-sm text-jai-text">PT Total</span>
               <span className="text-sm font-semibold text-green-400">{weekPtCount}</span>
+            </div>
+            <div className="border-t border-jai-border pt-1.5 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-jai-text">Scheduled</span>
+                <span className="text-xs font-medium text-jai-blue">{weekPtStats.scheduled}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-jai-text">Completed</span>
+                <span className="text-xs font-medium text-green-400">{weekPtStats.completed}</span>
+              </div>
+              {weekPtStats.cancelled > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-jai-text">Cancelled</span>
+                  <span className="text-xs font-medium text-red-400">{weekPtStats.cancelled}</span>
+                </div>
+              )}
+              {weekPtStats.noShow > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-jai-text">No Show</span>
+                  <span className="text-xs font-medium text-amber-400">{weekPtStats.noShow}</span>
+                </div>
+              )}
             </div>
             <div className="border-t border-jai-border pt-1.5 flex items-center justify-between">
               <span className="text-sm text-jai-text">Hours</span>
@@ -188,39 +211,8 @@ export function CoachDashboard({
                   );
                 } else {
                   const s = item.data as PtSession;
-                  const dt = new Date(s.scheduled_at);
-                  const time = dt.toLocaleTimeString("en-SG", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                    timeZone: "Asia/Singapore",
-                  });
                   const ptPast = isPtPast(s.scheduled_at, s.duration_minutes || 60);
-                  return (
-                    <div
-                      key={`pt-${s.id}`}
-                      className={`bg-jai-card border border-jai-border rounded-xl p-4 ${ptPast ? "opacity-40" : ""}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-sm">
-                            PT — {s.member?.full_name || "Client"}
-                          </p>
-                          <p className="text-jai-text text-sm">
-                            {time} · {s.duration_minutes || 60}min
-                          </p>
-                          {s.member?.phone && (
-                            <a href={`tel:${s.member.phone}`} className="text-jai-blue text-xs hover:underline">
-                              {s.member.phone}
-                            </a>
-                          )}
-                        </div>
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                          PT
-                        </span>
-                      </div>
-                    </div>
-                  );
+                  return <PtCard key={`pt-${s.id}`} s={s} isPast={ptPast} />;
                 }
               });
             })()}
@@ -296,35 +288,7 @@ export function CoachDashboard({
                   );
                 } else {
                   const s = item.data as PtSession;
-                  const dt = new Date(s.scheduled_at);
-                  const time = dt.toLocaleTimeString("en-SG", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                    timeZone: "Asia/Singapore",
-                  });
-                  return (
-                    <div key={`tmr-pt-${s.id}`} className="bg-jai-card border border-jai-border rounded-xl p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-sm">
-                            PT — {s.member?.full_name || "Client"}
-                          </p>
-                          <p className="text-jai-text text-sm">
-                            {time} · {s.duration_minutes || 60}min
-                          </p>
-                          {s.member?.phone && (
-                            <a href={`tel:${s.member.phone}`} className="text-jai-blue text-xs hover:underline">
-                              {s.member.phone}
-                            </a>
-                          )}
-                        </div>
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                          PT
-                        </span>
-                      </div>
-                    </div>
-                  );
+                  return <PtCard key={`tmr-pt-${s.id}`} s={s} />;
                 }
               })}
             </div>
@@ -341,111 +305,20 @@ export function CoachDashboard({
   );
 }
 
-function NextWeekPtSection({ sessions: initialSessions }: { sessions: PtSession[] }) {
-  const [sessions, setSessions] = useState(initialSessions);
-  const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const router = useRouter();
-
-  const handleStatus = async (sessionId: string, status: "completed" | "cancelled") => {
-    setUpdatingId(sessionId);
-    try {
-      await coachUpdatePtStatus(sessionId, status);
-      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, status } : s)));
-      router.refresh();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update");
-    }
-    setUpdatingId(null);
-  };
-
-  const scheduledSessions = sessions.filter((s) => s.status === "scheduled" || s.status === "confirmed");
-  const resolvedSessions = sessions.filter((s) => s.status === "completed" || s.status === "cancelled");
+function NextWeekPtSection({ sessions }: { sessions: PtSession[] }) {
+  const scheduled = sessions.filter((s) => s.status === "scheduled" || s.status === "confirmed");
+  const resolved = sessions.filter((s) => s.status === "completed" || s.status === "cancelled" || s.status === "no_show");
 
   return (
     <section>
-      <h2 className="text-base font-semibold mb-3">Next Week PT ({scheduledSessions.length})</h2>
+      <h2 className="text-base font-semibold mb-3">Next Week PT ({scheduled.length})</h2>
       <div className="space-y-2">
-        {scheduledSessions.map((s) => {
-          const dt = new Date(s.scheduled_at);
-          const dayLabel = dt.toLocaleDateString("en-GB", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            timeZone: "Asia/Singapore",
-          });
-          const timeLabel = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
-          const isUpdating = updatingId === s.id;
-          return (
-            <div
-              key={s.id}
-              className="bg-jai-card border border-jai-border rounded-xl p-4"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">
-                    PT — {s.member?.full_name || "Client"}
-                  </p>
-                  <p className="text-jai-text text-sm">
-                    {dayLabel} · {timeLabel} · {s.duration_minutes || 60}min
-                  </p>
-                </div>
-                <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                  PT
-                </span>
-              </div>
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={() => handleStatus(s.id, "completed")}
-                  disabled={isUpdating}
-                  className="flex-1 py-1.5 text-xs font-medium rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 disabled:opacity-50 transition-colors"
-                >
-                  {isUpdating ? "..." : "Completed"}
-                </button>
-                <button
-                  onClick={() => handleStatus(s.id, "cancelled")}
-                  disabled={isUpdating}
-                  className="flex-1 py-1.5 text-xs font-medium rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
-                >
-                  {isUpdating ? "..." : "Cancelled"}
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        {resolvedSessions.map((s) => {
-          const dt = new Date(s.scheduled_at);
-          const dayLabel = dt.toLocaleDateString("en-GB", {
-            weekday: "short",
-            day: "numeric",
-            month: "short",
-            timeZone: "Asia/Singapore",
-          });
-          const timeLabel = dt.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
-          return (
-            <div
-              key={s.id}
-              className="bg-jai-card border border-jai-border rounded-xl p-4 opacity-50"
-            >
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-sm">
-                    PT — {s.member?.full_name || "Client"}
-                  </p>
-                  <p className="text-jai-text text-sm">
-                    {dayLabel} · {timeLabel} · {s.duration_minutes || 60}min
-                  </p>
-                </div>
-                <span className={`text-[10px] px-2 py-1 rounded-full ${
-                  s.status === "completed"
-                    ? "bg-green-500/10 text-green-400 border border-green-500/20"
-                    : "bg-red-500/10 text-red-400 border border-red-500/20"
-                }`}>
-                  {s.status === "completed" ? "Done" : "Cancelled"}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+        {scheduled.map((s) => (
+          <PtCard key={s.id} s={s} showDate />
+        ))}
+        {resolved.map((s) => (
+          <PtCard key={s.id} s={s} showDate />
+        ))}
       </div>
     </section>
   );

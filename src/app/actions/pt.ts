@@ -513,7 +513,7 @@ export async function autoExpirePackages() {
 // Coach-facing: mark own PT session as completed or cancelled
 export async function coachUpdatePtStatus(
   sessionId: string,
-  newStatus: "completed" | "cancelled"
+  newStatus: "completed" | "cancelled" | "no_show"
 ) {
   const supabase = createClient();
   const {
@@ -570,7 +570,7 @@ export async function coachUpdatePtStatus(
   const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
   const dt = new Date(session.scheduled_at);
   const dateTime = `${formatSgtDate(dt)} at ${formatSgtTime(dt)}`;
-  const statusLabel = newStatus === "completed" ? "completed" : "cancelled";
+  const statusLabel = newStatus === "completed" ? "completed" : newStatus === "no_show" ? "no-show" : "cancelled";
 
   const { data: admins } = await admin
     .from("users")
@@ -578,12 +578,102 @@ export async function coachUpdatePtStatus(
     .in("role", ["admin", "master_admin"]);
 
   if (admins) {
+    const notifType = newStatus === "completed" ? "pt_created" : "class_cancelled";
+    const notifTitle = newStatus === "completed" ? "PT Session Completed" : newStatus === "no_show" ? "PT Session No-Show" : "PT Session Cancelled";
+    const notifiedIds = new Set<string>();
     for (const a of admins) {
+      // Skip if this admin is the coach who just updated (they already know)
+      if (a.id === user.id) continue;
+      if (notifiedIds.has(a.id)) continue;
+      notifiedIds.add(a.id);
       createNotification(
         a.id,
-        newStatus === "completed" ? "pt_created" : "class_cancelled",
-        `PT Session ${newStatus === "completed" ? "Completed" : "Cancelled"}`,
+        notifType,
+        notifTitle,
         `${coachName} marked PT session with ${memberName} on ${dateTime} as ${statusLabel}.`
+      ).catch((err) => console.error("Failed to notify admin:", err));
+    }
+  }
+
+  revalidatePath("/pt");
+  revalidatePath("/");
+  revalidatePath("/schedule");
+}
+
+// Coach reschedules their own PT session (date/time/duration only, future only)
+export async function coachReschedulePtSession(
+  sessionId: string,
+  newScheduledAt: string,
+  newDurationMinutes: number
+) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("full_name")
+    .eq("id", user.id)
+    .single();
+
+  const coachName = profile?.full_name || "Coach";
+  const admin = createAdminClient();
+
+  // Verify session belongs to this coach
+  const { data: session } = await admin
+    .from("pt_sessions")
+    .select("id, coach_id, scheduled_at, status, member:users!pt_sessions_member_id_fkey(full_name)")
+    .eq("id", sessionId)
+    .eq("coach_id", user.id)
+    .single();
+
+  if (!session) throw new Error("Session not found or not assigned to you");
+  if (session.status === "completed" || session.status === "cancelled" || session.status === "no_show") {
+    throw new Error("Cannot reschedule a resolved session");
+  }
+  if (new Date(newScheduledAt) < new Date()) {
+    throw new Error("New time must be in the future");
+  }
+
+  const oldDt = new Date(session.scheduled_at);
+  const newDt = new Date(newScheduledAt);
+
+  // Update the session
+  const { error } = await admin
+    .from("pt_sessions")
+    .update({
+      scheduled_at: newScheduledAt,
+      duration_minutes: newDurationMinutes,
+      edited_by: user.id,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId);
+
+  if (error) throw new Error(error.message);
+
+  // Notify all admins of the reschedule
+  const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
+  const oldDateTime = `${formatSgtDate(oldDt)} at ${formatSgtTime(oldDt)}`;
+  const newDateTime = `${formatSgtDate(newDt)} at ${formatSgtTime(newDt)}`;
+
+  const { data: admins } = await admin
+    .from("users")
+    .select("id")
+    .in("role", ["admin", "master_admin"]);
+
+  if (admins) {
+    const notifiedIds = new Set<string>();
+    for (const a of admins) {
+      if (a.id === user.id) continue;
+      if (notifiedIds.has(a.id)) continue;
+      notifiedIds.add(a.id);
+      createNotification(
+        a.id,
+        "pt_created",
+        "PT Session Rescheduled by Coach",
+        `${coachName} rescheduled PT with ${memberName} from ${oldDateTime} to ${newDateTime}.`
       ).catch((err) => console.error("Failed to notify admin:", err));
     }
   }

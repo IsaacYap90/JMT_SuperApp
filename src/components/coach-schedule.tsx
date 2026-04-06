@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Class, PtSession } from "@/lib/types/database";
 import { isPublicHoliday } from "@/lib/sg-holidays";
+import { PtCard } from "./pt-card";
 
 function CalendarSubscribeButton({ coachId }: { coachId: string }) {
   const [showModal, setShowModal] = useState(false);
@@ -104,6 +105,7 @@ type ScheduleItem = {
   subtitle?: string;
   phone?: string | null;
   isPast: boolean;
+  ptSession?: PtSession;
 };
 
 type FilterType = "all" | "pt";
@@ -189,6 +191,7 @@ export function CoachSchedule({
         subtitle: s.coach ? `Coach: ${s.coach.full_name} · ${s.duration_minutes || 60}min` : `${s.duration_minutes || 60}min`,
         phone: s.member?.phone,
         isPast: isTimePast(end),
+        ptSession: s,
       };
     }),
   ].sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -309,38 +312,32 @@ export function CoachSchedule({
         </div>
       ) : (
         <div className="space-y-2">
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className={`bg-jai-card border border-jai-border rounded-xl p-4 ${item.isPast ? "opacity-40" : ""}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm">{item.name}</p>
-                  <p className="text-jai-text text-sm">
-                    {item.startTime} - {item.endTime}
-                  </p>
-                  {item.subtitle && (
-                    <p className="text-jai-text/60 text-xs mt-0.5">{item.subtitle}</p>
-                  )}
-                  {item.phone && (
-                    <a href={`tel:${item.phone}`} className="text-jai-blue text-xs hover:underline mt-0.5 inline-block">
-                      {item.phone}
-                    </a>
-                  )}
+          {items.map((item) => {
+            if (item.type === "pt" && item.ptSession) {
+              return <PtCard key={item.id} s={item.ptSession} isPast={item.isPast} />;
+            }
+            return (
+              <div
+                key={item.id}
+                className={`bg-jai-card border border-jai-border rounded-xl p-4 ${item.isPast ? "opacity-40" : ""}`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">{item.name}</p>
+                    <p className="text-jai-text text-sm">
+                      {item.startTime} - {item.endTime}
+                    </p>
+                    {item.subtitle && (
+                      <p className="text-jai-text/60 text-xs mt-0.5">{item.subtitle}</p>
+                    )}
+                  </div>
+                  <span className="text-[10px] px-2.5 py-1 rounded-full border ml-3 bg-jai-blue/10 text-jai-blue border-jai-blue/20">
+                    Class
+                  </span>
                 </div>
-                <span
-                  className={`text-[10px] px-2.5 py-1 rounded-full border ml-3 ${
-                    item.type === "class"
-                      ? "bg-jai-blue/10 text-jai-blue border-jai-blue/20"
-                      : "bg-green-500/10 text-green-400 border-green-500/20"
-                  }`}
-                >
-                  {item.type === "class" ? "Class" : "PT"}
-                </span>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -38,6 +38,7 @@ export function EarningClient({
     description: "",
   });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   // Calculate totals
   const now = new Date();
@@ -101,6 +102,31 @@ export function EarningClient({
     if (data) setEarnings(data as Earning[]);
   };
 
+  const handleUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/extract-receipt", { method: "POST", body: formData });
+      const data = await res.json();
+      if (res.ok && data.amount) {
+        setForm({
+          date: data.date || new Date().toISOString().split("T")[0],
+          type: data.type || "other",
+          amount: String(data.amount),
+          description: data.description || "",
+        });
+        setEditingId(null);
+        setShowForm(true);
+      } else {
+        alert("Could not extract receipt details. Please enter manually.");
+      }
+    } catch {
+      alert("Upload failed. Please try again.");
+    }
+    setUploading(false);
+  };
+
   const handleEdit = (e: Earning) => {
     setForm({
       date: e.date,
@@ -131,16 +157,34 @@ export function EarningClient({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">Earning</h1>
-        <button
-          onClick={() => {
-            setEditingId(null);
-            setForm({ date: new Date().toISOString().split("T")[0], type: "pt_weekly", amount: "", description: "" });
-            setShowForm(true);
-          }}
-          className="px-4 py-2.5 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors min-h-[44px]"
-        >
-          + Add Entry
-        </button>
+        <div className="flex gap-2">
+          <label className={`px-4 py-2.5 border border-jai-border text-sm rounded-lg transition-colors min-h-[44px] flex items-center gap-1.5 cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : "hover:bg-white/5"}`}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            {uploading ? "Reading..." : "Upload"}
+            <input
+              type="file"
+              accept="image/*,.pdf"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleUpload(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setForm({ date: new Date().toISOString().split("T")[0], type: "pt_weekly", amount: "", description: "" });
+              setShowForm(true);
+            }}
+            className="px-4 py-2.5 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors min-h-[44px]"
+          >
+            + Add
+          </button>
+        </div>
       </div>
 
       {/* Weekly / MTD / YTD Summary Cards */}
@@ -188,7 +232,7 @@ export function EarningClient({
               type="date"
               value={form.date}
               onChange={(e) => setForm({ ...form, date: e.target.value })}
-              className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+              className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm h-[44px] appearance-none"
             />
           </div>
           <div>

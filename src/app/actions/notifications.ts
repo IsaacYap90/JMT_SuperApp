@@ -2,8 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { sendTelegramAlertToUser } from "@/lib/telegram-alert";
 
-// Insert a notification for a coach (called server-side by admin actions)
+// Insert a notification for a user. If the recipient is opted in via the
+// JMT_TELEGRAM_USER_MAP env var, also fire a Telegram DM so they get pinged
+// instantly without having to open the web app.
 export async function createNotification(
   recipientId: string,
   notificationType: string,
@@ -21,6 +24,14 @@ export async function createNotification(
   if (error) {
     console.error("createNotification error:", error);
     throw error;
+  }
+
+  // Fire Telegram DM if recipient is mapped (non-blocking).
+  // Each call sends exactly one message, so notifications stay 1:1.
+  try {
+    await sendTelegramAlertToUser(recipientId, title, message);
+  } catch (err) {
+    console.error("Telegram alert failed:", err);
   }
 }
 
