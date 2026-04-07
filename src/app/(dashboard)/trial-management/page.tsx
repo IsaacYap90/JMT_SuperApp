@@ -27,6 +27,23 @@ export default async function TrialManagementPage() {
     .select("*, class:classes(name, start_time, end_time)")
     .order("booking_date", { ascending: false });
 
+  // Classes enabled for trial booking (for the manual-add dropdown)
+  const { data: enabledSettings } = await admin
+    .from("trial_settings")
+    .select("class_id")
+    .eq("is_trial_enabled", true);
+  const enabledIds = (enabledSettings || []).map((s) => s.class_id);
+
+  const { data: enabledClasses } = enabledIds.length
+    ? await admin
+        .from("classes")
+        .select("id, name, day_of_week, start_time, end_time, programme, is_active")
+        .in("id", enabledIds)
+        .eq("is_active", true)
+        .order("day_of_week")
+        .order("start_time")
+    : { data: [] };
+
   return (
     <TrialManagementClient
       bookings={(bookings || []) as {
@@ -40,6 +57,14 @@ export default async function TrialManagementPage() {
         status: string;
         created_at: string;
         class: { name: string; start_time: string; end_time: string } | null;
+      }[]}
+      classes={(enabledClasses || []) as {
+        id: string;
+        name: string;
+        day_of_week: string;
+        start_time: string;
+        end_time: string;
+        programme: string | null;
       }[]}
     />
   );

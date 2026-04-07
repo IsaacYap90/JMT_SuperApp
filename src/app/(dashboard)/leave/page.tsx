@@ -35,11 +35,37 @@ export default async function LeavePage() {
   }
   const leaves = (data || []) as unknown as Leave[];
 
+  // Admins see balances for ALL coaches instead of their own. Fetch the
+  // coach roster so the client can render one card per coach. Excludes the
+  // logged-in admin themselves (Jeremy explicitly doesn't want to see his own).
+  let coaches: Pick<User, "id" | "full_name" | "role">[] = [];
+  let inLieuCredits: { coach_id: string; days: number }[] = [];
+  if (isAdmin(profile.role)) {
+    const { data: coachData } = await supabase
+      .from("users")
+      .select("id, full_name, role")
+      .in("role", ["coach", "admin", "master_admin"])
+      .eq("is_active", true)
+      .neq("id", user.id)
+      .order("full_name");
+    coaches = (coachData || []) as Pick<User, "id" | "full_name" | "role">[];
+
+    const { data: creditData } = await supabase
+      .from("in_lieu_credits")
+      .select("coach_id, days");
+    inLieuCredits = (creditData || []).map((c: { coach_id: string; days: number | string }) => ({
+      coach_id: c.coach_id,
+      days: Number(c.days),
+    }));
+  }
+
   return (
     <LeavePageClient
       leaves={leaves}
       profile={profile}
       userId={user.id}
+      coaches={coaches}
+      inLieuCredits={inLieuCredits}
     />
   );
 }

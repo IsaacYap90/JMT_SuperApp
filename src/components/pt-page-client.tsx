@@ -6,6 +6,7 @@ import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import {
   createPtClient,
   updatePtClient,
+  deletePtClient,
   createPtPackage,
   updatePtPackage,
   createPtSession,
@@ -1241,12 +1242,15 @@ function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptP
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   function openEdit(m: User) {
     setEditingId(m.id);
     setEditName(m.full_name);
     setEditPhone(m.phone || "");
+    setConfirmDeleteId(null);
   }
 
   async function handleSave(id: string) {
@@ -1260,6 +1264,24 @@ function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptP
       alert(e instanceof Error ? e.message : "Failed to update");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(true);
+    try {
+      const result = await deletePtClient(id);
+      if (!result.ok) {
+        alert(result.error);
+        return;
+      }
+      setEditingId(null);
+      setConfirmDeleteId(null);
+      router.refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Failed to delete client");
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -1322,18 +1344,51 @@ function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptP
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleSave(m.id)}
-                      disabled={saving}
-                      className="flex-1 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors disabled:opacity-50"
+                      disabled={saving || deleting}
+                      className="flex-1 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
                     >
                       {saving ? "Saving..." : "Save"}
                     </button>
                     <button
-                      onClick={() => setEditingId(null)}
-                      className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors"
+                      onClick={() => { setEditingId(null); setConfirmDeleteId(null); }}
+                      disabled={saving || deleting}
+                      className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors disabled:opacity-50 min-h-[44px]"
                     >
                       Cancel
                     </button>
                   </div>
+                  {/* Delete duplicate — two-step confirm so Jeremy doesn't
+                      accidentally wipe a client in one tap. */}
+                  {confirmDeleteId === m.id ? (
+                    <div className="flex gap-2 mt-2 pt-2 border-t border-jai-border">
+                      <button
+                        onClick={() => handleDelete(m.id)}
+                        disabled={deleting}
+                        className="flex-1 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-500/90 transition-colors disabled:opacity-50 min-h-[44px] font-medium"
+                      >
+                        {deleting ? "Deleting..." : `Yes, delete ${m.full_name}`}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        disabled={deleting}
+                        className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors disabled:opacity-50 min-h-[44px]"
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDeleteId(m.id)}
+                      disabled={saving || deleting}
+                      className="w-full mt-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-medium hover:bg-red-500/15 transition-colors disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2"
+                      title="Delete this client. Only works if they have no packages or sessions."
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                      Delete duplicate client
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex items-center justify-between">

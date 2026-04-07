@@ -1,20 +1,39 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
 
-import type { Viewport } from "next";
-
 export const metadata: Metadata = {
   title: "JMT Dashboard",
   description: "Jai Muay Thai Gym Dashboard",
+  manifest: "/manifest.webmanifest",
+  applicationName: "JMT Dashboard",
+  appleWebApp: {
+    capable: true,
+    title: "JMT",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+  },
+  formatDetection: {
+    telephone: false,
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover",
+  themeColor: "#0a0a0a",
 };
 
 export default function RootLayout({
@@ -26,6 +45,15 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${inter.className} bg-jai-bg text-white antialiased`}>
         {children}
+        <Script id="register-sw" strategy="afterInteractive">
+          {`
+            if ('serviceWorker' in navigator) {
+              window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js').catch(() => {});
+              });
+            }
+          `}
+        </Script>
       </body>
     </html>
   );

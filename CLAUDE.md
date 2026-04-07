@@ -24,3 +24,4 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - `/jmt-classes` — Recurring classes, schedule grid, coach assignments
 - `/jmt-trials` — Trial management + trial settings
 - `/jmt-structure` — Project structure (routes, tables, server actions, components)
+- `/jmt-gotchas` — Class-of-bug notes (HH:MM:SS string compare, SGT timezone construction, Supabase join cardinality, notifications type constraint, half-day rule). Read before touching leave/PT/classes code.

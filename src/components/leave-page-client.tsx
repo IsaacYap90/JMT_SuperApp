@@ -3,21 +3,25 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { User, Leave, LeaveType, isAdmin } from "@/lib/types/database";
-import { cancelLeave, submitLeave, reviewLeave } from "@/app/actions/leave";
+import { cancelLeave, submitLeave, reviewLeave, addInLieuCredit } from "@/app/actions/leave";
 import { DateRangePicker } from "./date-range-picker";
 
 const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
   { value: "annual", label: "Annual Leave" },
   { value: "sick", label: "MC (Medical Certificate)" },
-  { value: "hospital", label: "Hospital Leave" },
+  { value: "hospital", label: "Hospitalisation Leave" },
+  { value: "in_lieu", label: "Off in Lieu" },
   { value: "emergency", label: "Emergency Leave" },
 ];
 
-// Annual entitlements (days per year)
-const LEAVE_ENTITLEMENTS: Record<string, { label: string; days: number; color: string }> = {
+// Annual entitlements (days per year). All coaches get the same quota,
+// refreshed on 1 Jan. "In lieu" has no entitlement — it's a credit system;
+// balance is just "earned - used", with earning tracked manually for now.
+const LEAVE_ENTITLEMENTS: Record<string, { label: string; days: number; color: string; isCredit?: boolean }> = {
   annual: { label: "Annual", days: 14, color: "bg-blue-500" },
   sick: { label: "MC", days: 14, color: "bg-yellow-500" },
-  hospital: { label: "Hospital", days: 60, color: "bg-red-500" },
+  hospital: { label: "Hospitalisation", days: 60, color: "bg-red-500" },
+  in_lieu: { label: "Off in Lieu", days: 0, color: "bg-purple-500", isCredit: true },
 };
 
 function statusBadge(status: string) {
@@ -56,10 +60,14 @@ export function LeavePageClient({
   leaves,
   profile,
   userId,
+  coaches = [],
+  inLieuCredits = [],
 }: {
   leaves: Leave[];
   profile: User;
   userId: string;
+  coaches?: Pick<User, "id" | "full_name" | "role">[];
+  inLieuCredits?: { coach_id: string; days: number }[];
 }) {
   const router = useRouter();
   const admin = isAdmin(profile.role);
@@ -74,15 +82,31 @@ export function LeavePageClient({
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Calculate leave balances for the current year
+  // Calculate leave balances for the current user for the current year.
+  // Admins see all coaches' leaves in the list below, but the balance cards
+  // are always scoped to the currently-logged-in user's own leaves.
   const leaveBalances = useMemo(() => {
     const currentYear = new Date().getFullYear();
-    const approvedLeaves = leaves.filter(
-      (l) => l.status === "approved" && l.leave_date.startsWith(String(currentYear))
+    const myApproved = leaves.filter(
+      (l) =>
+        l.status === "approved" &&
+        l.coach_id === userId &&
+        l.leave_date.startsWith(String(currentYear))
+    );
+    // Also count pending (not yet approved) so users don't accidentally
+    // over-apply. Pending is shown as a separate number.
+    const myPending = leaves.filter(
+      (l) =>
+        l.status === "pending" &&
+        l.coach_id === userId &&
+        l.leave_date.startsWith(String(currentYear))
     );
 
     return Object.entries(LEAVE_ENTITLEMENTS).map(([type, config]) => {
-      const used = approvedLeaves
+      const used = myApproved
+        .filter((l) => l.leave_type === type)
+        .reduce((sum, l) => sum + countLeaveDays(l.leave_date, l.leave_end_date, l.is_half_day), 0);
+      const pending = myPending
         .filter((l) => l.leave_type === type)
         .reduce((sum, l) => sum + countLeaveDays(l.leave_date, l.leave_end_date, l.is_half_day), 0);
       return {
@@ -90,11 +114,81 @@ export function LeavePageClient({
         label: config.label,
         total: config.days,
         used,
+        pending,
         remaining: config.days - used,
+        isCredit: config.isCredit || false,
         color: config.color,
       };
     });
-  }, [leaves]);
+  }, [leaves, userId]);
+
+  // Admin-only: per-coach annual + MC balances. Jeremy wants to see every
+  // coach's remaining days at a glance instead of his own (he's the boss).
+  const coachBalances = useMemo(() => {
+    if (!admin) return [];
+    const currentYear = new Date().getFullYear();
+    return coaches.map((c) => {
+      const approved = leaves.filter(
+        (l) =>
+          l.status === "approved" &&
+          l.coach_id === c.id &&
+          l.leave_date.startsWith(String(currentYear))
+      );
+      const usedFor = (type: string) =>
+        approved
+          .filter((l) => l.leave_type === type)
+          .reduce((sum, l) => sum + countLeaveDays(l.leave_date, l.leave_end_date, l.is_half_day), 0);
+      const inLieuEarned = inLieuCredits
+        .filter((cr) => cr.coach_id === c.id)
+        .reduce((sum, cr) => sum + Number(cr.days || 0), 0);
+      const inLieuUsed = usedFor("in_lieu");
+      return {
+        id: c.id,
+        name: c.full_name,
+        annualUsed: usedFor("annual"),
+        annualTotal: LEAVE_ENTITLEMENTS.annual.days,
+        mcUsed: usedFor("sick"),
+        mcTotal: LEAVE_ENTITLEMENTS.sick.days,
+        hospUsed: usedFor("hospital"),
+        hospTotal: LEAVE_ENTITLEMENTS.hospital.days,
+        inLieuEarned,
+        inLieuUsed,
+        inLieuRemaining: inLieuEarned - inLieuUsed,
+      };
+    });
+  }, [admin, coaches, leaves, inLieuCredits]);
+
+  // Off-in-lieu credit modal state (admin only)
+  const [creditCoachId, setCreditCoachId] = useState<string | null>(null);
+  const [creditDays, setCreditDays] = useState("1");
+  const [creditReason, setCreditReason] = useState("");
+  const [creditSaving, setCreditSaving] = useState(false);
+
+  const openCreditModal = (coachId: string) => {
+    setCreditCoachId(coachId);
+    setCreditDays("1");
+    setCreditReason("");
+  };
+
+  const handleAddCredit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!creditCoachId) return;
+    setCreditSaving(true);
+    setError(null);
+    try {
+      await addInLieuCredit({
+        coach_id: creditCoachId,
+        days: parseFloat(creditDays),
+        reason: creditReason.trim(),
+      });
+      setCreditCoachId(null);
+      router.refresh();
+    } catch (err) {
+      setError(`Failed to add credit: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setCreditSaving(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,27 +260,165 @@ export function LeavePageClient({
         )}
       </div>
 
-      {/* Leave Balance Cards */}
+      {/* Admin view: per-coach balances (Jeremy sees every coach, not himself) */}
+      {admin && (
+        <div>
+          <p className="text-xs text-jai-text mb-2">
+            Coach balances · {new Date().getFullYear()}
+          </p>
+          <div className="space-y-2">
+            {coachBalances.length === 0 && (
+              <p className="text-xs text-jai-text">No other coaches found.</p>
+            )}
+            {coachBalances.map((c) => (
+              <div key={c.id} className="bg-jai-card border border-jai-border rounded-xl p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-sm font-medium text-white">{c.name}</p>
+                  <button
+                    onClick={() => openCreditModal(c.id)}
+                    className="text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 hover:bg-purple-500/20"
+                  >
+                    + Off in Lieu
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div>
+                    <p className="text-jai-text">Annual</p>
+                    <p className="text-white font-semibold">
+                      {c.annualTotal - c.annualUsed}
+                      <span className="text-jai-text font-normal">/{c.annualTotal}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-jai-text">MC</p>
+                    <p className="text-white font-semibold">
+                      {c.mcTotal - c.mcUsed}
+                      <span className="text-jai-text font-normal">/{c.mcTotal}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-jai-text">Hospital</p>
+                    <p className="text-white font-semibold">
+                      {c.hospTotal - c.hospUsed}
+                      <span className="text-jai-text font-normal">/{c.hospTotal}</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-jai-text">Off in Lieu</p>
+                    <p className="text-white font-semibold">
+                      {c.inLieuRemaining}
+                      <span className="text-jai-text font-normal"> left</span>
+                    </p>
+                    <p className="text-[10px] text-jai-text">{c.inLieuEarned} earned · {c.inLieuUsed} used</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Admin: add Off-in-Lieu credit modal */}
+      {creditCoachId && (
+        <div
+          className="fixed inset-0 bg-black/70 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 pb-24 sm:pb-4"
+          onClick={() => !creditSaving && setCreditCoachId(null)}
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleAddCredit}
+            className="bg-jai-card border border-jai-border rounded-t-2xl sm:rounded-2xl w-full sm:max-w-md p-5 space-y-4 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Add Off in Lieu credit</h2>
+              <button type="button" onClick={() => !creditSaving && setCreditCoachId(null)} className="text-jai-text text-xl px-2">×</button>
+            </div>
+            <p className="text-xs text-jai-text">
+              For: {coaches.find((c) => c.id === creditCoachId)?.full_name}
+            </p>
+            <div>
+              <label className="text-xs text-jai-text block mb-1">Days</label>
+              <input
+                type="number"
+                step="0.5"
+                min="0.5"
+                value={creditDays}
+                onChange={(e) => setCreditDays(e.target.value)}
+                className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-jai-text block mb-1">Reason</label>
+              <textarea
+                value={creditReason}
+                onChange={(e) => setCreditReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Worked Sunday event 5 Apr"
+                className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => !creditSaving && setCreditCoachId(null)}
+                className="flex-1 py-2 border border-jai-border rounded-lg text-sm min-h-[44px]"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creditSaving || !creditReason.trim() || !(parseFloat(creditDays) > 0)}
+                className="flex-1 py-2 bg-purple-500 text-white rounded-lg text-sm min-h-[44px] font-medium disabled:opacity-50"
+              >
+                {creditSaving ? "Saving…" : "Add credit"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Coach view: own balance cards */}
       {!admin && (
-        <div className="grid grid-cols-3 gap-3">
+      <div>
+        <p className="text-xs text-jai-text mb-2">
+          My {new Date().getFullYear()} balance
+        </p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {leaveBalances.map((bal) => (
             <div key={bal.type} className="bg-jai-card border border-jai-border rounded-xl p-3">
               <p className="text-[10px] sm:text-xs text-jai-text mb-1">{bal.label}</p>
-              <p className="text-xl sm:text-2xl font-bold text-white">
-                {bal.remaining}
-                <span className="text-xs sm:text-sm text-jai-text font-normal">/{bal.total}</span>
-              </p>
-              {/* Progress bar */}
-              <div className="mt-2 h-1.5 bg-jai-border rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${bal.color}`}
-                  style={{ width: `${Math.max(0, Math.min(100, (bal.remaining / bal.total) * 100))}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-jai-text mt-1">{bal.used} used</p>
+              {bal.isCredit ? (
+                // Off in lieu — credit system, no annual entitlement.
+                // Show used days; earning is tracked manually for now.
+                <>
+                  <p className="text-xl sm:text-2xl font-bold text-white">
+                    {bal.used}
+                    <span className="text-xs sm:text-sm text-jai-text font-normal"> used</span>
+                  </p>
+                  <div className="mt-2 h-1.5 bg-jai-border rounded-full overflow-hidden" />
+                  <p className="text-[10px] text-jai-text mt-1">Credit system</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xl sm:text-2xl font-bold text-white">
+                    {bal.remaining}
+                    <span className="text-xs sm:text-sm text-jai-text font-normal">/{bal.total}</span>
+                  </p>
+                  <div className="mt-2 h-1.5 bg-jai-border rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${bal.color}`}
+                      style={{ width: `${Math.max(0, Math.min(100, (bal.remaining / bal.total) * 100))}%` }}
+                    />
+                  </div>
+                  <p className="text-[10px] text-jai-text mt-1">
+                    {bal.used} used{bal.pending > 0 ? ` · ${bal.pending} pending` : ""}
+                  </p>
+                </>
+              )}
             </div>
           ))}
         </div>
+      </div>
       )}
 
       {error && (

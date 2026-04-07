@@ -68,6 +68,66 @@ export async function updatePtClient(id: string, fullName: string, phone: string
   revalidatePath("/pt");
 }
 
+// Delete a PT client profile — used to clean up duplicates Jeremy accidentally
+// creates. Safety: only allowed if the client has NO packages and NO sessions;
+// otherwise we'd silently orphan data. Error message tells the admin exactly
+// what blocks the delete so they know how to resolve it.
+export type DeletePtClientResult = { ok: true } | { ok: false; error: string };
+
+export async function deletePtClient(id: string): Promise<DeletePtClientResult> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  // Guard 1: must be a member, not a coach/admin.
+  const { data: target } = await admin
+    .from("users")
+    .select("id, role, full_name")
+    .eq("id", id)
+    .single();
+
+  if (!target) return { ok: false, error: "Client not found" };
+  if (target.role !== "member") {
+    return { ok: false, error: "This profile is a coach/admin, not a PT client — cannot delete from the PT tab." };
+  }
+
+  // Guard 2: no pt_packages attached.
+  const { count: pkgCount } = await admin
+    .from("pt_packages")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", id);
+
+  if ((pkgCount ?? 0) > 0) {
+    return { ok: false, error: `${target.full_name} has ${pkgCount} PT package(s). Delete the package(s) first, then retry.` };
+  }
+
+  // Guard 3: no pt_sessions attached (member_id is NO ACTION on FK).
+  const { count: sessCount } = await admin
+    .from("pt_sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("member_id", id);
+
+  if ((sessCount ?? 0) > 0) {
+    return { ok: false, error: `${target.full_name} has ${sessCount} PT session(s) in history. Delete the session(s) first, then retry.` };
+  }
+
+  // Safe to delete.
+  const { error } = await admin.from("users").delete().eq("id", id);
+  if (error) {
+    // Return the full Postgres error as data — throwing would let Next's
+    // production build redact the message into "Server Components render".
+    const code = (error as { code?: string }).code || "";
+    const details = (error as { details?: string }).details || "";
+    const hint = (error as { hint?: string }).hint || "";
+    console.error(`[deletePtClient] failed for ${id}:`, error);
+    return {
+      ok: false,
+      error: `Delete failed for ${target.full_name} [${code}]: ${error.message}${details ? ` — ${details}` : ""}${hint ? ` (${hint})` : ""}`,
+    };
+  }
+  revalidatePath("/pt");
+  return { ok: true };
+}
+
 // Create PT package
 export async function createPtPackage(payload: {
   user_id: string;
@@ -153,10 +213,10 @@ export async function createPtSession(payload: {
 
   if (error) throw new Error(error.message);
 
-  // Notify the coach
+  // Notify the coach. PT is personal — only the assigned coach is notified,
+  // no admin blast.
   if (session) {
     const memberName = session.member?.full_name || "Client";
-    const coachName = session.coach?.full_name || "Coach";
     const dt = new Date(payload.scheduled_at);
     createNotification(
       payload.coach_id,
@@ -164,25 +224,6 @@ export async function createPtSession(payload: {
       "PT Session Scheduled",
       `PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
-
-    // Notify all other admins
-    const currentAdmin = await requireAdmin().catch(() => null);
-    const { data: admins } = await admin
-      .from("users")
-      .select("id")
-      .in("role", ["admin", "master_admin"]);
-    if (admins) {
-      for (const a of admins) {
-        if (a.id !== currentAdmin?.id && a.id !== payload.coach_id) {
-          createNotification(
-            a.id,
-            "pt_created",
-            "New PT Session Added",
-            `${coachName} has a PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
-          ).catch((err) => console.error("Failed to notify admin:", err));
-        }
-      }
-    }
   }
 
   revalidatePath("/pt");
@@ -521,13 +562,6 @@ export async function coachUpdatePtStatus(
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
-
-  const coachName = profile?.full_name || "Coach";
   const admin = createAdminClient();
 
   // Verify the session belongs to this coach
@@ -566,34 +600,8 @@ export async function coachUpdatePtStatus(
     }
   }
 
-  // Notify all admins
-  const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
-  const dt = new Date(session.scheduled_at);
-  const dateTime = `${formatSgtDate(dt)} at ${formatSgtTime(dt)}`;
-  const statusLabel = newStatus === "completed" ? "completed" : newStatus === "no_show" ? "no-show" : "cancelled";
-
-  const { data: admins } = await admin
-    .from("users")
-    .select("id")
-    .in("role", ["admin", "master_admin"]);
-
-  if (admins) {
-    const notifType = newStatus === "completed" ? "pt_created" : "class_cancelled";
-    const notifTitle = newStatus === "completed" ? "PT Session Completed" : newStatus === "no_show" ? "PT Session No-Show" : "PT Session Cancelled";
-    const notifiedIds = new Set<string>();
-    for (const a of admins) {
-      // Skip if this admin is the coach who just updated (they already know)
-      if (a.id === user.id) continue;
-      if (notifiedIds.has(a.id)) continue;
-      notifiedIds.add(a.id);
-      createNotification(
-        a.id,
-        notifType,
-        notifTitle,
-        `${coachName} marked PT session with ${memberName} on ${dateTime} as ${statusLabel}.`
-      ).catch((err) => console.error("Failed to notify admin:", err));
-    }
-  }
+  // PT is personal — no admin blast. The coach who just updated already knows,
+  // and other coaches/admins don't need pinged about PTs they're not on.
 
   revalidatePath("/pt");
   revalidatePath("/");
@@ -612,19 +620,12 @@ export async function coachReschedulePtSession(
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  const { data: profile } = await supabase
-    .from("users")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
-
-  const coachName = profile?.full_name || "Coach";
   const admin = createAdminClient();
 
   // Verify session belongs to this coach
   const { data: session } = await admin
     .from("pt_sessions")
-    .select("id, coach_id, scheduled_at, status, member:users!pt_sessions_member_id_fkey(full_name)")
+    .select("id, coach_id, scheduled_at, status")
     .eq("id", sessionId)
     .eq("coach_id", user.id)
     .single();
@@ -636,9 +637,6 @@ export async function coachReschedulePtSession(
   if (new Date(newScheduledAt) < new Date()) {
     throw new Error("New time must be in the future");
   }
-
-  const oldDt = new Date(session.scheduled_at);
-  const newDt = new Date(newScheduledAt);
 
   // Update the session
   const { error } = await admin
@@ -653,30 +651,7 @@ export async function coachReschedulePtSession(
 
   if (error) throw new Error(error.message);
 
-  // Notify all admins of the reschedule
-  const memberName = ((session.member as unknown as { full_name: string } | null))?.full_name || "Client";
-  const oldDateTime = `${formatSgtDate(oldDt)} at ${formatSgtTime(oldDt)}`;
-  const newDateTime = `${formatSgtDate(newDt)} at ${formatSgtTime(newDt)}`;
-
-  const { data: admins } = await admin
-    .from("users")
-    .select("id")
-    .in("role", ["admin", "master_admin"]);
-
-  if (admins) {
-    const notifiedIds = new Set<string>();
-    for (const a of admins) {
-      if (a.id === user.id) continue;
-      if (notifiedIds.has(a.id)) continue;
-      notifiedIds.add(a.id);
-      createNotification(
-        a.id,
-        "pt_created",
-        "PT Session Rescheduled by Coach",
-        `${coachName} rescheduled PT with ${memberName} from ${oldDateTime} to ${newDateTime}.`
-      ).catch((err) => console.error("Failed to notify admin:", err));
-    }
-  }
+  // PT is personal — no admin blast on coach self-reschedule.
 
   revalidatePath("/pt");
   revalidatePath("/");

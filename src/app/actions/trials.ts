@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/types/database";
 import { revalidatePath } from "next/cache";
+import { createNotification } from "./notifications";
 
 async function requireAdmin() {
   const supabase = createClient();
@@ -136,6 +137,69 @@ export async function createTrialBooking(data: {
     .single();
 
   if (error) throw new Error(error.message);
+  return booking;
+}
+
+// Admin-triggered manual trial booking. Fires alerts to all admins + the
+// coaches assigned to the class (lead, assistant, class_coaches).
+export async function adminCreateTrialBooking(data: {
+  name: string;
+  phone: string;
+  programme: string;
+  classId: string;
+  bookingDate: string;
+  timeSlot: string;
+}) {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  // Reuse the availability + insert logic
+  const booking = await createTrialBooking(data);
+
+  // Fetch class info + all coaches tied to it
+  const { data: cls } = await admin
+    .from("classes")
+    .select(
+      "name, lead_coach_id, assistant_coach_id, class_coaches(coach_id)"
+    )
+    .eq("id", data.classId)
+    .single();
+
+  // Collect unique recipient ids
+  const coachIds = new Set<string>();
+  if (cls?.lead_coach_id) coachIds.add(cls.lead_coach_id);
+  if (cls?.assistant_coach_id) coachIds.add(cls.assistant_coach_id);
+  if (Array.isArray(cls?.class_coaches)) {
+    for (const cc of cls.class_coaches as { coach_id: string }[]) {
+      if (cc.coach_id) coachIds.add(cc.coach_id);
+    }
+  }
+
+  const { data: admins } = await admin
+    .from("users")
+    .select("id")
+    .in("role", ["admin", "master_admin"])
+    .eq("is_active", true);
+  const adminIds = new Set<string>((admins || []).map((u) => u.id));
+
+  const recipients = new Set<string>();
+  coachIds.forEach((id) => recipients.add(id));
+  adminIds.forEach((id) => recipients.add(id));
+
+  const className = cls?.name || "class";
+  const prettyDate = new Date(data.bookingDate + "T00:00:00+08:00")
+    .toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short" });
+
+  const title = "New trial booking";
+  const message = `${data.name} booked ${className} — ${prettyDate} ${data.timeSlot}. Phone: ${data.phone}`;
+
+  const recipientList: string[] = [];
+  recipients.forEach((id) => recipientList.push(id));
+  await Promise.allSettled(
+    recipientList.map((uid) => createNotification(uid, "system", title, message))
+  );
+
+  revalidatePath("/trial-management");
   return booking;
 }
 

@@ -10,6 +10,24 @@
 body {
   color: var(--foreground);
   background: var(--background);
+  /* Stop iOS Safari rubber-band scroll bouncing the whole app when users
+     overscroll at the top of a list — makes the PWA feel less "bouncy". */
+  overscroll-behavior-y: contain;
+  /* Prevent iOS text-size auto-inflation in landscape. */
+  -webkit-text-size-adjust: 100%;
+  /* Smoother momentum scrolling. */
+  -webkit-overflow-scrolling: touch;
+  /* Don't let iOS tap-highlight flash over buttons. */
+  -webkit-tap-highlight-color: transparent;
+  /* Respect safe area inset at top too (notch / dynamic island). */
+  padding-top: env(safe-area-inset-top);
+}
+
+/* Larger tap targets on mobile — WCAG says ≥44x44. */
+@media (hover: none) and (pointer: coarse) {
+  button, [role="button"], a {
+    touch-action: manipulation;
+  }
 }
 
 /* Safe area for bottom nav on notched iPhones */

@@ -36,8 +36,12 @@ export default async function HomePage() {
 
   if (isAdmin(profile.role)) {
     const db = createAdminClient();
+    const dayAfterTomorrowDate = new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+    const tomorrowDay = new Date(Date.now() + 86400000)
+      .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
+      .toLowerCase();
 
-    const [classesRes, ptPackagesRes, ptSessionsRes, leavesRes, coachesRes] =
+    const [classesRes, ptPackagesRes, ptSessionsRes, leavesRes, coachesRes, tomorrowPtRes] =
       await Promise.all([
         db
           .from("classes")
@@ -67,11 +71,22 @@ export default async function HomePage() {
           .in("role", ["coach", "admin", "master_admin"])
           .eq("is_active", true)
           .order("full_name"),
+        db
+          .from("pt_sessions")
+          .select(
+            "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*)"
+          )
+          .gte("scheduled_at", tomorrowDate)
+          .lt("scheduled_at", dayAfterTomorrowDate)
+          .in("status", ["scheduled", "confirmed"])
+          .order("scheduled_at"),
       ]);
 
     const allClasses = (classesRes.data || []) as unknown as Class[];
     const todayClasses = allClasses.filter((c) => c.day_of_week === today);
+    const tomorrowClasses = allClasses.filter((c) => c.day_of_week === tomorrowDay);
     const todayPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
+    const tomorrowPtSessions = (tomorrowPtRes.data || []) as unknown as PtSession[];
 
     const activePtPackages = (ptPackagesRes.data || []).filter(
       (pt: { sessions_used: number; total_sessions: number }) => pt.sessions_used < pt.total_sessions
@@ -83,6 +98,8 @@ export default async function HomePage() {
       <AdminDashboard
         todayClasses={todayClasses}
         todayPtSessions={todayPtSessions}
+        tomorrowClasses={tomorrowClasses}
+        tomorrowPtSessions={tomorrowPtSessions}
         activePtPackages={activePtPackages}
         pendingLeaves={pendingLeaves}
         today={today}

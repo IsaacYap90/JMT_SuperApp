@@ -34,6 +34,8 @@ function getSgtGreeting(): string {
 export function AdminDashboard({
   todayClasses,
   todayPtSessions,
+  tomorrowClasses,
+  tomorrowPtSessions,
   activePtPackages,
   pendingLeaves,
   today,
@@ -42,6 +44,8 @@ export function AdminDashboard({
 }: {
   todayClasses: Class[];
   todayPtSessions: PtSession[];
+  tomorrowClasses: Class[];
+  tomorrowPtSessions: PtSession[];
   activePtPackages: number;
   pendingLeaves: number;
   today: string;
@@ -108,6 +112,26 @@ export function AdminDashboard({
     timelineItems.push({ type: "pt", sortKey: `${hh}:${mm}`, data: s });
   });
   timelineItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  // Tomorrow's merged timeline (read-only — no edit, just preview).
+  const tmrClasses = tomorrowClasses.slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
+  const tomorrowItems: TimelineItem[] = [];
+  tmrClasses.forEach((cls) => tomorrowItems.push({ type: "class", sortKey: cls.start_time, data: cls }));
+  tomorrowPtSessions.forEach((s) => {
+    const dt = new Date(s.scheduled_at);
+    const sgt = new Date(dt.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+    const hh = sgt.getHours().toString().padStart(2, "0");
+    const mm = sgt.getMinutes().toString().padStart(2, "0");
+    tomorrowItems.push({ type: "pt", sortKey: `${hh}:${mm}`, data: s });
+  });
+  tomorrowItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+
+  const tomorrowDateLabel = new Date(Date.now() + 86400000).toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Asia/Singapore",
+  });
 
   return (
     <div className="space-y-6 md:space-y-8">
@@ -297,6 +321,83 @@ export function AdminDashboard({
                         </div>
                       </div>
                     )}
+                  </div>
+                );
+              }
+            })}
+          </div>
+        )}
+      </section>
+
+      {/* Tomorrow's Schedule (read-only preview) */}
+      <section>
+        <h2 className="text-base md:text-lg font-semibold mb-1">
+          Tomorrow&apos;s Schedule
+        </h2>
+        <p className="text-xs text-jai-text mb-3 md:mb-4 capitalize">{tomorrowDateLabel}</p>
+        {tomorrowItems.length === 0 ? (
+          <div className="bg-jai-card border border-jai-border rounded-xl p-4 md:p-6 text-jai-text text-sm">
+            No classes or PT sessions tomorrow.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {tomorrowItems.map((item) => {
+              if (item.type === "class") {
+                const cls = item.data as Class;
+                return (
+                  <div
+                    key={`tmr-class-${cls.id}`}
+                    className="block bg-jai-card border border-jai-border rounded-xl p-3 md:p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm md:text-base">{cls.name}</p>
+                        <p className="text-jai-text text-sm">
+                          {cls.start_time.slice(0, 5)} - {cls.end_time.slice(0, 5)}
+                          {cls.lead_coach && ` · ${cls.lead_coach.full_name}`}
+                          {cls.class_coaches
+                            ?.filter((cc) => !cc.is_lead && cc.coach)
+                            .map((cc) => ` + ${cc.coach!.full_name}`)
+                            .join("")}
+                          {!cls.class_coaches?.length &&
+                            cls.assistant_coach &&
+                            ` + ${cls.assistant_coach.full_name}`}
+                        </p>
+                      </div>
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-jai-blue/10 text-jai-blue border border-jai-blue/20 ml-3">
+                        Class
+                      </span>
+                    </div>
+                  </div>
+                );
+              } else {
+                const s = item.data as PtSession;
+                const dt = new Date(s.scheduled_at);
+                const time = dt.toLocaleTimeString("en-SG", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                  timeZone: "Asia/Singapore",
+                });
+                return (
+                  <div
+                    key={`tmr-pt-${s.id}`}
+                    className="bg-jai-card border border-jai-border rounded-xl p-3 md:p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm md:text-base">
+                          PT — {s.member?.full_name || "Client"}
+                        </p>
+                        <p className="text-jai-text text-sm">
+                          {time} · {s.duration_minutes || 60}min
+                          {s.coach && ` · ${s.coach.full_name}`}
+                        </p>
+                      </div>
+                      <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 ml-3">
+                        PT
+                      </span>
+                    </div>
                   </div>
                 );
               }

@@ -152,6 +152,15 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
 
   if (!leave) throw new Error("Leave not found");
 
+  // Idempotency guard — if the leave is already in the target state, skip the
+  // update + notification pipeline entirely. Prevents duplicate Telegram alerts
+  // when the action is re-triggered (router refresh race, accidental re-tap,
+  // pending-list snapshot drift, etc.).
+  if (leave.status === action) {
+    revalidatePath("/leave");
+    return;
+  }
+
   const { error } = await admin
     .from("leaves")
     .update({
@@ -159,7 +168,8 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
       reviewed_by: userId,
       reviewed_at: new Date().toISOString(),
     })
-    .eq("id", leaveId);
+    .eq("id", leaveId)
+    .eq("status", "pending"); // only transition from pending → approved/rejected
 
   if (error) throw new Error(error.message);
 
@@ -239,6 +249,53 @@ export async function cancelLeave(leaveId: string) {
 
   const { error } = await admin.from("leaves").delete().eq("id", leaveId);
   if (error) throw new Error(error.message);
+
+  revalidatePath("/leave");
+}
+
+// Admin-only: grant off-in-lieu credit days to a coach. Used by Jeremy when a
+// coach works a Sunday/holiday or stays back for an event. Recorded in
+// in_lieu_credits so balance = credits_earned - in_lieu_used.
+export async function addInLieuCredit(payload: {
+  coach_id: string;
+  days: number;
+  reason: string;
+}) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  if (!profile || (profile.role !== "admin" && profile.role !== "master_admin")) {
+    throw new Error("Not authorized");
+  }
+
+  if (!payload.coach_id) throw new Error("Coach required");
+  if (!payload.reason.trim()) throw new Error("Reason required");
+  if (!(payload.days > 0)) throw new Error("Days must be positive");
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("in_lieu_credits").insert({
+    coach_id: payload.coach_id,
+    days: payload.days,
+    reason: payload.reason.trim(),
+    granted_by: user.id,
+  });
+  if (error) throw new Error(error.message);
+
+  // Notify the coach so they see it in-app + on Telegram if mapped.
+  await createNotification(
+    payload.coach_id,
+    "system",
+    "Off in lieu credited",
+    `${payload.days} day(s) added — ${payload.reason.trim()}`
+  );
 
   revalidatePath("/leave");
 }

@@ -95,7 +95,7 @@ export interface ClassSession {
   class?: Class;
 }
 
-export type LeaveType = "sick" | "annual" | "emergency" | "hospital";
+export type LeaveType = "sick" | "annual" | "emergency" | "hospital" | "in_lieu";
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
 export interface Leave {

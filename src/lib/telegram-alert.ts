@@ -27,6 +27,40 @@ function getUserMap(): Map<string, string> {
   return map;
 }
 
+// Plain-text DM helper. Skips Telegram's MarkdownV2 parser entirely so callers
+// don't have to worry about escaping reserved characters in dynamic content
+// like class names, member names, or punctuation. Returns true on HTTP 200.
+export async function sendTelegramPlainToUser(
+  recipientUserId: string,
+  text: string
+): Promise<boolean> {
+  const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
+  if (!token) return false;
+  const chatId = getUserMap().get(recipientUserId);
+  if (!chatId) return false;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text,
+        disable_web_page_preview: true,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error(`[telegram-alert plain] ${chatId} failed: ${res.status} ${body}`);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error(`[telegram-alert plain] ${chatId} exception:`, err);
+    return false;
+  }
+}
+
 // Fire a Telegram DM to a specific JMT user, if they're mapped in the env.
 // Returns silently if the user isn't mapped or the bot isn't configured.
 export async function sendTelegramAlertToUser(
