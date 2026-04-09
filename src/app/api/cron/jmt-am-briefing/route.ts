@@ -200,12 +200,23 @@ export async function GET(req: NextRequest) {
     if (isFullDayLeave) {
       lines.push(`You're on ${myLeave!.leave_type} leave today. Enjoy the rest day 🌴`);
     } else {
+      // Half-day rule (JMT): off before 6:30pm, teaching evening.
+      // When on approved half-day leave, drop classes/PT that start before 18:30.
+      const isHalfDayLeave = !!(myLeave && myLeave.is_half_day);
+      if (isHalfDayLeave) {
+        lines.push(
+          `You're on ${myLeave!.leave_type} half day today — evening only (6:30pm onwards).`
+        );
+        lines.push("");
+      }
+
       // Merge classes + PT into a single time-ordered list (overview tab style)
       type Item = { sortKey: string; line: string };
       const items: Item[] = [];
 
       const hideRole = HIDE_ROLE_USER_IDS.has(u.id);
       for (const c of myClasses) {
+        if (isHalfDayLeave && c.start_time < "18:30:00") continue;
         const role =
           c.lead_coach_id === u.id
             ? "lead"
@@ -227,6 +238,7 @@ export async function GET(req: NextRequest) {
           hour12: false,
           timeZone: "Asia/Singapore",
         });
+        if (isHalfDayLeave && hhmm < "18:30") continue;
         const memberName =
           (p.member as unknown as { full_name?: string } | null)?.full_name ||
           "Client";

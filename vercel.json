@@ -1,7 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/daily-schedule",
+      "path": "/api/cron/jmt-am-briefing",
       "schedule": "0 22 * * *"
     }
   ]
