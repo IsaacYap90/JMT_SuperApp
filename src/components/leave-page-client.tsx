@@ -81,6 +81,9 @@ export function LeavePageClient({
   const [saving, setSaving] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Admin-only: when set, the leave form is submitting on behalf of this coach
+  // (Jeremy logging an MC / annual leave directly onto a coach's profile).
+  const [targetCoachId, setTargetCoachId] = useState<string | null>(null);
 
   // Calculate leave balances for the current user for the current year.
   // Admins see all coaches' leaves in the list below, but the balance cards
@@ -109,18 +112,23 @@ export function LeavePageClient({
       const pending = myPending
         .filter((l) => l.leave_type === type)
         .reduce((sum, l) => sum + countLeaveDays(l.leave_date, l.leave_end_date, l.is_half_day), 0);
+      // For credit-based types (OIL), total = earned credits instead of fixed entitlement
+      const earned = config.isCredit
+        ? inLieuCredits.filter((cr) => cr.coach_id === userId).reduce((sum, cr) => sum + cr.days, 0)
+        : 0;
+      const total = config.isCredit ? earned : config.days;
       return {
         type,
         label: config.label,
-        total: config.days,
+        total,
         used,
         pending,
-        remaining: config.days - used,
+        remaining: total - used,
         isCredit: config.isCredit || false,
         color: config.color,
       };
     });
-  }, [leaves, userId]);
+  }, [leaves, userId, inLieuCredits]);
 
   // Admin-only: per-coach annual + MC balances. Jeremy wants to see every
   // coach's remaining days at a glance instead of his own (he's the boss).
@@ -202,8 +210,10 @@ export function LeavePageClient({
         leave_type: leaveType,
         is_half_day: isHalfDay,
         reason: reason.trim(),
+        target_coach_id: targetCoachId || undefined,
       });
       setShowForm(false);
+      setTargetCoachId(null);
       setLeaveStartDate("");
       setLeaveEndDate("");
       setIsHalfDay(false);
@@ -240,8 +250,25 @@ export function LeavePageClient({
   };
 
   const canCancel = (leave: Leave) => {
-    if (admin) return false;
+    // Admins (Jeremy) can cancel any leave on any coach profile, including past
+    // ones — used for correcting mistakes / removing MC entries after the fact.
+    if (admin) return true;
     return leave.coach_id === userId && leave.leave_date >= new Date().toISOString().split("T")[0];
+  };
+
+  const openAdminLeaveForm = (coachId: string) => {
+    setTargetCoachId(coachId);
+    setLeaveStartDate("");
+    setLeaveEndDate("");
+    setLeaveType("sick");
+    setIsHalfDay(false);
+    setReason("");
+    setShowForm(true);
+  };
+
+  const closeAdminLeaveForm = () => {
+    setShowForm(false);
+    setTargetCoachId(null);
   };
 
   return (
@@ -272,14 +299,22 @@ export function LeavePageClient({
             )}
             {coachBalances.map((c) => (
               <div key={c.id} className="bg-jai-card border border-jai-border rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
                   <p className="text-sm font-medium text-white">{c.name}</p>
-                  <button
-                    onClick={() => openCreditModal(c.id)}
-                    className="text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 hover:bg-purple-500/20"
-                  >
-                    + Off in Lieu
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => openAdminLeaveForm(c.id)}
+                      className="text-[10px] px-2 py-1 rounded-full bg-blue-500/10 text-blue-300 border border-blue-500/30 hover:bg-blue-500/20"
+                    >
+                      + Apply Leave
+                    </button>
+                    <button
+                      onClick={() => openCreditModal(c.id)}
+                      className="text-[10px] px-2 py-1 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/30 hover:bg-purple-500/20"
+                    >
+                      + Off in Lieu
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                   <div>
@@ -388,15 +423,22 @@ export function LeavePageClient({
             <div key={bal.type} className="bg-jai-card border border-jai-border rounded-xl p-3">
               <p className="text-[10px] sm:text-xs text-jai-text mb-1">{bal.label}</p>
               {bal.isCredit ? (
-                // Off in lieu — credit system, no annual entitlement.
-                // Show used days; earning is tracked manually for now.
                 <>
                   <p className="text-xl sm:text-2xl font-bold text-white">
-                    {bal.used}
-                    <span className="text-xs sm:text-sm text-jai-text font-normal"> used</span>
+                    {bal.remaining}
+                    <span className="text-xs sm:text-sm text-jai-text font-normal"> left</span>
                   </p>
-                  <div className="mt-2 h-1.5 bg-jai-border rounded-full overflow-hidden" />
-                  <p className="text-[10px] text-jai-text mt-1">Credit system</p>
+                  <div className="mt-2 h-1.5 bg-jai-border rounded-full overflow-hidden">
+                    {bal.total > 0 && (
+                      <div
+                        className="h-full rounded-full bg-purple-500"
+                        style={{ width: `${Math.max(0, Math.min(100, (bal.remaining / bal.total) * 100))}%` }}
+                      />
+                    )}
+                  </div>
+                  <p className="text-[10px] text-jai-text mt-1">
+                    {bal.total} earned · {bal.used} used
+                  </p>
                 </>
               ) : (
                 <>
@@ -427,9 +469,25 @@ export function LeavePageClient({
         </div>
       )}
 
-      {/* Leave application form (coach only) */}
-      {showForm && !admin && (
+      {/* Leave application form — coaches apply for themselves, admins can
+          apply on behalf of a coach via the "+ Apply Leave" button on each
+          coach card (targetCoachId gates admin submission). */}
+      {showForm && (!admin || targetCoachId) && (
         <form onSubmit={handleSubmit} className="bg-jai-card border border-jai-border rounded-xl p-4 space-y-4">
+          {admin && targetCoachId && (
+            <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2">
+              <p className="text-xs text-blue-300">
+                Applying leave for <span className="font-semibold text-white">{coaches.find((c) => c.id === targetCoachId)?.full_name || "coach"}</span>
+              </p>
+              <button
+                type="button"
+                onClick={closeAdminLeaveForm}
+                className="text-blue-300 text-xs underline"
+              >
+                cancel
+              </button>
+            </div>
+          )}
           <DateRangePicker
             startDate={leaveStartDate}
             endDate={leaveEndDate}

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Class, PtSession, User } from "@/lib/types/database";
-import { MetricCard } from "./metric-card";
 import { getTodayHoliday } from "@/lib/sg-holidays";
 import { updatePtSession } from "@/app/actions/pt";
 
@@ -24,11 +23,43 @@ function isPtPast(scheduledAt: string, durationMinutes: number): boolean {
   return now >= endSgt;
 }
 
-function getSgtGreeting(): string {
-  const hour = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" })).getHours();
-  if (hour >= 5 && hour < 12) return "Good morning";
-  if (hour >= 12 && hour < 17) return "Good afternoon";
-  return "Good evening";
+function isClassNow(startTime: string, endTime: string): boolean {
+  const now = getSgtNow();
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  return nowMins >= sh * 60 + sm && nowMins < eh * 60 + em;
+}
+
+function isPtNow(scheduledAt: string, durationMinutes: number): boolean {
+  const now = getSgtNow();
+  const start = new Date(new Date(scheduledAt).toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+  const end = new Date(start.getTime() + durationMinutes * 60000);
+  return now >= start && now < end;
+}
+
+function isClassNext(startTime: string, endTime: string, allStartTimes: string[]): boolean {
+  const now = getSgtNow();
+  const [sh, sm] = startTime.split(":").map(Number);
+  const startMins = sh * 60 + sm;
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  const [eh, em] = endTime.split(":").map(Number);
+  const endMins = eh * 60 + em;
+  if (nowMins >= endMins) return false; // past
+  if (nowMins >= startMins) return false; // currently happening
+  // Is this the earliest future item?
+  const futureStarts = allStartTimes
+    .map((t) => { const [h2, m2] = t.split(":").map(Number); return h2 * 60 + m2; })
+    .filter((m) => m > nowMins);
+  return futureStarts.length > 0 && startMins === Math.min(...futureStarts);
+}
+
+/** Colour for class type based on name keywords */
+function classColor(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes("kid")) return "border-l-orange-400";
+  if (n.includes("teen")) return "border-l-purple-400";
+  return "border-l-blue-400";
 }
 
 export function AdminDashboard({
@@ -52,6 +83,7 @@ export function AdminDashboard({
   userName: string;
   coaches: User[];
 }) {
+  void today; // passed by page but date is computed inline
   const todayHoliday = getTodayHoliday();
   const classes = todayHoliday ? [] : todayClasses.sort((a, b) => a.start_time.localeCompare(b.start_time));
   const [ptSessions, setPtSessions] = useState<PtSession[]>(todayHoliday ? [] : todayPtSessions);
@@ -63,6 +95,9 @@ export function AdminDashboard({
   const [editTime, setEditTime] = useState("");
   const [editDuration, setEditDuration] = useState(60);
   const [saving, setSaving] = useState(false);
+
+  // Tomorrow collapsed
+  const [tomorrowOpen, setTomorrowOpen] = useState(false);
 
   function openEdit(s: PtSession) {
     const dt = new Date(s.scheduled_at);
@@ -113,7 +148,10 @@ export function AdminDashboard({
   });
   timelineItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
-  // Tomorrow's merged timeline (read-only — no edit, just preview).
+  // All start times for NEXT detection
+  const allStartTimes = timelineItems.map((item) => item.sortKey);
+
+  // Tomorrow's merged timeline
   const tmrClasses = tomorrowClasses.slice().sort((a, b) => a.start_time.localeCompare(b.start_time));
   const tomorrowItems: TimelineItem[] = [];
   tmrClasses.forEach((cls) => tomorrowItems.push({ type: "class", sortKey: cls.start_time, data: cls }));
@@ -127,47 +165,78 @@ export function AdminDashboard({
   tomorrowItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
   const tomorrowDateLabel = new Date(Date.now() + 86400000).toLocaleDateString("en-GB", {
-    weekday: "long",
+    weekday: "short",
     day: "numeric",
-    month: "long",
+    month: "short",
     timeZone: "Asia/Singapore",
   });
 
+  const firstName = userName.split(" ")[0];
+  const shortDate = new Date().toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "Asia/Singapore",
+  });
+
+  // Tomorrow peek summary
+  const tmrFirstTime = tomorrowItems.length > 0 ? tomorrowItems[0].sortKey.slice(0, 5) : "";
+  const tmrSummary = tomorrowItems.length > 0
+    ? `${tomorrowItems.length} session${tomorrowItems.length !== 1 ? "s" : ""} from ${tmrFirstTime}`
+    : "Nothing scheduled";
+
   return (
-    <div className="space-y-6 md:space-y-8">
-      <div>
-        <h1 className="text-xl md:text-2xl font-bold">{getSgtGreeting()}, {userName}</h1>
-        <p className="text-jai-text text-sm mt-1 capitalize">
-          {today} &middot;{" "}
-          {new Date().toLocaleDateString("en-GB", {
-            day: "numeric",
-            month: "long",
-            year: "numeric",
-            timeZone: "Asia/Singapore",
-          })}
-        </p>
+    <div className="space-y-5">
+      {/* Compact header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">{firstName}</h1>
+          <p className="text-jai-text text-xs capitalize">{shortDate}</p>
+        </div>
+        {/* Quick stats pills */}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          <span className="text-[11px] px-2.5 py-1 rounded-full bg-jai-card border border-jai-border text-jai-text">
+            {classes.length} class{classes.length !== 1 ? "es" : ""}
+          </span>
+          <span className="text-[11px] px-2.5 py-1 rounded-full bg-jai-card border border-jai-border text-jai-text">
+            {ptSessions.length} PT
+          </span>
+          <span className="text-[11px] px-2.5 py-1 rounded-full bg-jai-card border border-jai-border text-jai-text">
+            {activePtPackages} active
+          </span>
+        </div>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 md:gap-4">
-        <MetricCard title="Today's Classes" value={classes.length} href="/schedule" />
-        <MetricCard title="Today's PT" value={ptSessions.length} href="/pt" />
-        <MetricCard title="Active PT" value={activePtPackages} href="/pt" />
-        <MetricCard title="Pending Leave" value={pendingLeaves} href="/leave" highlight={pendingLeaves > 0} />
-      </div>
+      {/* Pending leave alert */}
+      {pendingLeaves > 0 && (
+        <Link
+          href="/leave"
+          className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 hover:bg-amber-500/15 transition-colors"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+            <p className="text-sm text-amber-300 font-medium">
+              {pendingLeaves} leave request{pendingLeaves !== 1 ? "s" : ""} pending
+            </p>
+          </div>
+          <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      )}
 
       {/* Today's Schedule */}
       <section>
-        <h2 className="text-base md:text-lg font-semibold mb-3 md:mb-4">
-          Today&apos;s Schedule
+        <h2 className="text-sm font-semibold text-jai-text uppercase tracking-wider mb-3">
+          Today
         </h2>
         {todayHoliday ? (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 md:p-6 text-center">
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
             <p className="font-medium text-red-400">Gym Closed</p>
             <p className="text-red-400/70 text-sm">{todayHoliday.name}</p>
           </div>
-        ) : classes.length === 0 && ptSessions.length === 0 ? (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-4 md:p-6 text-jai-text text-sm">
+        ) : timelineItems.length === 0 ? (
+          <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-sm">
             No classes or PT sessions today.
           </div>
         ) : (
@@ -176,17 +245,34 @@ export function AdminDashboard({
               if (item.type === "class") {
                 const cls = item.data as Class;
                 const past = isClassPast(cls.end_time);
+                const now = isClassNow(cls.start_time, cls.end_time);
+                const next = !now && !past && isClassNext(cls.start_time, cls.end_time, allStartTimes);
                 return (
                   <Link
                     key={`class-${cls.id}`}
                     href="/schedule"
-                    className={`block bg-jai-card border border-jai-border rounded-xl p-3 md:p-4 hover:border-jai-blue/40 transition-colors ${past ? "opacity-40" : ""}`}
+                    className={`block bg-jai-card border border-jai-border rounded-xl p-3 border-l-4 ${classColor(cls.name)} transition-all ${
+                      past ? "opacity-35" : ""
+                    } ${now ? "ring-1 ring-jai-blue/40" : ""}`}
                   >
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm md:text-base">{cls.name}</p>
-                        <p className="text-jai-text text-sm">
-                          {cls.start_time.slice(0, 5)} - {cls.end_time.slice(0, 5)}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm truncate">{cls.name}</p>
+                          {now && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-jai-blue/20 text-jai-blue font-bold uppercase tracking-wider flex items-center gap-1 flex-shrink-0">
+                              <span className="w-1.5 h-1.5 bg-jai-blue rounded-full animate-pulse" />
+                              NOW
+                            </span>
+                          )}
+                          {next && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-white/70 font-semibold uppercase tracking-wider flex-shrink-0">
+                              NEXT
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-jai-text text-xs mt-0.5">
+                          {cls.start_time.slice(0, 5)} – {cls.end_time.slice(0, 5)}
                           {cls.lead_coach && ` · ${cls.lead_coach.full_name}`}
                           {cls.class_coaches
                             ?.filter((cc) => !cc.is_lead && cc.coach)
@@ -196,14 +282,6 @@ export function AdminDashboard({
                             cls.assistant_coach &&
                             ` + ${cls.assistant_coach.full_name}`}
                         </p>
-                      </div>
-                      <div className="flex items-center gap-2 ml-3">
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-jai-blue/10 text-jai-blue border border-jai-blue/20">
-                          Class
-                        </span>
-                        <svg className="w-4 h-4 text-jai-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
                       </div>
                     </div>
                   </Link>
@@ -219,34 +297,38 @@ export function AdminDashboard({
                 });
                 const isEditing = editingId === s.id;
                 const ptPast = isPtPast(s.scheduled_at, s.duration_minutes || 60);
+                const ptNow = isPtNow(s.scheduled_at, s.duration_minutes || 60);
                 return (
                   <div
                     key={`pt-${s.id}`}
-                    className={`bg-jai-card border rounded-xl p-3 md:p-4 transition-colors ${
-                      isEditing ? "border-green-500/40" : "border-jai-border hover:border-green-500/30 cursor-pointer"
-                    } ${ptPast && !isEditing ? "opacity-40" : ""}`}
+                    className={`bg-jai-card border border-jai-border rounded-xl p-3 border-l-4 border-l-green-400 transition-all ${
+                      isEditing ? "ring-1 ring-green-500/40" : "cursor-pointer"
+                    } ${ptPast && !isEditing ? "opacity-35" : ""} ${ptNow ? "ring-1 ring-green-400/40" : ""}`}
                     onClick={() => !isEditing && openEdit(s)}
                   >
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm md:text-base">
-                          PT — {s.member?.full_name || "Client"}
-                        </p>
-                        <p className="text-jai-text text-sm">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm truncate">
+                            PT — {s.member?.full_name || "Client"}
+                          </p>
+                          {ptNow && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold uppercase tracking-wider flex items-center gap-1 flex-shrink-0">
+                              <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
+                              NOW
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-jai-text text-xs mt-0.5">
                           {time} · {s.duration_minutes || 60}min
                           {s.coach && ` · ${s.coach.full_name}`}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 ml-3">
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                          PT
-                        </span>
-                        {!isEditing && (
-                          <svg className="w-4 h-4 text-jai-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                          </svg>
-                        )}
-                      </div>
+                      {!isEditing && (
+                        <svg className="w-3.5 h-3.5 text-jai-text/40 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      )}
                     </div>
 
                     {/* Inline edit form */}
@@ -329,79 +411,85 @@ export function AdminDashboard({
         )}
       </section>
 
-      {/* Tomorrow's Schedule (read-only preview) */}
+      {/* Tomorrow — collapsed by default with peek */}
       <section>
-        <h2 className="text-base md:text-lg font-semibold mb-1">
-          Tomorrow&apos;s Schedule
-        </h2>
-        <p className="text-xs text-jai-text mb-3 md:mb-4 capitalize">{tomorrowDateLabel}</p>
-        {tomorrowItems.length === 0 ? (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-4 md:p-6 text-jai-text text-sm">
-            No classes or PT sessions tomorrow.
+        <button
+          onClick={() => setTomorrowOpen(!tomorrowOpen)}
+          className="w-full flex items-center justify-between py-2 group"
+        >
+          <div className="flex items-center gap-2">
+            <h2 className="text-sm font-semibold text-jai-text uppercase tracking-wider">
+              Tomorrow
+            </h2>
+            <span className="text-xs text-jai-text/60 capitalize">{tomorrowDateLabel}</span>
           </div>
-        ) : (
-          <div className="space-y-2">
-            {tomorrowItems.map((item) => {
-              if (item.type === "class") {
-                const cls = item.data as Class;
-                return (
-                  <div
-                    key={`tmr-class-${cls.id}`}
-                    className="block bg-jai-card border border-jai-border rounded-xl p-3 md:p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm md:text-base">{cls.name}</p>
-                        <p className="text-jai-text text-sm">
-                          {cls.start_time.slice(0, 5)} - {cls.end_time.slice(0, 5)}
-                          {cls.lead_coach && ` · ${cls.lead_coach.full_name}`}
-                          {cls.class_coaches
-                            ?.filter((cc) => !cc.is_lead && cc.coach)
-                            .map((cc) => ` + ${cc.coach!.full_name}`)
-                            .join("")}
-                          {!cls.class_coaches?.length &&
-                            cls.assistant_coach &&
-                            ` + ${cls.assistant_coach.full_name}`}
-                        </p>
-                      </div>
-                      <span className="text-[10px] px-2 py-1 rounded-full bg-jai-blue/10 text-jai-blue border border-jai-blue/20 ml-3">
-                        Class
-                      </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-jai-text/60">{tmrSummary}</span>
+            <svg
+              className={`w-4 h-4 text-jai-text/40 transition-transform ${tomorrowOpen ? "rotate-180" : ""}`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </button>
+        {tomorrowOpen && (
+          <div className="space-y-2 mt-2">
+            {tomorrowItems.length === 0 ? (
+              <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-sm">
+                Nothing scheduled.
+              </div>
+            ) : (
+              tomorrowItems.map((item) => {
+                if (item.type === "class") {
+                  const cls = item.data as Class;
+                  return (
+                    <div
+                      key={`tmr-class-${cls.id}`}
+                      className={`bg-jai-card border border-jai-border rounded-xl p-3 border-l-4 ${classColor(cls.name)}`}
+                    >
+                      <p className="font-medium text-sm">{cls.name}</p>
+                      <p className="text-jai-text text-xs mt-0.5">
+                        {cls.start_time.slice(0, 5)} – {cls.end_time.slice(0, 5)}
+                        {cls.lead_coach && ` · ${cls.lead_coach.full_name}`}
+                        {cls.class_coaches
+                          ?.filter((cc) => !cc.is_lead && cc.coach)
+                          .map((cc) => ` + ${cc.coach!.full_name}`)
+                          .join("")}
+                        {!cls.class_coaches?.length &&
+                          cls.assistant_coach &&
+                          ` + ${cls.assistant_coach.full_name}`}
+                      </p>
                     </div>
-                  </div>
-                );
-              } else {
-                const s = item.data as PtSession;
-                const dt = new Date(s.scheduled_at);
-                const time = dt.toLocaleTimeString("en-SG", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                  timeZone: "Asia/Singapore",
-                });
-                return (
-                  <div
-                    key={`tmr-pt-${s.id}`}
-                    className="bg-jai-card border border-jai-border rounded-xl p-3 md:p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-sm md:text-base">
-                          PT — {s.member?.full_name || "Client"}
-                        </p>
-                        <p className="text-jai-text text-sm">
-                          {time} · {s.duration_minutes || 60}min
-                          {s.coach && ` · ${s.coach.full_name}`}
-                        </p>
-                      </div>
-                      <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 ml-3">
-                        PT
-                      </span>
+                  );
+                } else {
+                  const s = item.data as PtSession;
+                  const dt = new Date(s.scheduled_at);
+                  const time = dt.toLocaleTimeString("en-SG", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                    timeZone: "Asia/Singapore",
+                  });
+                  return (
+                    <div
+                      key={`tmr-pt-${s.id}`}
+                      className="bg-jai-card border border-jai-border rounded-xl p-3 border-l-4 border-l-green-400"
+                    >
+                      <p className="font-medium text-sm">
+                        PT — {s.member?.full_name || "Client"}
+                      </p>
+                      <p className="text-jai-text text-xs mt-0.5">
+                        {time} · {s.duration_minutes || 60}min
+                        {s.coach && ` · ${s.coach.full_name}`}
+                      </p>
                     </div>
-                  </div>
-                );
-              }
-            })}
+                  );
+                }
+              })
+            )}
           </div>
         )}
       </section>

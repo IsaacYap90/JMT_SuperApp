@@ -73,22 +73,39 @@ export async function submitLeave(payload: {
   leave_type: string;
   is_half_day: boolean;
   reason: string;
+  target_coach_id?: string;
 }) {
   const userId = await getAuthUser();
   const admin = createAdminClient();
 
-  // Get coach name
+  // Admins may submit leave on behalf of another coach (e.g. Jeremy logging an
+  // MC on Isaac's profile). Non-admins always get coach_id = self.
+  let coachId = userId;
+  if (payload.target_coach_id && payload.target_coach_id !== userId) {
+    const { data: callerProfile } = await admin
+      .from("users")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    const callerRole = callerProfile?.role;
+    if (callerRole !== "admin" && callerRole !== "master_admin") {
+      throw new Error("Not authorized to submit leave for another coach");
+    }
+    coachId = payload.target_coach_id;
+  }
+
+  // Get coach name (for the target coach, so notifications read correctly)
   const { data: coach } = await admin
     .from("users")
     .select("full_name")
-    .eq("id", userId)
+    .eq("id", coachId)
     .single();
   const coachName = coach?.full_name || "Coach";
 
   const { data: inserted, error } = await admin
     .from("leaves")
     .insert({
-      coach_id: userId,
+      coach_id: coachId,
       leave_date: payload.leave_date,
       leave_end_date: payload.leave_end_date || payload.leave_date,
       leave_type: payload.leave_type,
@@ -101,9 +118,9 @@ export async function submitLeave(payload: {
 
   if (error) throw new Error(error.message);
 
-  // Find affected classes within the leave range
+  // Find affected classes within the leave range (for the target coach)
   const affected = await findAffectedClasses(
-    userId,
+    coachId,
     payload.leave_date,
     payload.leave_end_date || payload.leave_date,
     payload.is_half_day
@@ -234,7 +251,9 @@ export async function cancelLeave(leaveId: string) {
   const userId = await getAuthUser();
   const admin = createAdminClient();
 
-  // Verify the leave belongs to this user
+  // Verify the leave belongs to this user, OR the caller is an admin (admins
+  // can cancel/delete any leave — e.g. Jeremy removing an MC from Isaac's
+  // profile after correction).
   const { data: leave } = await admin
     .from("leaves")
     .select("coach_id, leave_date")
@@ -242,10 +261,22 @@ export async function cancelLeave(leaveId: string) {
     .single();
 
   if (!leave) throw new Error("Leave not found");
-  if (leave.coach_id !== userId) throw new Error("Not authorized");
 
-  const today = new Date().toISOString().split("T")[0];
-  if (leave.leave_date < today) throw new Error("Cannot cancel past leaves");
+  if (leave.coach_id !== userId) {
+    const { data: callerProfile } = await admin
+      .from("users")
+      .select("role")
+      .eq("id", userId)
+      .single();
+    const callerRole = callerProfile?.role;
+    if (callerRole !== "admin" && callerRole !== "master_admin") {
+      throw new Error("Not authorized");
+    }
+  } else {
+    // Owner cancelling their own leave — past leaves stay locked.
+    const today = new Date().toISOString().split("T")[0];
+    if (leave.leave_date < today) throw new Error("Cannot cancel past leaves");
+  }
 
   const { error } = await admin.from("leaves").delete().eq("id", leaveId);
   if (error) throw new Error(error.message);

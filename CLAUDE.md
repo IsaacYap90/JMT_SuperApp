@@ -12,6 +12,7 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - Project path: `~/projects/jmt/dashboard/`
 
 ## Hard Rules
+- **Never assume anything. Always ask before taking action. Always confirm with Isaac first.** Default mode: **Mode B** — free to read, search, grep, fetch; ask before any write, edit, deploy, delete, commit, push, or outbound message. (Set 2026-04-08.)
 - For ALL changes, build a Cloudflare Tunnel review link and wait for Isaac's approval before deploying to production
 - Always run `npm run build` before finishing — must be green
 - Never modify `.env.local`. Use `vercel env add` for production env vars

@@ -123,7 +123,7 @@ export function NotificationBell() {
         )}
       </button>
 
-      {/* Notification panel */}
+      {/* Notification panel — fixed on lg (sidebar clips overflow), absolute on mobile */}
       {open && (
         <div className="absolute right-0 top-full mt-2 w-80 max-h-[70vh] bg-jai-card border border-jai-border rounded-xl shadow-2xl z-[100] overflow-hidden flex flex-col">
           {/* Header */}

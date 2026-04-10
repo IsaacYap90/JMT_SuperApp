@@ -20,6 +20,13 @@ const HIDE_ROLE_USER_IDS = new Set<string>([
   "d8918b90-b0b1-4064-83bc-2bc80a44d516", // Isaac Yap
 ]);
 
+// Users who opted out of JMT's AM briefing because they get their own brief
+// from Ion (ionicx-chatbot) which merges JMT + Google Calendar into one
+// message. Debug sends via ?only=<id> still work for these users.
+const SKIP_AM_BRIEFING_USER_IDS = new Set<string>([
+  "d8918b90-b0b1-4064-83bc-2bc80a44d516", // Isaac Yap — covered by Ion
+]);
+
 const DAY_NAMES = [
   "sunday",
   "monday",
@@ -89,7 +96,13 @@ export async function GET(req: NextRequest) {
     .in("role", ["coach", "admin", "master_admin"])
     .eq("is_active", true);
   if (only) staffQuery = staffQuery.eq("id", only);
-  const { data: staff } = await staffQuery;
+  const { data: staffRaw } = await staffQuery;
+
+  // Skip opted-out users (e.g. Isaac — gets his brief from Ion instead).
+  // Debug sends via ?only=<id> bypass this filter.
+  const staff = only
+    ? staffRaw
+    : (staffRaw || []).filter((s) => !SKIP_AM_BRIEFING_USER_IDS.has(s.id));
 
   if (!staff || staff.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, reason: "no staff" });

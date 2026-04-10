@@ -8,20 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { User, isAdmin } from "@/lib/types/database";
 import { NotificationBell } from "./notification-bell";
 
-// All admin links for desktop sidebar
-const adminLinks = [
-  { href: "/", label: "Overview", icon: "grid" },
-  { href: "/schedule", label: "Schedule", icon: "calendar" },
-  { href: "/pt", label: "PT Sessions", icon: "users" },
-  { href: "/trial-management", label: "Trials", icon: "clipboard" },
-  { href: "/trial-settings", label: "Trial Settings", icon: "settings" },
-  { href: "/sunday-prep", label: "Sunday Prep", icon: "send" },
-  { href: "/leave", label: "Leave", icon: "leave" },
-  { href: "/profile", label: "Profile", icon: "profile" },
-];
-
-// Mobile: only show key tabs in bottom nav, rest go in profile sheet
-const adminMobileLinks = [
+// All admin links for bottom nav
+const adminMainLinks = [
   { href: "/", label: "Overview", icon: "grid" },
   { href: "/schedule", label: "Schedule", icon: "calendar" },
   { href: "/pt", label: "PT", icon: "users" },
@@ -117,20 +105,10 @@ export function Sidebar({ profile }: { profile: User }) {
   const isIsaac = profile.full_name === "Isaac Yap";
   const admin = isAdmin(profile.role);
 
-  // Desktop sidebar uses all links
-  const desktopLinks = admin
-    ? adminLinks
-    : isIsaac
-    ? [...coachLinks, earningLink]
-    : coachLinks;
-
-  // Mobile bottom nav uses fewer links
-  const mobileLinks = admin
-    ? adminMobileLinks
-    : coachLinks;
+  // Bottom nav links — same on all screen sizes
+  const mainLinks = admin ? adminMainLinks : coachLinks;
 
   const profileLink = { href: "/profile", label: "Profile", icon: "profile" };
-  // Extra links shown in profile sheet
   const profileLinks = admin
     ? (isIsaac ? [...adminProfileLinks, earningLink] : adminProfileLinks)
     : (isIsaac ? [profileLink, earningLink] : [profileLink]);
@@ -143,108 +121,66 @@ export function Sidebar({ profile }: { profile: User }) {
 
   return (
     <>
-      {/* Desktop sidebar */}
-      <aside className="hidden lg:flex fixed top-0 left-0 h-screen w-64 bg-jai-card border-r border-jai-border z-50 flex-col overflow-hidden">
-        <div className="p-6 border-b border-jai-border flex items-center gap-3 flex-shrink-0">
+      {/* Top bar — compact branding + notification bell */}
+      <header className="fixed top-0 left-0 right-0 bg-jai-card/80 backdrop-blur-lg border-b border-jai-border z-50 px-4 py-2.5 flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
           <Image
             src="/logo.jpg"
             alt="JAI Muay Thai"
-            width={40}
-            height={40}
+            width={28}
+            height={28}
             className="rounded-full"
           />
-          <div>
-            <h1 className="text-lg font-bold">
-              JAI <span className="text-jai-blue">MUAY THAI</span>
-            </h1>
-            <p className="text-jai-text text-xs capitalize">
-              {profile.role === "master_admin" ? "Admin" : profile.role} Dashboard
-            </p>
-          </div>
+          <span className="text-sm font-bold">
+            JAI <span className="text-jai-blue">MUAY THAI</span>
+          </span>
         </div>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <span className="text-xs text-jai-text hidden sm:inline ml-2">{profile.full_name}</span>
+        </div>
+      </header>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {desktopLinks.map((link) => {
+      {/* Bottom tab bar — all screen sizes */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 pb-safe">
+        <div className="max-w-lg mx-auto grid" style={{ gridTemplateColumns: `repeat(${mainLinks.length + 1}, 1fr)` }}>
+          {mainLinks.map((link) => {
             const active = pathname === link.href;
             return (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                  active
-                    ? "bg-jai-blue/10 text-jai-blue"
-                    : "text-jai-text hover:text-white hover:bg-white/5"
+                className={`flex flex-col items-center justify-center gap-1 py-3 min-h-[48px] transition-colors ${
+                  active ? "text-jai-blue" : "text-jai-text"
                 }`}
               >
-                <IconComponent icon={link.icon} />
-                {link.label}
+                <IconComponent icon={link.icon} className="w-5 h-5" />
+                <span className="text-[10px] font-medium">{link.label}</span>
               </Link>
             );
           })}
-        </nav>
-
-        <div className="p-4 border-t border-jai-border flex-shrink-0">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{profile.full_name}</p>
-              <p className="text-xs text-jai-text capitalize">
-                {profile.role === "master_admin" ? "Admin" : profile.role}
-              </p>
-            </div>
-            <div className="flex items-center gap-1">
-              {!admin && <NotificationBell />}
-              <button
-                onClick={handleLogout}
-                className="text-jai-text hover:text-white transition-colors p-2"
-                title="Sign out"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={() => setShowProfile(true)}
+            className={`flex flex-col items-center justify-center gap-1 py-3 min-h-[48px] transition-colors ${
+              showProfile ? "text-jai-blue" : "text-jai-text"
+            }`}
+          >
+            <IconComponent icon="profile" className="w-5 h-5" />
+            <span className="text-[10px] font-medium">More</span>
+          </button>
         </div>
-      </aside>
-
-      {/* Mobile/tablet bottom nav */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 grid pb-safe" style={{ gridTemplateColumns: `repeat(${mobileLinks.length + 1}, 1fr)` }}>
-        {mobileLinks.map((link) => {
-          const active = pathname === link.href;
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              className={`flex flex-col items-center justify-center gap-1 py-3 min-h-[48px] transition-colors ${
-                active ? "text-jai-blue" : "text-jai-text"
-              }`}
-            >
-              <IconComponent icon={link.icon} className="w-5 h-5" />
-              <span className="text-[10px] font-medium">{link.label}</span>
-            </Link>
-          );
-        })}
-        <button
-          onClick={() => setShowProfile(true)}
-          className={`flex flex-col items-center justify-center gap-1 py-3 min-h-[48px] transition-colors ${
-            showProfile ? "text-jai-blue" : "text-jai-text"
-          }`}
-        >
-          <IconComponent icon="profile" className="w-5 h-5" />
-          <span className="text-[10px] font-medium">More</span>
-        </button>
       </nav>
 
       {/* Profile sheet overlay */}
       {showProfile && (
-        <div className="lg:hidden fixed inset-0 z-[60]">
+        <div className="fixed inset-0 z-[60]">
           {/* Backdrop */}
           <div
             className="absolute inset-0 bg-black/50"
             onClick={() => setShowProfile(false)}
           />
           {/* Sheet */}
-          <div className="absolute bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border rounded-t-2xl p-6 pb-safe animate-slide-up">
+          <div className="absolute bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border rounded-t-2xl p-6 pb-safe animate-slide-up max-w-lg mx-auto">
             <div className="w-10 h-1 bg-jai-border rounded-full mx-auto mb-6" />
 
             {/* Logo + Profile info */}

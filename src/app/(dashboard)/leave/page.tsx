@@ -20,13 +20,18 @@ export default async function LeavePage() {
   if (!profileData) redirect("/login");
   const profile = profileData as unknown as User;
 
+  // Admin view shows leaves for full-time coaches only. Part-time coach leave
+  // history is hidden from the tab entirely (Jeremy doesn't track their leaves).
+  // Coach view always sees only their own leaves regardless of employment type.
   let query = supabase
     .from("leaves")
-    .select("*, coach:users!leaves_coach_id_fkey(*), reviewer:users!leaves_reviewed_by_fkey(*)")
+    .select("*, coach:users!leaves_coach_id_fkey!inner(*), reviewer:users!leaves_reviewed_by_fkey(*)")
     .order("leave_date", { ascending: false });
 
   if (!isAdmin(profile.role)) {
     query = query.eq("coach_id", user.id);
+  } else {
+    query = query.eq("coach.employment_type", "full_time");
   }
 
   const { data, error } = await query;
@@ -40,23 +45,26 @@ export default async function LeavePage() {
   // logged-in admin themselves (Jeremy explicitly doesn't want to see his own).
   let coaches: Pick<User, "id" | "full_name" | "role">[] = [];
   let inLieuCredits: { coach_id: string; days: number }[] = [];
+
+  // Always fetch OIL credits — coaches need their own balance, admins need all.
+  const { data: creditData } = await supabase
+    .from("in_lieu_credits")
+    .select("coach_id, days");
+  inLieuCredits = (creditData || []).map((c: { coach_id: string; days: number | string }) => ({
+    coach_id: c.coach_id,
+    days: Number(c.days),
+  }));
+
   if (isAdmin(profile.role)) {
     const { data: coachData } = await supabase
       .from("users")
       .select("id, full_name, role")
       .in("role", ["coach", "admin", "master_admin"])
       .eq("is_active", true)
+      .eq("employment_type", "full_time")
       .neq("id", user.id)
       .order("full_name");
     coaches = (coachData || []) as Pick<User, "id" | "full_name" | "role">[];
-
-    const { data: creditData } = await supabase
-      .from("in_lieu_credits")
-      .select("coach_id, days");
-    inLieuCredits = (creditData || []).map((c: { coach_id: string; days: number | string }) => ({
-      coach_id: c.coach_id,
-      days: Number(c.days),
-    }));
   }
 
   return (
