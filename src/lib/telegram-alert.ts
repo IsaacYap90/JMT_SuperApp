@@ -15,7 +15,7 @@ function escapeMarkdown(text: string): string {
   return text.replace(/([_*[\]()~`>#+\-=|{}.!\\])/g, "\\$1");
 }
 
-function getUserMap(): Map<string, string> {
+function getEnvUserMap(): Map<string, string> {
   const raw = process.env.JMT_TELEGRAM_USER_MAP || "";
   const map = new Map<string, string>();
   for (const pair of raw.split(",")) {
@@ -27,6 +27,23 @@ function getUserMap(): Map<string, string> {
   return map;
 }
 
+async function getChatId(userId: string): Promise<string | null> {
+  // DB first (set by /start deep-link webhook), then env var fallback
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && key) {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(url, key);
+    const { data } = await sb
+      .from("users")
+      .select("id, telegram_chat_id")
+      .eq("id", userId)
+      .maybeSingle();
+    if (data?.telegram_chat_id) return data.telegram_chat_id;
+  }
+  return getEnvUserMap().get(userId) || null;
+}
+
 // Plain-text DM helper. Skips Telegram's MarkdownV2 parser entirely so callers
 // don't have to worry about escaping reserved characters in dynamic content
 // like class names, member names, or punctuation. Returns true on HTTP 200.
@@ -36,7 +53,7 @@ export async function sendTelegramPlainToUser(
 ): Promise<boolean> {
   const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
   if (!token) return false;
-  const chatId = getUserMap().get(recipientUserId);
+  const chatId = await getChatId(recipientUserId);
   if (!chatId) return false;
 
   try {
@@ -71,7 +88,7 @@ export async function sendTelegramAlertToUser(
   const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
   if (!token) return;
 
-  const chatId = getUserMap().get(recipientUserId);
+  const chatId = await getChatId(recipientUserId);
   if (!chatId) return; // user not opted in — in-app notification only
 
   const text = `*${escapeMarkdown(title)}*\n${escapeMarkdown(message)}`;
