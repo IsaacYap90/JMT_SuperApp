@@ -3,6 +3,18 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
+
+// 30-minute time slots from 6:00am to 10:00pm for PT scheduling
+const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
+  const totalMinutes = 6 * 60 + i * 30;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const value = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const suffix = h >= 12 ? "pm" : "am";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const label = `${h12}:${String(m).padStart(2, "0")}${suffix}`;
+  return { value, label };
+});
 import {
   createPtClient,
   updatePtClient,
@@ -17,6 +29,8 @@ import {
   getNextWeekPtCount,
   copyPtSessionsToNextWeek,
 } from "@/app/actions/pt";
+import type { ContractDraft } from "@/app/actions/pt";
+import { ContractDraftBanner, ContractDraftReviewForm } from "@/components/contract-draft-review";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 
 const DAY_NAMES_PT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -84,6 +98,7 @@ export function PtPageClient({
   nextSessions,
   members,
   coaches,
+  contractDrafts = [],
 }: {
   ptPackages: PtPackage[];
   ptSessions?: PtSession[];
@@ -91,12 +106,13 @@ export function PtPageClient({
   nextSessions: Record<string, string>;
   members: User[];
   coaches: User[];
+  contractDrafts?: ContractDraft[];
 }) {
   const router = useRouter();
   const admin = isAdmin(profile.role);
 
   // Tab state for admin
-  const [tab, setTab] = useState<"packages" | "sessions" | "clients">("sessions");
+  const [tab, setTab] = useState<"sessions" | "clients">("sessions");
   const [copying, setCopying] = useState(false);
 
   async function handleCopyToNextWeek() {
@@ -184,6 +200,9 @@ export function PtPageClient({
   const [editSessDate, setEditSessDate] = useState("");
   const [editSessTime, setEditSessTime] = useState("");
   const [editSessDuration, setEditSessDuration] = useState(60);
+
+  // Contract draft review state
+  const [reviewingDraft, setReviewingDraft] = useState<ContractDraft | null>(null);
 
   // Auto-expire packages on mount
   useEffect(() => {
@@ -442,6 +461,23 @@ export function PtPageClient({
         </button>
       </div>
 
+      {/* Contract draft banner */}
+      {admin && contractDrafts.length > 0 && (
+        <ContractDraftBanner
+          drafts={contractDrafts}
+          onReview={(draft) => setReviewingDraft(draft)}
+        />
+      )}
+
+      {/* Contract draft review modal */}
+      {reviewingDraft && (
+        <ContractDraftReviewForm
+          draft={reviewingDraft}
+          coaches={coaches.map((c) => ({ id: c.id, full_name: c.full_name }))}
+          onClose={() => setReviewingDraft(null)}
+        />
+      )}
+
       {/* Tabs */}
       <div className="flex gap-1 bg-jai-card border border-jai-border rounded-lg p-1">
         <button
@@ -451,14 +487,6 @@ export function PtPageClient({
           }`}
         >
           Sessions
-        </button>
-        <button
-          onClick={() => setTab("packages")}
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
-            tab === "packages" ? "bg-jai-blue text-white" : "text-jai-text hover:text-white"
-          }`}
-        >
-          Packages
         </button>
         <button
           onClick={() => setTab("clients")}
@@ -677,13 +705,17 @@ export function PtPageClient({
                 </div>
                 <div>
                   <label className="text-xs text-jai-text block mb-1">Time</label>
-                  <input
-                    type="time"
+                  <select
                     value={sessTime}
                     onChange={(e) => setSessTime(e.target.value)}
                     required
                     className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
-                  />
+                  >
+                    <option value="">Select time</option>
+                    {TIME_SLOTS.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div>
@@ -826,13 +858,17 @@ export function PtPageClient({
                         </div>
                         <div>
                           <label className="text-xs text-jai-text block mb-1">Time</label>
-                          <input
-                            type="time"
+                          <select
                             value={editSessTime}
                             onChange={(e) => setEditSessTime(e.target.value)}
                             required
                             className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
-                          />
+                          >
+                            <option value="">Select time</option>
+                            {TIME_SLOTS.map((t) => (
+                              <option key={t.value} value={t.value}>{t.label}</option>
+                            ))}
+                          </select>
                         </div>
                       </div>
                       <div className="flex gap-2">
@@ -890,8 +926,8 @@ export function PtPageClient({
         </div>
       )}
 
-      {/* PACKAGES TAB */}
-      {tab === "packages" && (
+      {/* CLIENTS TAB (merged Packages + Clients) */}
+      {tab === "clients" && (
         <div className="space-y-4">
           <div className="flex justify-end gap-3">
             {!showNewClient && !showPkgForm && (
@@ -910,8 +946,8 @@ export function PtPageClient({
             </button>
           </div>
 
-          {/* Inline new client form (in packages tab) */}
-          {showNewClient && tab === "packages" && (
+          {/* Inline new client form */}
+          {showNewClient && tab === "clients" && (
             <form
               onSubmit={handleCreateClient}
               className="bg-jai-card border border-jai-border rounded-xl p-4 space-y-3"
@@ -1126,13 +1162,17 @@ export function PtPageClient({
                 </div>
                 <div>
                   <label className="text-xs text-jai-text block mb-1">Time</label>
-                  <input
-                    type="time"
+                  <select
                     value={quickTime}
                     onChange={(e) => setQuickTime(e.target.value)}
                     required
                     className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
-                  />
+                  >
+                    <option value="">Select time</option>
+                    {TIME_SLOTS.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="flex gap-2">
@@ -1154,89 +1194,34 @@ export function PtPageClient({
             </form>
           )}
 
-          {/* Package list */}
-          <div className="space-y-2">
-            {ptPackages.map((pt) => {
-              const remaining = pt.total_sessions - pt.sessions_used;
-              return (
-                <div
-                  key={pt.id}
-                  className="bg-jai-card border border-jai-border rounded-xl p-4"
-                >
-                  <div
-                    className="flex items-center justify-between"
-                    onClick={() => openEditPkg(pt)}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium text-sm">
-                        {pt.member?.full_name || "—"}
-                      </p>
-                      <p className="text-jai-text text-xs mt-1">
-                        Coach: {pt.coach?.full_name || "—"} · {remaining}{" "}
-                        sessions left
-                        {pt.expiry_date && ` · Exp: ${pt.expiry_date}`}
-                      </p>
-                      {pt.member?.phone && (
-                        <p className="text-jai-text text-xs">
-                          Phone: {pt.member.phone}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 ml-3">
-                      <span
-                        className={`text-sm font-medium ${
-                          remaining <= 0
-                            ? "text-red-400"
-                            : remaining <= 2
-                            ? "text-yellow-400"
-                            : "text-jai-blue"
-                        }`}
-                      >
-                        {pt.sessions_used}/{pt.total_sessions}
-                      </span>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full ${statusBadge(pt.status)}`}
-                      >
-                        {pt.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Quick schedule button for active packages */}
-                  {pt.status === "active" && remaining > 0 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setQuickSchedulePkg(pt);
-                        setQuickDate("");
-                        setQuickTime("10:00");
-                      }}
-                      className="w-full mt-3 py-2 bg-green-600/10 text-green-400 border border-green-500/20 text-xs rounded-lg min-h-[44px] font-medium"
-                    >
-                      Schedule Session
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-            {ptPackages.length === 0 && (
-              <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center text-sm">
-                No PT packages found
-              </div>
-            )}
-          </div>
+          {/* Merged client + package list */}
+          <ClientsWithPackages
+            members={members}
+            ptPackages={ptPackages}
+            onEditPkg={openEditPkg}
+            onQuickSchedule={(pkg) => {
+              setQuickSchedulePkg(pkg);
+              setQuickDate("");
+              setQuickTime("10:00");
+            }}
+          />
         </div>
-      )}
-
-      {/* CLIENTS TAB */}
-      {tab === "clients" && (
-        <ClientsTab members={members} ptPackages={ptPackages} onAddClient={() => { setShowNewClient(true); setTab("packages"); }} />
       )}
     </div>
   );
 }
 
-function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptPackages: PtPackage[]; onAddClient: () => void }) {
+function ClientsWithPackages({
+  members,
+  ptPackages,
+  onEditPkg,
+  onQuickSchedule,
+}: {
+  members: User[];
+  ptPackages: PtPackage[];
+  onEditPkg: (pkg: PtPackage) => void;
+  onQuickSchedule: (pkg: PtPackage) => void;
+}) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -1285,93 +1270,203 @@ function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptP
     }
   }
 
+  // Build a unified list: clients with their packages
+  const clientMap = new Map<string, { member: User; packages: PtPackage[] }>();
+
+  // Add all clients from packages (they may not be in members list if inactive)
+  for (const pkg of ptPackages) {
+    if (pkg.member) {
+      const existing = clientMap.get(pkg.user_id);
+      if (existing) {
+        existing.packages.push(pkg);
+      } else {
+        clientMap.set(pkg.user_id, { member: pkg.member as unknown as User, packages: [pkg] });
+      }
+    }
+  }
+
+  // Add members without packages
+  for (const m of members) {
+    if (!clientMap.has(m.id)) {
+      clientMap.set(m.id, { member: m, packages: [] });
+    }
+  }
+
+  // Sort: active packages first, then by name
+  const allClients = Array.from(clientMap.values()).sort((a, b) => {
+    const aActive = a.packages.some((p) => p.status === "active") ? 0 : 1;
+    const bActive = b.packages.some((p) => p.status === "active") ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    return (a.member.full_name || "").localeCompare(b.member.full_name || "");
+  });
+
   const filtered = search
-    ? members.filter((m) => m.full_name.toLowerCase().includes(search.toLowerCase()) || m.phone?.includes(search))
-    : members;
+    ? allClients.filter(
+        (c) =>
+          c.member.full_name?.toLowerCase().includes(search.toLowerCase()) ||
+          c.member.phone?.includes(search) ||
+          c.packages.some((p) => p.coach?.full_name?.toLowerCase().includes(search.toLowerCase()))
+      )
+    : allClients;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-jai-text">{members.length} client{members.length !== 1 ? "s" : ""}</p>
-        <button
-          onClick={onAddClient}
-          className="px-3 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
-        >
-          + Add Client
-        </button>
+        <p className="text-sm text-jai-text">
+          {allClients.length} client{allClients.length !== 1 ? "s" : ""} · {ptPackages.length} package{ptPackages.length !== 1 ? "s" : ""}
+        </p>
       </div>
       <input
         type="text"
-        placeholder="Search by name or phone..."
+        placeholder="Search by name, phone, or coach..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full px-3 py-2 bg-jai-bg border border-jai-border rounded-lg text-sm focus:border-jai-blue focus:outline-none"
+        className="w-full px-3 py-2.5 bg-jai-bg border border-jai-border rounded-lg text-sm min-h-[44px]"
       />
       <div className="space-y-2">
-        {filtered.map((m) => {
-          const memberPkgs = ptPackages.filter((p) => p.user_id === m.id);
+        {filtered.map(({ member: m, packages: memberPkgs }) => {
           const activePkg = memberPkgs.find((p) => p.status === "active");
           const isEditing = editingId === m.id;
+
           return (
             <div
               key={m.id}
               className={`bg-jai-card border rounded-xl p-4 transition-colors ${
-                isEditing ? "border-jai-blue/40" : "border-jai-border hover:border-jai-blue/30 cursor-pointer"
+                isEditing ? "border-jai-blue/40" : "border-jai-border"
               }`}
-              onClick={() => !isEditing && openEdit(m)}
             >
-              {isEditing ? (
-                <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
-                  <div>
-                    <label className="text-xs text-jai-text mb-1 block">Name</label>
-                    <input
-                      type="text"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm focus:border-jai-blue focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-jai-text mb-1 block">Phone</label>
-                    <input
-                      type="tel"
-                      value={editPhone}
-                      onChange={(e) => setEditPhone(e.target.value)}
-                      placeholder="e.g. 91234567"
-                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm focus:border-jai-blue focus:outline-none"
-                    />
+              {/* Client header */}
+              <div
+                className={`flex items-center justify-between ${!isEditing ? "cursor-pointer" : ""}`}
+                onClick={() => !isEditing && openEdit(m)}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm">{m.full_name}</p>
+                  {m.phone && (
+                    <a
+                      href={`tel:${m.phone}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-jai-blue text-xs hover:underline"
+                    >
+                      {m.phone}
+                    </a>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 ml-3">
+                  {activePkg ? (
+                    <>
+                      <span
+                        className={`text-sm font-medium ${
+                          activePkg.total_sessions - activePkg.sessions_used <= 0
+                            ? "text-red-400"
+                            : activePkg.total_sessions - activePkg.sessions_used <= 2
+                            ? "text-yellow-400"
+                            : "text-jai-blue"
+                        }`}
+                      >
+                        {activePkg.sessions_used}/{activePkg.total_sessions}
+                      </span>
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full ${statusBadge("active")}`}>
+                        active
+                      </span>
+                    </>
+                  ) : memberPkgs.length > 0 ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
+                      {memberPkgs[0].status}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
+                      No package
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Package details (always visible if they have packages) */}
+              {memberPkgs.length > 0 && !isEditing && (
+                <div className="mt-2 space-y-1.5">
+                  {memberPkgs.map((pkg) => {
+                    const remaining = pkg.total_sessions - pkg.sessions_used;
+                    return (
+                      <div
+                        key={pkg.id}
+                        className="flex items-center justify-between text-xs text-jai-text bg-jai-bg/40 rounded-lg px-3 py-2 cursor-pointer hover:bg-jai-bg/60 transition-colors"
+                        onClick={() => onEditPkg(pkg)}
+                      >
+                        <span>
+                          Coach: {pkg.coach?.full_name || "—"} · {remaining} left
+                          {pkg.expiry_date && ` · Exp: ${pkg.expiry_date}`}
+                        </span>
+                        {pkg.status === "active" && remaining > 0 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onQuickSchedule(pkg);
+                            }}
+                            className="px-2 py-1 bg-green-600/10 text-green-400 border border-green-500/20 text-[10px] rounded-md font-medium hover:bg-green-600/20 transition-colors"
+                          >
+                            Schedule
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Edit client form (expanded) */}
+              {isEditing && (
+                <div className="mt-3 pt-3 border-t border-jai-border space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs text-jai-text mb-1 block">Name</label>
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-jai-text mb-1 block">Phone</label>
+                      <input
+                        type="tel"
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        placeholder="e.g. 91234567"
+                        className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                      />
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleSave(m.id)}
                       disabled={saving || deleting}
-                      className="flex-1 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors disabled:opacity-50 min-h-[44px]"
+                      className="flex-1 py-2.5 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 disabled:opacity-50 min-h-[44px]"
                     >
                       {saving ? "Saving..." : "Save"}
                     </button>
                     <button
                       onClick={() => { setEditingId(null); setConfirmDeleteId(null); }}
                       disabled={saving || deleting}
-                      className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors disabled:opacity-50 min-h-[44px]"
+                      className="px-4 py-2.5 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 disabled:opacity-50 min-h-[44px]"
                     >
                       Cancel
                     </button>
                   </div>
-                  {/* Delete duplicate — two-step confirm so Jeremy doesn't
-                      accidentally wipe a client in one tap. */}
                   {confirmDeleteId === m.id ? (
-                    <div className="flex gap-2 mt-2 pt-2 border-t border-jai-border">
+                    <div className="flex gap-2 pt-2 border-t border-jai-border">
                       <button
                         onClick={() => handleDelete(m.id)}
                         disabled={deleting}
-                        className="flex-1 py-2 bg-red-500 text-white text-sm rounded-lg hover:bg-red-500/90 transition-colors disabled:opacity-50 min-h-[44px] font-medium"
+                        className="flex-1 py-2 bg-red-500 text-white text-sm rounded-lg disabled:opacity-50 min-h-[44px] font-medium"
                       >
                         {deleting ? "Deleting..." : `Yes, delete ${m.full_name}`}
                       </button>
                       <button
                         onClick={() => setConfirmDeleteId(null)}
                         disabled={deleting}
-                        className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg hover:bg-white/5 transition-colors disabled:opacity-50 min-h-[44px]"
+                        className="px-4 py-2 bg-jai-bg border border-jai-border text-sm rounded-lg disabled:opacity-50 min-h-[44px]"
                       >
                         No
                       </button>
@@ -1380,52 +1475,11 @@ function ClientsTab({ members, ptPackages, onAddClient }: { members: User[]; ptP
                     <button
                       onClick={() => setConfirmDeleteId(m.id)}
                       disabled={saving || deleting}
-                      className="w-full mt-2 py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-medium hover:bg-red-500/15 transition-colors disabled:opacity-50 min-h-[44px] flex items-center justify-center gap-2"
-                      title="Delete this client. Only works if they have no packages or sessions."
+                      className="w-full py-2 bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg text-xs font-medium hover:bg-red-500/15 disabled:opacity-50 min-h-[44px]"
                     >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                      Delete duplicate client
+                      Delete client
                     </button>
                   )}
-                </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-sm">{m.full_name}</p>
-                    {m.phone && (
-                      <a href={`tel:${m.phone}`} onClick={(e) => e.stopPropagation()} className="text-jai-blue text-xs hover:underline">
-                        {m.phone}
-                      </a>
-                    )}
-                    {m.email && !m.email.endsWith("@jmt.local") && (
-                      <p className="text-jai-text text-xs">{m.email}</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {activePkg ? (
-                      <div className="text-right">
-                        <span className="text-[10px] px-2 py-1 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                          Active
-                        </span>
-                        <p className="text-xs text-jai-text mt-1">
-                          {activePkg.sessions_used}/{activePkg.total_sessions} used
-                        </p>
-                      </div>
-                    ) : memberPkgs.length > 0 ? (
-                      <span className="text-[10px] px-2 py-1 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
-                        No active pkg
-                      </span>
-                    ) : (
-                      <span className="text-[10px] px-2 py-1 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
-                        No package
-                      </span>
-                    )}
-                    <svg className="w-4 h-4 text-jai-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                  </div>
                 </div>
               )}
             </div>

@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import { PtPageClient } from "@/components/pt-page-client";
+import type { ContractDraft } from "@/app/actions/pt";
 
 export default async function PtPage() {
   const supabase = createClient();
@@ -74,11 +75,12 @@ export default async function PtPage() {
     }
   }
 
-  // Fetch members and coaches for admin forms
+  // Fetch members, coaches, and contract drafts for admin forms
   let members: User[] = [];
   let coaches: User[] = [];
+  let contractDrafts: ContractDraft[] = [];
   if (admin) {
-    const [membersRes, coachesRes] = await Promise.all([
+    const [membersRes, coachesRes, draftsRes] = await Promise.all([
       db.from("users").select("*").eq("role", "member").eq("is_active", true).order("full_name"),
       db
         .from("users")
@@ -86,9 +88,15 @@ export default async function PtPage() {
         .in("role", ["coach", "admin", "master_admin"])
         .eq("is_active", true)
         .order("full_name"),
+      db
+        .from("pt_contract_drafts")
+        .select("*")
+        .eq("status", "draft")
+        .order("created_at", { ascending: false }),
     ]);
     members = (membersRes.data || []) as unknown as User[];
     coaches = (coachesRes.data || []) as unknown as User[];
+    contractDrafts = (draftsRes.data || []) as unknown as ContractDraft[];
   }
 
   return (
@@ -99,6 +107,7 @@ export default async function PtPage() {
       nextSessions={nextSessions}
       members={members}
       coaches={coaches}
+      contractDrafts={contractDrafts}
     />
   );
 }

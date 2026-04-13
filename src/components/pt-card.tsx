@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import { PtSession } from "@/lib/types/database";
 import { coachUpdatePtStatus, coachReschedulePtSession } from "@/app/actions/pt";
 
+const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
+  const totalMinutes = 6 * 60 + i * 30;
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  const value = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const suffix = h >= 12 ? "pm" : "am";
+  const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+  const label = `${h12}:${String(m).padStart(2, "0")}${suffix}`;
+  return { value, label };
+});
+
 export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean; showDate?: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const [status, setStatus] = useState(s.status);
@@ -144,12 +155,16 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
                   onChange={(e) => setNewDate(e.target.value)}
                   className="bg-jai-card border border-jai-border rounded-md px-2 py-1.5 text-xs"
                 />
-                <input
-                  type="time"
+                <select
                   value={newTime}
                   onChange={(e) => setNewTime(e.target.value)}
                   className="bg-jai-card border border-jai-border rounded-md px-2 py-1.5 text-xs"
-                />
+                >
+                  <option value="">Time</option>
+                  {TIME_SLOTS.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
               </div>
               <select
                 value={newDuration}

@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/jmt-am-briefing",
       "schedule": "0 22 * * *"
+    },
+    {
+      "path": "/api/cron/trial-reminder",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

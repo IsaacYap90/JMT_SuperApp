@@ -657,3 +657,118 @@ export async function coachReschedulePtSession(
   revalidatePath("/");
   revalidatePath("/schedule");
 }
+
+// ── Contract draft actions ──
+
+export type ContractDraft = {
+  id: string;
+  batch_id: string;
+  client_name: string | null;
+  client_phone: string | null;
+  client_nric: string | null;
+  coach_name: string | null;
+  coach_id: string | null;
+  total_sessions: number | null;
+  sessions_used: number;
+  price_per_session: number | null;
+  total_price: number | null;
+  payment_method: string | null;
+  start_date: string | null;
+  expiry_date: string | null;
+  session_dates: string[];
+  status: string;
+  created_at: string;
+};
+
+// Fetch all pending drafts for review
+export async function getPendingDrafts(): Promise<ContractDraft[]> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("pt_contract_drafts")
+    .select("*")
+    .eq("status", "draft")
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+  return (data || []) as ContractDraft[];
+}
+
+// Fetch a single draft by id
+export async function getContractDraft(id: string): Promise<ContractDraft | null> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { data, error } = await admin
+    .from("pt_contract_drafts")
+    .select("*")
+    .eq("id", id)
+    .single();
+
+  if (error) return null;
+  return data as ContractDraft;
+}
+
+// Save a draft → creates PT client + package, marks draft as saved
+export async function saveContractDraft(
+  draftId: string,
+  payload: {
+    client_name: string;
+    client_phone: string;
+    coach_id: string;
+    total_sessions: number;
+    sessions_used: number;
+    total_price: number | null;
+    expiry_date: string | null;
+  }
+) {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  // 1. Create the PT client (member user)
+  const clientId = randomUUID();
+  const { error: clientErr } = await admin.from("users").insert({
+    id: clientId,
+    full_name: payload.client_name,
+    phone: payload.client_phone || null,
+    role: "member",
+    is_active: true,
+    email: `pt_${clientId.slice(0, 8)}@jmt.local`,
+  });
+  if (clientErr) throw new Error(`Failed to create client: ${clientErr.message}`);
+
+  // 2. Create the PT package
+  const { error: pkgErr } = await admin.from("pt_packages").insert({
+    user_id: clientId,
+    preferred_coach_id: payload.coach_id,
+    total_sessions: payload.total_sessions,
+    sessions_used: payload.sessions_used,
+    price_paid: payload.total_price,
+    expiry_date: payload.expiry_date || null,
+    status: payload.sessions_used >= payload.total_sessions ? "completed" : "active",
+  });
+  if (pkgErr) throw new Error(`Failed to create package: ${pkgErr.message}`);
+
+  // 3. Mark draft as saved
+  await admin
+    .from("pt_contract_drafts")
+    .update({ status: "saved" })
+    .eq("id", draftId);
+
+  revalidatePath("/pt");
+  return { clientId };
+}
+
+// Discard a draft
+export async function discardContractDraft(draftId: string) {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  await admin
+    .from("pt_contract_drafts")
+    .update({ status: "discarded" })
+    .eq("id", draftId);
+
+  revalidatePath("/pt");
+}
