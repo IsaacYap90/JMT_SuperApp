@@ -180,11 +180,16 @@ async function handlePhoto(
   const bestPhoto = photos[photos.length - 1];
 
   // Save photo record
-  await supabase.from("pt_contract_photos").insert({
+  const { error: insertErr } = await supabase.from("pt_contract_photos").insert({
     telegram_file_id: bestPhoto.file_id,
     batch_id: batchId,
     uploaded_by_telegram_id: String(telegramUserId),
   });
+  if (insertErr) {
+    console.error("[telegram-webhook] photo insert error:", insertErr);
+    await sendReply(token, chatId, "Failed to save photo. Please try again.");
+    return;
+  }
 
   // Count photos in this batch
   const { count } = await supabase
