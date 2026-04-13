@@ -168,7 +168,7 @@ async function handlePhoto(
     .eq("telegram_chat_id", String(chatId))
     .maybeSingle();
 
-  if (!sender || !["admin", "master_admin"].includes(sender.role)) {
+  if (!sender || !["admin", "master_admin", "coach"].includes(sender.role)) {
     await sendReply(token, chatId, "Only admins can upload PT contracts.");
     return;
   }
@@ -213,7 +213,7 @@ async function handleExtract(token: string, chatId: number, telegramUserId: numb
     .eq("telegram_chat_id", String(chatId))
     .maybeSingle();
 
-  if (!sender || !["admin", "master_admin"].includes(sender.role)) {
+  if (!sender || !["admin", "master_admin", "coach"].includes(sender.role)) {
     await sendReply(token, chatId, "Only admins can extract contracts.");
     return;
   }
