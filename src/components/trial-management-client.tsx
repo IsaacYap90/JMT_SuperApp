@@ -14,6 +14,8 @@ interface Booking {
   time_slot: string;
   status: string;
   created_at: string;
+  notes?: string | null;
+  source?: string | null;
   class: { name: string; start_time: string; end_time: string } | null;
 }
 
@@ -146,12 +148,18 @@ export function TrialManagementClient({
   }
 
   const today = new Date().toISOString().split("T")[0];
-  const upcoming = bookings.filter(
-    (b) => b.booking_date >= today && b.status === "booked"
-  );
-  const past = bookings.filter(
-    (b) => b.booking_date < today || b.status !== "booked"
-  );
+  const sortByDateTime = (a: Booking, b: Booking) => {
+    if (a.booking_date !== b.booking_date) {
+      return a.booking_date.localeCompare(b.booking_date);
+    }
+    return (a.time_slot || "").localeCompare(b.time_slot || "");
+  };
+  const upcoming = bookings
+    .filter((b) => b.booking_date >= today && b.status === "booked")
+    .sort(sortByDateTime);
+  const past = bookings
+    .filter((b) => b.booking_date < today || b.status !== "booked")
+    .sort((a, b) => -sortByDateTime(a, b));
 
   const displayed = tab === "upcoming" ? upcoming : past;
 
@@ -341,6 +349,11 @@ export function TrialManagementClient({
                   >
                     {b.status.replace("_", " ")}
                   </span>
+                  {b.source === "calendly" && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400">
+                      Calendly
+                    </span>
+                  )}
                 </div>
                 <p className="text-jai-text text-xs mt-1">
                   {b.class?.name || "—"} · {b.time_slot}
@@ -360,6 +373,11 @@ export function TrialManagementClient({
                 >
                   +65{b.phone.replace(/\D/g, "")}
                 </a>
+                {b.notes && (
+                  <p className="text-jai-text text-xs mt-1 italic">
+                    📝 {b.notes}
+                  </p>
+                )}
               </div>
             </div>
 
