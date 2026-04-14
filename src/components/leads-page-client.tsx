@@ -23,9 +23,11 @@ function formatPhone(phone: string): string {
   return cleaned;
 }
 
-function waLink(phone: string): string {
+function waLink(phone: string, name?: string): string {
   const digits = formatPhone(phone).replace(/\+/g, "");
-  return `https://wa.me/${digits}`;
+  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const msg = `Hi ${first}! This is Jeremy from Jai Muay Thai. Thanks for your interest — are you looking to start a trial class soon? Happy to help you pick a time that works 💪`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
 function timeAgo(dateStr: string): string {
@@ -105,7 +107,7 @@ function LeadCard({
         {/* WhatsApp button */}
         {lead.phone && (
           <a
-            href={waLink(lead.phone)}
+            href={waLink(lead.phone, lead.name)}
             target="_blank"
             rel="noopener noreferrer"
             className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full bg-green-500/20 text-green-400 border border-green-500/30 hover:bg-green-500/30 transition-colors"

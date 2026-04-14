@@ -28,9 +28,11 @@ function formatPhone(phone: string): string {
   return cleaned;
 }
 
-function waLink(phone: string): string {
+function waLink(phone: string, name?: string): string {
   const digits = formatPhone(phone).replace(/\+/g, "");
-  return `https://wa.me/${digits}`;
+  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const msg = `Hi ${first}! This is Jeremy from Jai Muay Thai. Thanks for your interest — are you looking to start a trial class soon? Happy to help you pick a time that works 💪`;
+  return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
 // ── GET: Meta webhook verification ──
@@ -134,7 +136,7 @@ export async function POST(req: NextRequest) {
         phone ? `Phone: ${phone}` : null,
         email ? `Email: ${email}` : null,
         interest ? `Interest: ${interest}` : null,
-        phone ? `\n${waLink(phone)}` : null,
+        phone ? `\n${waLink(phone, name)}` : null,
       ].filter(Boolean);
 
       await sendTelegramPlainToUser(JEREMY_USER_ID, lines.join("\n"));
@@ -177,7 +179,7 @@ async function fetchLeadData(
 
     return {
       name: get("full_name") || get("name") || "",
-      phone: get("phone") || get("phone_number") || "",
+      phone: get("phone") || get("phone_number") || get("contact_no") || get("contact") || get("mobile") || "",
       email: get("email") || "",
       interest: get("interest") || get("what") || get("training") || "",
       platform: data.platform || "instagram",
