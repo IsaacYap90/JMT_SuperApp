@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateTrialBookingStatus, adminCreateTrialBooking } from "@/app/actions/trials";
+import { PullToRefresh } from "./pull-to-refresh";
 
 interface Booking {
   id: string;
@@ -193,6 +194,7 @@ export function TrialManagementClient({
   };
 
   return (
+    <PullToRefresh>
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -436,5 +438,6 @@ export function TrialManagementClient({
         )}
       </div>
     </div>
+    </PullToRefresh>
   );
 }

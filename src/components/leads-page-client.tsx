@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Lead, LeadStatus } from "@/app/actions/leads";
 import { updateLeadStatus, updateLeadNotes } from "@/app/actions/leads";
+import { PullToRefresh } from "./pull-to-refresh";
 
 const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string; bg: string; border: string; strip: string }> = {
   new: { label: "New", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", strip: "bg-blue-400" },
@@ -470,6 +471,7 @@ export function LeadsPageClient({ leads, isAdmin = false }: { leads: Lead[]; isA
   };
 
   return (
+    <PullToRefresh>
     <div className="p-4 pb-28 max-w-5xl mx-auto space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-bold">Leads</h1>
@@ -659,5 +661,6 @@ export function LeadsPageClient({ leads, isAdmin = false }: { leads: Lead[]; isA
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 }

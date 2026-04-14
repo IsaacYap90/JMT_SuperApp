@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { User, Leave, LeaveType, isAdmin } from "@/lib/types/database";
 import { cancelLeave, submitLeave, reviewLeave, addInLieuCredit } from "@/app/actions/leave";
 import { DateRangePicker } from "./date-range-picker";
+import { PullToRefresh } from "./pull-to-refresh";
 
 const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
   { value: "annual", label: "Annual Leave" },
@@ -283,6 +284,7 @@ export function LeavePageClient({
   };
 
   return (
+    <PullToRefresh>
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
@@ -699,5 +701,6 @@ export function LeavePageClient({
         </table>
       </div>
     </div>
+    </PullToRefresh>
   );
 }

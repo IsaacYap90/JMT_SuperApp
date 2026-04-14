@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
+import { PullToRefresh } from "./pull-to-refresh";
 
 // 30-minute time slots from 6:00am to 10:00pm for PT scheduling
 const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
@@ -132,6 +133,7 @@ export function PtPageClient({
   // Tab state for admin
   const [tab, setTab] = useState<"sessions" | "clients">("sessions");
   const [copying, setCopying] = useState(false);
+  const [coachSearch, setCoachSearch] = useState("");
 
   async function handleCopyToNextWeek() {
     setCopying(true);
@@ -497,11 +499,28 @@ export function PtPageClient({
 
   // Coach simplified view
   if (!admin) {
+    const q = coachSearch.trim().toLowerCase();
+    const filteredCoachPkgs = q
+      ? ptPackages.filter((pt) => {
+          const name = (pt.member?.full_name || "").toLowerCase();
+          const guardian = (pt.guardian_name || "").toLowerCase();
+          const phone = (pt.guardian_phone || pt.member?.phone || "").toLowerCase();
+          return name.includes(q) || guardian.includes(q) || phone.includes(q);
+        })
+      : ptPackages;
     return (
+      <PullToRefresh>
       <div className="space-y-6 max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold">My PT Clients</h1>
+        <input
+          type="text"
+          value={coachSearch}
+          onChange={(e) => setCoachSearch(e.target.value)}
+          placeholder="Search client by name, guardian, or phone…"
+          className="w-full px-3 py-2.5 bg-jai-bg border border-jai-border rounded-lg text-sm min-h-[44px]"
+        />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          {ptPackages.map((pt) => {
+          {filteredCoachPkgs.map((pt) => {
             const contactPhone = pt.guardian_phone || pt.member?.phone || "";
             const waPhone = contactPhone.replace(/\D/g, "");
             const contactLabel = pt.guardian_name
@@ -542,13 +561,20 @@ export function PtPageClient({
               No PT clients assigned
             </div>
           )}
+          {ptPackages.length > 0 && filteredCoachPkgs.length === 0 && (
+            <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center">
+              No clients match &quot;{coachSearch}&quot;
+            </div>
+          )}
         </div>
       </div>
+      </PullToRefresh>
     );
   }
 
   // Admin view with tabs
   return (
+    <PullToRefresh>
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">PT Management</h1>
@@ -1443,6 +1469,7 @@ export function PtPageClient({
         onConfirm={handleCompleteConfirm}
       />
     </div>
+    </PullToRefresh>
   );
 }
 
