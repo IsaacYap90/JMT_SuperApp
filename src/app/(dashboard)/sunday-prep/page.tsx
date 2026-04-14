@@ -61,6 +61,7 @@ export default async function SundayPrepPage() {
     .select("id, full_name")
     .in("role", ["coach", "admin", "master_admin"])
     .eq("is_active", true)
+    .is("merged_into_id", null)
     .order("full_name");
   const coaches = (coachesData || []) as { id: string; full_name: string }[];
 

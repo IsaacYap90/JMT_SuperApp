@@ -114,7 +114,8 @@ export async function GET(req: NextRequest) {
     .from("users")
     .select("id")
     .in("role", ["admin", "master_admin"])
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .is("merged_into_id", null);
   const adminIds = new Set<string>((admins || []).map((u) => u.id));
 
   // Group trials by recipient

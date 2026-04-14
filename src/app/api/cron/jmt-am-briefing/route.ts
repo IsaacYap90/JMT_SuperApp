@@ -93,7 +93,8 @@ export async function GET(req: NextRequest) {
     .from("users")
     .select("id, full_name, role")
     .in("role", ["coach", "admin", "master_admin"])
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .is("merged_into_id", null);
   if (only) staffQuery = staffQuery.eq("id", only);
   const { data: staffRaw } = await staffQuery;
 

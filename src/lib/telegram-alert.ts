@@ -44,17 +44,50 @@ async function getChatId(userId: string): Promise<string | null> {
   return getEnvUserMap().get(userId) || null;
 }
 
+async function logTelegramSend(opts: {
+  recipientUserId: string | null;
+  chatId: string | null;
+  source: string;
+  ok: boolean;
+  httpStatus?: number | null;
+  error?: string | null;
+  text?: string | null;
+}): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+  try {
+    const { createClient } = await import("@supabase/supabase-js");
+    const sb = createClient(url, key);
+    await sb.from("telegram_logs").insert({
+      recipient_user_id: opts.recipientUserId,
+      chat_id: opts.chatId,
+      source: opts.source,
+      ok: opts.ok,
+      http_status: opts.httpStatus ?? null,
+      error: opts.error ?? null,
+      payload_preview: opts.text ? opts.text.slice(0, 500) : null,
+    });
+  } catch (err) {
+    console.error("[telegram-logs] insert failed:", err);
+  }
+}
+
 // Plain-text DM helper. Skips Telegram's MarkdownV2 parser entirely so callers
 // don't have to worry about escaping reserved characters in dynamic content
 // like class names, member names, or punctuation. Returns true on HTTP 200.
 export async function sendTelegramPlainToUser(
   recipientUserId: string,
-  text: string
+  text: string,
+  source: string = "plain"
 ): Promise<boolean> {
   const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
   if (!token) return false;
   const chatId = await getChatId(recipientUserId);
-  if (!chatId) return false;
+  if (!chatId) {
+    await logTelegramSend({ recipientUserId, chatId: null, source, ok: false, error: "no_chat_id", text });
+    return false;
+  }
 
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -69,11 +102,14 @@ export async function sendTelegramPlainToUser(
     if (!res.ok) {
       const body = await res.text();
       console.error(`[telegram-alert plain] ${chatId} failed: ${res.status} ${body}`);
+      await logTelegramSend({ recipientUserId, chatId, source, ok: false, httpStatus: res.status, error: body.slice(0, 500), text });
       return false;
     }
+    await logTelegramSend({ recipientUserId, chatId, source, ok: true, httpStatus: res.status, text });
     return true;
   } catch (err) {
     console.error(`[telegram-alert plain] ${chatId} exception:`, err);
+    await logTelegramSend({ recipientUserId, chatId, source, ok: false, error: String(err).slice(0, 500), text });
     return false;
   }
 }
@@ -83,7 +119,8 @@ export async function sendTelegramPlainToUser(
 export async function sendTelegramAlertToUser(
   recipientUserId: string,
   title: string,
-  message: string
+  message: string,
+  source: string = "alert"
 ): Promise<void> {
   const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
   if (!token) return;
@@ -107,8 +144,12 @@ export async function sendTelegramAlertToUser(
     if (!res.ok) {
       const body = await res.text();
       console.error(`[telegram-alert] ${chatId} failed: ${res.status} ${body}`);
+      await logTelegramSend({ recipientUserId, chatId, source, ok: false, httpStatus: res.status, error: body.slice(0, 500), text });
+    } else {
+      await logTelegramSend({ recipientUserId, chatId, source, ok: true, httpStatus: res.status, text });
     }
   } catch (err) {
     console.error(`[telegram-alert] ${chatId} exception:`, err);
+    await logTelegramSend({ recipientUserId, chatId, source, ok: false, error: String(err).slice(0, 500), text });
   }
 }
