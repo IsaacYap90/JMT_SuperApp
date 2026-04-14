@@ -1,11 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { ContractDraft } from "@/app/actions/pt";
 import { saveContractDraft, discardContractDraft } from "@/app/actions/pt";
 
 type Coach = { id: string; full_name: string | null };
+type Member = { id: string; full_name: string | null; phone: string | null };
+
+const normaliseName = (s: string) =>
+  s.toLowerCase().trim().replace(/\s+/g, " ");
 
 export function ContractDraftBanner({
   drafts,
@@ -56,10 +60,12 @@ export function ContractDraftBanner({
 export function ContractDraftReviewForm({
   draft,
   coaches,
+  members,
   onClose,
 }: {
   draft: ContractDraft;
   coaches: Coach[];
+  members: Member[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -72,6 +78,26 @@ export function ContractDraftReviewForm({
   const [expiryDate, setExpiryDate] = useState(draft.expiry_date || "");
   const [saving, setSaving] = useState(false);
   const [discarding, setDiscarding] = useState(false);
+
+  const suggestedMatch = useMemo(() => {
+    const target = normaliseName(draft.client_name || "");
+    if (!target) return null;
+    return (
+      members.find((m) => m.full_name && normaliseName(m.full_name) === target) || null
+    );
+  }, [members, draft.client_name]);
+
+  const [selectedUserId, setSelectedUserId] = useState<string>(
+    suggestedMatch?.id || "new"
+  );
+
+  const sortedMembers = useMemo(
+    () =>
+      [...members].sort((a, b) =>
+        (a.full_name || "").localeCompare(b.full_name || "")
+      ),
+    [members]
+  );
 
   const handleSave = async () => {
     if (!clientName.trim()) {
@@ -92,6 +118,7 @@ export function ContractDraftReviewForm({
         sessions_used: sessionsUsed,
         total_price: totalPrice || null,
         expiry_date: expiryDate || null,
+        existing_user_id: selectedUserId === "new" ? null : selectedUserId,
       });
       router.refresh();
       onClose();
@@ -144,6 +171,29 @@ export function ContractDraftReviewForm({
               className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
               placeholder="Full name"
             />
+          </div>
+
+          {/* Match to existing client */}
+          <div>
+            <label className="text-xs text-jai-text/70 block mb-1">Link to existing client</label>
+            <select
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+              className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+            >
+              <option value="new">➕ Create new client</option>
+              {sortedMembers.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.full_name || "(no name)"}
+                  {m.phone ? ` — ${m.phone}` : ""}
+                </option>
+              ))}
+            </select>
+            <p className={`text-xs mt-1 ${suggestedMatch ? "text-green-400" : "text-jai-text/60"}`}>
+              {suggestedMatch
+                ? `Suggested match: ${suggestedMatch.full_name}`
+                : "No exact name match — will create new client unless you pick one"}
+            </p>
           </div>
 
           {/* Phone */}

@@ -710,7 +710,7 @@ export async function getContractDraft(id: string): Promise<ContractDraft | null
   return data as ContractDraft;
 }
 
-// Save a draft → creates PT client + package, marks draft as saved
+// Save a draft → creates or reuses PT client + creates package, marks draft as saved
 export async function saveContractDraft(
   draftId: string,
   payload: {
@@ -721,22 +721,37 @@ export async function saveContractDraft(
     sessions_used: number;
     total_price: number | null;
     expiry_date: string | null;
+    // If set, skip user insert and use this existing member's id
+    existing_user_id?: string | null;
   }
 ) {
   await requireAdmin();
   const admin = createAdminClient();
 
-  // 1. Create the PT client (member user)
-  const clientId = randomUUID();
-  const { error: clientErr } = await admin.from("users").insert({
-    id: clientId,
-    full_name: payload.client_name,
-    phone: payload.client_phone || null,
-    role: "member",
-    is_active: true,
-    email: `pt_${clientId.slice(0, 8)}@jmt.local`,
-  });
-  if (clientErr) throw new Error(`Failed to create client: ${clientErr.message}`);
+  // 1. Resolve the PT client — reuse existing member or create new
+  let clientId: string;
+  if (payload.existing_user_id) {
+    const { data: existing, error: lookupErr } = await admin
+      .from("users")
+      .select("id, role")
+      .eq("id", payload.existing_user_id)
+      .single();
+    if (lookupErr || !existing) {
+      throw new Error("Selected client not found");
+    }
+    clientId = existing.id as string;
+  } else {
+    clientId = randomUUID();
+    const { error: clientErr } = await admin.from("users").insert({
+      id: clientId,
+      full_name: payload.client_name,
+      phone: payload.client_phone || null,
+      role: "member",
+      is_active: true,
+      email: `pt_${clientId.slice(0, 8)}@jmt.local`,
+    });
+    if (clientErr) throw new Error(`Failed to create client: ${clientErr.message}`);
+  }
 
   // 2. Create the PT package
   const { error: pkgErr } = await admin.from("pt_packages").insert({

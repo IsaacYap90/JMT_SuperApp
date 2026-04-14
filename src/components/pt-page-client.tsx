@@ -427,16 +427,37 @@ export function PtPageClient({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">My PT Clients</h1>
         <div className="space-y-2">
-          {ptPackages.map((pt) => (
-            <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-4">
-              <p className="font-medium">{pt.member?.full_name || "—"}</p>
-              <p className="text-jai-text text-sm mt-1">
-                {nextSessions[pt.user_id]
-                  ? `Next session: ${new Date(nextSessions[pt.user_id]).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
-                  : "No upcoming session"}
-              </p>
-            </div>
-          ))}
+          {ptPackages.map((pt) => {
+            const phone = pt.member?.phone || "";
+            const waPhone = phone.replace(/\D/g, "");
+            const remaining = pt.total_sessions - pt.sessions_used;
+            return (
+              <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">{pt.member?.full_name || "—"}</p>
+                  {waPhone && (
+                    <a
+                      href={`https://wa.me/65${waPhone}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs px-2 py-1 rounded-md bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors"
+                    >
+                      {phone}
+                    </a>
+                  )}
+                </div>
+                <p className="text-jai-text text-sm mt-1">
+                  {remaining} session{remaining === 1 ? "" : "s"} left
+                </p>
+                <p className="text-jai-text text-sm mt-1">
+                  {nextSessions[pt.user_id]
+                    ? `Next session: ${new Date(nextSessions[pt.user_id]).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+                    : "No upcoming session"}
+                </p>
+              </div>
+            );
+          })}
           {ptPackages.length === 0 && (
             <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center">
               No PT clients assigned
@@ -474,6 +495,7 @@ export function PtPageClient({
         <ContractDraftReviewForm
           draft={reviewingDraft}
           coaches={coaches.map((c) => ({ id: c.id, full_name: c.full_name }))}
+          members={members.map((m) => ({ id: m.id, full_name: m.full_name, phone: m.phone }))}
           onClose={() => setReviewingDraft(null)}
         />
       )}
