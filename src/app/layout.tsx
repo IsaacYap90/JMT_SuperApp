@@ -6,10 +6,10 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "JMT Dashboard",
+  title: "JMT OS",
   description: "Jai Muay Thai Gym Dashboard",
   manifest: "/manifest.webmanifest",
-  applicationName: "JMT Dashboard",
+  applicationName: "JMT OS",
   appleWebApp: {
     capable: true,
     title: "JMT",
