@@ -106,8 +106,13 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-medium text-sm">
+          <p className="font-medium text-sm flex items-center gap-1.5">
             PT — {s.member?.full_name || "Client"}
+            {s.package?.guardian_name && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/25 font-normal uppercase tracking-wider">
+                kid
+              </span>
+            )}
           </p>
           <p className="text-jai-text text-sm">
             {dayLabel ? `${dayLabel} · ` : ""}{time} - {endTime} · {s.duration_minutes || 60}min
