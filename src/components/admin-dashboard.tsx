@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { ReactNode, useState } from "react";
 import Link from "next/link";
 import { Class, PtSession, User } from "@/lib/types/database";
 import { getTodayHoliday } from "@/lib/sg-holidays";
@@ -79,6 +79,7 @@ export function AdminDashboard({
   userName,
   coaches,
   todayTrials = [],
+  activityFeed,
 }: {
   todayClasses: Class[];
   todayPtSessions: PtSession[];
@@ -90,6 +91,7 @@ export function AdminDashboard({
   userName: string;
   coaches: User[];
   todayTrials?: TrialRow[];
+  activityFeed?: ReactNode;
 }) {
   void today; // passed by page but date is computed inline
   const todayHoliday = getTodayHoliday();
@@ -252,6 +254,9 @@ export function AdminDashboard({
 
       {/* Today's trials — one-tap actions */}
       <TodayTrialsStrip trials={todayTrials} actionable={true} />
+
+      {/* Today so far — activity feed */}
+      {activityFeed}
 
       {/* Pending leave alert */}
       {pendingLeaves > 0 && (

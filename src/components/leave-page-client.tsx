@@ -35,6 +35,17 @@ function statusBadge(status: string) {
   }
 }
 
+function statusStrip(status: string) {
+  switch (status) {
+    case "approved":
+      return "bg-green-400";
+    case "rejected":
+      return "bg-red-400";
+    default:
+      return "bg-yellow-400";
+  }
+}
+
 function countLeaveDays(startDate: string, endDate: string | null, isHalfDay: boolean): number {
   const end = endDate || startDate;
   const start = new Date(startDate);
@@ -272,7 +283,7 @@ export function LeavePageClient({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
           {admin ? "Leave Requests" : "My Leave"}
@@ -548,7 +559,8 @@ export function LeavePageClient({
       {/* Mobile cards */}
       <div className="md:hidden space-y-2">
         {leaves.map((leave) => (
-          <div key={leave.id} className="bg-jai-card border border-jai-border rounded-xl p-3">
+          <div key={leave.id} className="relative bg-jai-card border border-jai-border rounded-xl p-3 pl-4 overflow-hidden">
+            <span className={`absolute left-0 top-0 bottom-0 w-1 ${statusStrip(leave.status)}`} aria-hidden />
             <div className="flex items-center justify-between">
               {admin && (
                 <p className="font-medium text-sm">{leave.coach?.full_name || "—"}</p>

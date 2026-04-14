@@ -32,5 +32,5 @@ export default async function LeadsPage() {
 
   const leads = (leadsData || []) as unknown as Lead[];
 
-  return <LeadsPageClient leads={leads} />;
+  return <LeadsPageClient leads={leads} isAdmin />;
 }
