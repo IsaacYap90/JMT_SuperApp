@@ -239,7 +239,7 @@ export function NewContractWizard({
   // Snapshots — captured when leaving the signing step so the data URL
   // survives after the canvas unmounts on the next step.
   const [clientSigDataUrl, setClientSigDataUrl] = useState<string>("");
-  const [jmtSigDataUrl, setJmtSigDataUrl] = useState<string>("");
+  const [jmtSigDataUrl] = useState<string>("");
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
