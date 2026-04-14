@@ -65,11 +65,15 @@ async function extractContractData(photoBuffers: Buffer[]): Promise<Record<strin
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o",
+    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: `You extract PT (Personal Training) contract details from photos of agreement forms.
-Return a JSON object with these fields:
+
+Return a SINGLE flat JSON object (NOT an array) with these exact top-level fields. Even when multiple pages are provided, MERGE everything into one object — do not return a per-page array.
+
+Fields:
 - client_name: string (full name of the client/member)
 - client_phone: string or null (phone number if visible)
 - client_nric: string or null (NRIC last 4 digits if visible, e.g. "4534J")
@@ -81,17 +85,15 @@ Return a JSON object with these fields:
 - payment_method: string or null (e.g. "PayNow", "Cash", "Bank Transfer")
 - start_date: string or null (contract start/sign date in YYYY-MM-DD)
 - expiry_date: string or null (contract expiry date in YYYY-MM-DD)
-- session_dates: string[] (array of completed session dates in YYYY-MM-DD from attendance record)
+- session_dates: string[] (completed session dates in YYYY-MM-DD; union across all pages)
 
-If multiple pages are provided, combine data from all pages.
-If a field is not visible or unclear, use null.
-Return ONLY valid JSON, no markdown or explanation.`,
+If a field is not visible or unclear, use null.`,
       },
       {
         role: "user",
         content: [
           ...imageMessages,
-          { type: "text" as const, text: "Extract all PT contract details from these contract page(s)." },
+          { type: "text" as const, text: "Extract all PT contract details from these contract page(s). Return ONE combined JSON object." },
         ],
       },
     ],
@@ -100,7 +102,20 @@ Return ONLY valid JSON, no markdown or explanation.`,
 
   const content = response.choices[0]?.message?.content?.trim() || "{}";
   const cleaned = content.replace(/^```json?\s*/, "").replace(/\s*```$/, "");
-  return JSON.parse(cleaned);
+  const parsed = JSON.parse(cleaned);
+  // Defensive: if model still returns array or wraps under a key, unwrap.
+  if (Array.isArray(parsed)) {
+    const merged: Record<string, unknown> = {};
+    for (const page of parsed) {
+      if (page && typeof page === "object") {
+        for (const [k, v] of Object.entries(page)) {
+          if (merged[k] == null && v != null) merged[k] = v;
+        }
+      }
+    }
+    return merged;
+  }
+  return parsed;
 }
 
 // ── Handle /start deep-link (existing functionality) ──
