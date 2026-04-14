@@ -75,6 +75,26 @@ export default async function PtPage() {
     }
   }
 
+  // Map package_id → latest contract_id (signed PT agreements)
+  const contractsByPackage: Record<string, string> = {};
+  if (ptPackages.length > 0) {
+    const { data: contractRows } = await db
+      .from("pt_contracts")
+      .select("id, package_id, created_at")
+      .in(
+        "package_id",
+        ptPackages.map((p) => p.id)
+      )
+      .order("created_at", { ascending: false });
+    if (contractRows) {
+      for (const row of contractRows as { id: string; package_id: string }[]) {
+        if (!contractsByPackage[row.package_id]) {
+          contractsByPackage[row.package_id] = row.id;
+        }
+      }
+    }
+  }
+
   // Fetch members, coaches, and contract drafts for admin forms
   let members: User[] = [];
   let coaches: User[] = [];
@@ -108,6 +128,7 @@ export default async function PtPage() {
       members={members}
       coaches={coaches}
       contractDrafts={contractDrafts}
+      contractsByPackage={contractsByPackage}
     />
   );
 }

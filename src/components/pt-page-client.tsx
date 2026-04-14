@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 
 // 30-minute time slots from 6:00am to 10:00pm for PT scheduling
@@ -21,6 +22,7 @@ import {
   deletePtClient,
   createPtPackage,
   updatePtPackage,
+  deletePtPackage,
   createPtSession,
   updatePtSession,
   updateSessionStatus,
@@ -30,6 +32,7 @@ import {
   copyPtSessionsToNextWeek,
 } from "@/app/actions/pt";
 import type { ContractDraft } from "@/app/actions/pt";
+import { getContractPdfSignedUrl } from "@/app/actions/pt-contracts";
 import { ContractDraftBanner, ContractDraftReviewForm } from "@/components/contract-draft-review";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 
@@ -99,6 +102,7 @@ export function PtPageClient({
   members,
   coaches,
   contractDrafts = [],
+  contractsByPackage = {},
 }: {
   ptPackages: PtPackage[];
   ptSessions?: PtSession[];
@@ -107,6 +111,7 @@ export function PtPageClient({
   members: User[];
   coaches: User[];
   contractDrafts?: ContractDraft[];
+  contractsByPackage?: Record<string, string>;
 }) {
   const router = useRouter();
   const admin = isAdmin(profile.role);
@@ -148,6 +153,9 @@ export function PtPageClient({
   // Package form state
   const [showPkgForm, setShowPkgForm] = useState(false);
   const [editingPkg, setEditingPkg] = useState<PtPackage | null>(null);
+  const [confirmDeletePkg, setConfirmDeletePkg] = useState(false);
+  const [deletingPkg, setDeletingPkg] = useState(false);
+  const [deletePkgError, setDeletePkgError] = useState<string | null>(null);
   const [memberId, setMemberId] = useState("");
   const [coachId, setCoachId] = useState("");
   const [packageType, setPackageType] = useState("10-pack");
@@ -236,7 +244,26 @@ export function PtPageClient({
     setExpiryDate(pkg.expiry_date || "");
     setGuardianName(pkg.guardian_name || "");
     setGuardianPhone(pkg.guardian_phone || "");
+    setConfirmDeletePkg(false);
+    setDeletePkgError(null);
     setShowPkgForm(true);
+  };
+
+  const handleDeletePkg = async () => {
+    if (!editingPkg) return;
+    setDeletingPkg(true);
+    setDeletePkgError(null);
+    const res = await deletePtPackage(editingPkg.id);
+    setDeletingPkg(false);
+    if (!res.ok) {
+      setDeletePkgError(res.error);
+      setConfirmDeletePkg(false);
+      return;
+    }
+    setShowPkgForm(false);
+    setEditingPkg(null);
+    setConfirmDeletePkg(false);
+    router.refresh();
   };
 
   const handlePkgTypeChange = (type: string) => {
@@ -962,14 +989,22 @@ export function PtPageClient({
       {/* CLIENTS TAB (merged Packages + Clients) */}
       {tab === "clients" && (
         <div className="space-y-4">
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 flex-wrap">
             {!showNewClient && !showPkgForm && (
-              <button
-                onClick={() => setShowNewClient(true)}
-                className="px-4 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
-              >
-                + New Client
-              </button>
+              <>
+                <Link
+                  href="/pt/new-contract"
+                  className="px-4 py-2.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 min-h-[44px] inline-flex items-center"
+                >
+                  ✍️ New Contract
+                </Link>
+                <button
+                  onClick={() => setShowNewClient(true)}
+                  className="px-4 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
+                >
+                  + New Client
+                </button>
+              </>
             )}
             <button
               onClick={showPkgForm ? () => setShowPkgForm(false) : openAddPkg}
@@ -1195,6 +1230,52 @@ export function PtPageClient({
                   ? "Update Package"
                   : "Create Package"}
               </button>
+
+              {editingPkg && (
+                <div className="pt-3 border-t border-jai-border space-y-2">
+                  {deletePkgError && (
+                    <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                      {deletePkgError}
+                    </div>
+                  )}
+                  {!confirmDeletePkg ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmDeletePkg(true);
+                        setDeletePkgError(null);
+                      }}
+                      className="w-full py-2.5 bg-red-500/10 border border-red-500/40 text-red-400 text-sm rounded-lg font-medium min-h-[44px]"
+                    >
+                      Delete Package
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-jai-text">
+                        Delete this package permanently? This also removes any signed contract tied to it.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeletePkg(false)}
+                          disabled={deletingPkg}
+                          className="flex-1 py-2.5 bg-jai-bg border border-jai-border text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeletePkg}
+                          disabled={deletingPkg}
+                          className="flex-1 py-2.5 bg-red-600 text-white text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                        >
+                          {deletingPkg ? "Deleting..." : "Yes, delete"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
           )}
 
@@ -1262,6 +1343,7 @@ export function PtPageClient({
           <ClientsWithPackages
             members={members}
             ptPackages={ptPackages}
+            contractsByPackage={contractsByPackage}
             onEditPkg={openEditPkg}
             onQuickSchedule={(pkg) => {
               setQuickSchedulePkg(pkg);
@@ -1278,11 +1360,13 @@ export function PtPageClient({
 function ClientsWithPackages({
   members,
   ptPackages,
+  contractsByPackage,
   onEditPkg,
   onQuickSchedule,
 }: {
   members: User[];
   ptPackages: PtPackage[];
+  contractsByPackage: Record<string, string>;
   onEditPkg: (pkg: PtPackage) => void;
   onQuickSchedule: (pkg: PtPackage) => void;
 }) {
@@ -1477,17 +1561,36 @@ function ClientsWithPackages({
                             </>
                           )}
                         </span>
-                        {pkg.status === "active" && remaining > 0 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickSchedule(pkg);
-                            }}
-                            className="px-2 py-1 bg-green-600/10 text-green-400 border border-green-500/20 text-[10px] rounded-md font-medium hover:bg-green-600/20 transition-colors"
-                          >
-                            Schedule
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {contractsByPackage[pkg.id] && (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const url = await getContractPdfSignedUrl(contractsByPackage[pkg.id]);
+                                  window.open(url, "_blank", "noopener");
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : "Could not open contract");
+                                }
+                              }}
+                              title="View signed contract PDF"
+                              className="px-2 py-1 bg-purple-600/10 text-purple-400 border border-purple-500/20 text-[10px] rounded-md font-medium hover:bg-purple-600/20 transition-colors"
+                            >
+                              📄 Contract
+                            </button>
+                          )}
+                          {pkg.status === "active" && remaining > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onQuickSchedule(pkg);
+                              }}
+                              className="px-2 py-1 bg-green-600/10 text-green-400 border border-green-500/20 text-[10px] rounded-md font-medium hover:bg-green-600/20 transition-colors"
+                            >
+                              Schedule
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

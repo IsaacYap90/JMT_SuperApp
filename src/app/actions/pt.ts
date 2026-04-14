@@ -182,6 +182,34 @@ export async function updatePtPackage(
   revalidatePath("/pt");
 }
 
+// Delete PT package. Blocks if the package has PT sessions still on it — the
+// admin must delete or reassign those sessions first. Any signed pt_contracts
+// referencing this package cascade via the FK (on delete cascade).
+export type DeletePtPackageResult = { ok: true } | { ok: false; error: string };
+
+export async function deletePtPackage(id: string): Promise<DeletePtPackageResult> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { count: sessCount } = await admin
+    .from("pt_sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("package_id", id);
+
+  if ((sessCount ?? 0) > 0) {
+    return {
+      ok: false,
+      error: `Package has ${sessCount} PT session(s). Delete the session(s) first, then retry.`,
+    };
+  }
+
+  const { error } = await admin.from("pt_packages").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/pt");
+  return { ok: true };
+}
+
 // Create PT session (and auto-link to package + increment sessions_used)
 export async function createPtSession(payload: {
   coach_id: string;
