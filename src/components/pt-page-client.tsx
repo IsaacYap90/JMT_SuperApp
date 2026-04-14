@@ -428,8 +428,11 @@ export function PtPageClient({
         <h1 className="text-2xl font-bold">My PT Clients</h1>
         <div className="space-y-2">
           {ptPackages.map((pt) => {
-            const phone = pt.member?.phone || "";
-            const waPhone = phone.replace(/\D/g, "");
+            const contactPhone = pt.guardian_phone || pt.member?.phone || "";
+            const waPhone = contactPhone.replace(/\D/g, "");
+            const contactLabel = pt.guardian_name
+              ? `${contactPhone} (${pt.guardian_name})`
+              : contactPhone;
             const remaining = pt.total_sessions - pt.sessions_used;
             return (
               <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-4">
@@ -443,7 +446,7 @@ export function PtPageClient({
                       onClick={(e) => e.stopPropagation()}
                       className="text-xs px-2 py-1 rounded-md bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors"
                     >
-                      {phone}
+                      {contactLabel}
                     </a>
                   )}
                 </div>

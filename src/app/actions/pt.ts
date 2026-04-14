@@ -723,6 +723,9 @@ export async function saveContractDraft(
     expiry_date: string | null;
     // If set, skip user insert and use this existing member's id
     existing_user_id?: string | null;
+    // Optional payer (parent/guardian) — used when payer ≠ trainee
+    guardian_name?: string | null;
+    guardian_phone?: string | null;
   }
 ) {
   await requireAdmin();
@@ -762,6 +765,8 @@ export async function saveContractDraft(
     price_paid: payload.total_price,
     expiry_date: payload.expiry_date || null,
     status: payload.sessions_used >= payload.total_sessions ? "completed" : "active",
+    guardian_name: payload.guardian_name?.trim() || null,
+    guardian_phone: payload.guardian_phone?.trim() || null,
   });
   if (pkgErr) throw new Error(`Failed to create package: ${pkgErr.message}`);
 

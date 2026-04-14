@@ -79,6 +79,11 @@ export function ContractDraftReviewForm({
   const [saving, setSaving] = useState(false);
   const [discarding, setDiscarding] = useState(false);
 
+  // Guardian / payer (e.g. parent paying for child's PT). Default empty —
+  // operator fills when payer ≠ trainee.
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
+
   const suggestedMatch = useMemo(() => {
     const target = normaliseName(draft.client_name || "");
     if (!target) return null;
@@ -119,6 +124,8 @@ export function ContractDraftReviewForm({
         total_price: totalPrice || null,
         expiry_date: expiryDate || null,
         existing_user_id: selectedUserId === "new" ? null : selectedUserId,
+        guardian_name: guardianName.trim() || null,
+        guardian_phone: guardianPhone.trim() || null,
       });
       router.refresh();
       onClose();
@@ -161,21 +168,25 @@ export function ContractDraftReviewForm({
         </p>
 
         <div className="space-y-3">
-          {/* Client Name */}
+          {/* Trainee Name */}
           <div>
-            <label className="text-xs text-jai-text/70 block mb-1">Client Name *</label>
+            <label className="text-xs text-jai-text/70 block mb-1">Trainee Name *</label>
             <input
               type="text"
               value={clientName}
               onChange={(e) => setClientName(e.target.value)}
               className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
-              placeholder="Full name"
+              placeholder="Person who attends the sessions"
             />
+            <p className="text-[11px] text-jai-text/60 mt-1">
+              If a parent signed the contract for their child, enter the child&apos;s
+              name here and put the parent&apos;s details in the Guardian section below.
+            </p>
           </div>
 
           {/* Match to existing client */}
           <div>
-            <label className="text-xs text-jai-text/70 block mb-1">Link to existing client</label>
+            <label className="text-xs text-jai-text/70 block mb-1">Link trainee to existing member</label>
             <select
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(e.target.value)}
@@ -198,14 +209,45 @@ export function ContractDraftReviewForm({
 
           {/* Phone */}
           <div>
-            <label className="text-xs text-jai-text/70 block mb-1">Phone</label>
+            <label className="text-xs text-jai-text/70 block mb-1">Trainee Phone</label>
             <input
               type="tel"
               value={clientPhone}
               onChange={(e) => setClientPhone(e.target.value)}
               className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
-              placeholder="e.g. 91234567"
+              placeholder="e.g. 91234567 (leave blank if minor)"
             />
+          </div>
+
+          {/* Guardian / Payer (optional) */}
+          <div className="bg-jai-bg/30 border border-jai-border rounded-lg p-3 space-y-2">
+            <p className="text-[10px] uppercase tracking-wider text-jai-text/60">
+              Guardian / Payer (optional)
+            </p>
+            <p className="text-[11px] text-jai-text/60 -mt-1">
+              Fill only if the person paying is different from the trainee
+              (e.g. parent paying for child).
+            </p>
+            <div>
+              <label className="text-xs text-jai-text/70 block mb-1">Guardian Name</label>
+              <input
+                type="text"
+                value={guardianName}
+                onChange={(e) => setGuardianName(e.target.value)}
+                className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                placeholder="Parent / payer name"
+              />
+            </div>
+            <div>
+              <label className="text-xs text-jai-text/70 block mb-1">Guardian Phone</label>
+              <input
+                type="tel"
+                value={guardianPhone}
+                onChange={(e) => setGuardianPhone(e.target.value)}
+                className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                placeholder="Parent / payer phone"
+              />
+            </div>
           </div>
 
           {/* Coach */}
