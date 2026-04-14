@@ -30,10 +30,14 @@ import {
   autoExpirePackages,
   getNextWeekPtCount,
   copyPtSessionsToNextWeek,
+  findDuplicateClients,
 } from "@/app/actions/pt";
-import type { ContractDraft } from "@/app/actions/pt";
+import type { ContractDraft, DuplicateGroup } from "@/app/actions/pt";
 import { getContractPdfSignedUrl } from "@/app/actions/pt-contracts";
 import { ContractDraftBanner, ContractDraftReviewForm } from "@/components/contract-draft-review";
+import { SessionCompleteDialog, CompletePayload } from "@/components/session-complete-dialog";
+import { MergeClientsDialog } from "@/components/merge-clients-dialog";
+import { showToast } from "@/components/toast";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 
 const DAY_NAMES_PT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -72,23 +76,6 @@ function statusBadge(status: string) {
       return "bg-red-500/10 text-red-400";
     case "completed":
       return "bg-jai-text/10 text-jai-text";
-    default:
-      return "bg-jai-text/10 text-jai-text";
-  }
-}
-
-function sessionStatusBadge(status: string) {
-  switch (status) {
-    case "scheduled":
-      return "bg-blue-500/10 text-blue-400";
-    case "confirmed":
-      return "bg-green-500/10 text-green-400";
-    case "completed":
-      return "bg-jai-text/10 text-jai-text";
-    case "cancelled":
-      return "bg-red-500/10 text-red-400";
-    case "no_show":
-      return "bg-yellow-500/10 text-yellow-400";
     default:
       return "bg-jai-text/10 text-jai-text";
   }
@@ -394,6 +381,32 @@ export function PtPageClient({
       router.refresh();
     } catch (err) {
       alert(err instanceof Error ? err.message : "Failed to update status");
+    }
+  };
+
+  const [completeSessionId, setCompleteSessionId] = useState<string | null>(null);
+  const [completeSessionName, setCompleteSessionName] = useState<string>("");
+  const [completing, setCompleting] = useState(false);
+
+  const openCompleteDialog = (sessionId: string, memberName: string) => {
+    setCompleteSessionId(sessionId);
+    setCompleteSessionName(memberName);
+  };
+
+  const handleCompleteConfirm = async (payload: CompletePayload) => {
+    if (!completeSessionId) return;
+    setCompleting(true);
+    try {
+      await updateSessionStatus(completeSessionId, "completed", payload);
+      setSessions((prev) =>
+        prev.map((s) => (s.id === completeSessionId ? { ...s, status: "completed" } : s))
+      );
+      setCompleteSessionId(null);
+      router.refresh();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to complete");
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -827,16 +840,14 @@ export function PtPageClient({
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm">
-                          {s.member?.full_name || "—"}
-                        </p>
-                        <span
-                          className={`text-[10px] px-2 py-0.5 rounded-full capitalize ${sessionStatusBadge(s.status)}`}
-                        >
-                          {s.status.replace("_", " ")}
-                        </span>
-                      </div>
+                      <p className="font-medium text-sm flex items-center gap-1.5">
+                        PT — {s.member?.full_name || "—"}
+                        {s.package?.guardian_name && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/25 font-normal uppercase tracking-wider">
+                            kid
+                          </span>
+                        )}
+                      </p>
                       {s.member?.phone && (
                         <a href={`tel:${s.member.phone}`} className="text-jai-blue text-xs mt-0.5 inline-block hover:underline">
                           {s.member.phone}
@@ -852,28 +863,59 @@ export function PtPageClient({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1 ml-3">
-                      {/* Edit button */}
-                      {isUpcoming && (
-                        <button
-                          onClick={() => openEditSession(s)}
-                          className="text-jai-text hover:text-jai-blue p-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {(() => {
+                        if (s.paid_amount != null) {
+                          return (
+                            <span className="text-[10px] px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                              💵 ${s.paid_amount}
+                            </span>
+                          );
+                        }
+                        if (isUpcoming && s.member?.pt_pay_per_class && s.member?.pt_default_price_per_class != null) {
+                          return (
+                            <span className="text-[10px] px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20">
+                              ${s.member.pt_default_price_per_class}/class
+                            </span>
+                          );
+                        }
+                        return null;
+                      })()}
+                      {!isUpcoming && (
+                        <span className={`text-[10px] px-2 py-1 rounded-full ${
+                          s.status === "completed"
+                            ? "bg-green-500/10 text-green-400 border border-green-500/20"
+                            : s.status === "no_show"
+                            ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                            : "bg-red-500/10 text-red-400 border border-red-500/20"
+                        }`}>
+                          {s.status === "completed" ? "Done" : s.status === "no_show" ? "No Show" : "Cancelled"}
+                        </span>
                       )}
-                      {/* Delete button */}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 justify-end -mt-1 -mb-1">
+                    {isUpcoming && (
                       <button
-                        onClick={() => handleDeleteSession(s.id)}
-                        className="text-jai-text hover:text-red-400 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                        onClick={() => openEditSession(s)}
+                        aria-label="Edit session"
+                        className="text-jai-text/70 hover:text-jai-blue p-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
-                    </div>
+                    )}
+                    <button
+                      onClick={() => handleDeleteSession(s.id)}
+                      aria-label="Delete session"
+                      className="text-jai-text/70 hover:text-red-400 p-2 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
                   </div>
 
                   {/* Edit form */}
@@ -954,7 +996,7 @@ export function PtPageClient({
                   {isUpcoming && editingSessionId !== s.id && (
                     <div className="flex gap-2 mt-3">
                       <button
-                        onClick={() => handleStatusChange(s.id, "completed")}
+                        onClick={() => openCompleteDialog(s.id, s.member?.full_name || "Client")}
                         className="flex-1 py-2 bg-green-600/10 text-green-400 border border-green-500/20 text-xs rounded-lg min-h-[44px] font-medium"
                       >
                         Completed
@@ -977,9 +1019,12 @@ export function PtPageClient({
               );
             })}
             {filteredSessions.length === 0 && (
-              <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center text-sm">
-                No PT sessions on this day
-                {filterCoachId ? " for this coach" : ""}
+              <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center space-y-1">
+                <p className="text-xl">🗓️</p>
+                <p className="text-jai-text text-sm font-medium">
+                  No PT sessions on this day
+                  {filterCoachId ? " for this coach" : ""}
+                </p>
               </div>
             )}
           </div>
@@ -1353,6 +1398,21 @@ export function PtPageClient({
           />
         </div>
       )}
+      <SessionCompleteDialog
+        open={completeSessionId !== null}
+        memberName={completeSessionName}
+        saving={completing}
+        payPerClass={(() => {
+          const s = sessions.find((x) => x.id === completeSessionId);
+          return !!s?.member?.pt_pay_per_class;
+        })()}
+        defaultPrice={(() => {
+          const s = sessions.find((x) => x.id === completeSessionId);
+          return s?.member?.pt_default_price_per_class ?? null;
+        })()}
+        onCancel={() => setCompleteSessionId(null)}
+        onConfirm={handleCompleteConfirm}
+      />
     </div>
   );
 }
@@ -1374,15 +1434,35 @@ function ClientsWithPackages({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
+  const [editPayPerClass, setEditPayPerClass] = useState(false);
+  const [editDefaultPrice, setEditDefaultPrice] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [dupeGroups, setDupeGroups] = useState<DuplicateGroup[]>([]);
+  const [activeDupe, setActiveDupe] = useState<DuplicateGroup | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    findDuplicateClients()
+      .then((groups) => {
+        if (!cancelled) setDupeGroups(groups);
+      })
+      .catch(() => {
+        // Silent — not worth alerting if the dupe probe fails.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function openEdit(m: User) {
     setEditingId(m.id);
     setEditName(m.full_name);
     setEditPhone(m.phone || "");
+    setEditPayPerClass(!!m.pt_pay_per_class);
+    setEditDefaultPrice(m.pt_default_price_per_class != null ? String(m.pt_default_price_per_class) : "");
     setConfirmDeleteId(null);
   }
 
@@ -1390,7 +1470,11 @@ function ClientsWithPackages({
     if (!editName.trim()) return;
     setSaving(true);
     try {
-      await updatePtClient(id, editName.trim(), editPhone.trim());
+      const price = editDefaultPrice ? parseFloat(editDefaultPrice) : null;
+      await updatePtClient(id, editName.trim(), editPhone.trim(), {
+        pay_per_class: editPayPerClass,
+        default_price_per_class: Number.isFinite(price) ? price : null,
+      });
       setEditingId(null);
       router.refresh();
     } catch (e) {
@@ -1464,6 +1548,28 @@ function ClientsWithPackages({
           {allClients.length} client{allClients.length !== 1 ? "s" : ""} · {ptPackages.length} package{ptPackages.length !== 1 ? "s" : ""}
         </p>
       </div>
+
+      {dupeGroups.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-amber-300">
+                {dupeGroups.length} possible duplicate{dupeGroups.length === 1 ? "" : "s"} found
+              </p>
+              <p className="text-[11px] text-amber-200/70">
+                Clients sharing the same phone number. Review to merge.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveDupe(dupeGroups[0])}
+              className="shrink-0 px-3 py-2 text-xs font-medium rounded-lg bg-amber-500/20 text-amber-200 border border-amber-500/30 hover:bg-amber-500/30 min-h-[36px]"
+            >
+              Review
+            </button>
+          </div>
+        </div>
+      )}
+
       <input
         type="text"
         placeholder="Search by name, phone, or coach..."
@@ -1494,6 +1600,12 @@ function ClientsWithPackages({
                     {memberPkgs.some((p) => p.guardian_name) && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/25 font-normal uppercase tracking-wider">
                         kid
+                      </span>
+                    )}
+                    {m.pt_pay_per_class && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 font-normal uppercase tracking-wider">
+                        per class
+                        {m.pt_default_price_per_class != null && ` · $${m.pt_default_price_per_class}`}
                       </span>
                     )}
                   </p>
@@ -1528,6 +1640,10 @@ function ClientsWithPackages({
                   ) : memberPkgs.length > 0 ? (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
                       {memberPkgs[0].status}
+                    </span>
+                  ) : m.pt_pay_per_class ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/25">
+                      per class
                     </span>
                   ) : (
                     <span className="text-[10px] px-2 py-0.5 rounded-full bg-jai-text/10 text-jai-text border border-jai-border">
@@ -1621,6 +1737,36 @@ function ClientsWithPackages({
                       />
                     </div>
                   </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-jai-text cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={editPayPerClass}
+                        onChange={(e) => setEditPayPerClass(e.target.checked)}
+                        className="w-4 h-4"
+                      />
+                      Pay per class (no package needed)
+                    </label>
+                    {editPayPerClass && (
+                      <div>
+                        <label className="text-xs text-jai-text mb-1 block">
+                          Default price per class (SGD)
+                        </label>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          value={editDefaultPrice}
+                          onChange={(e) => setEditDefaultPrice(e.target.value)}
+                          placeholder="e.g. 80"
+                          className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm"
+                        />
+                        <p className="text-[10px] text-jai-text/50 mt-1">
+                          Pre-fills the &ldquo;amount received&rdquo; when coach marks a session completed. Can be overridden per session.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleSave(m.id)}
@@ -1669,11 +1815,31 @@ function ClientsWithPackages({
           );
         })}
         {filtered.length === 0 && (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center text-sm">
-            {search ? "No clients match your search" : "No clients found"}
+          <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center space-y-1">
+            <p className="text-xl">{search ? "🔎" : "👥"}</p>
+            <p className="text-jai-text text-sm font-medium">
+              {search ? "No clients match your search" : "No clients yet"}
+            </p>
+            {!search && (
+              <p className="text-jai-text/60 text-xs">Tap &ldquo;+ New Client&rdquo; above to add one.</p>
+            )}
           </div>
         )}
       </div>
+
+      <MergeClientsDialog
+        group={activeDupe}
+        onClose={() => setActiveDupe(null)}
+        onMerged={(summary) => {
+          setActiveDupe(null);
+          showToast(summary);
+          // Re-run detection to drop the resolved group (and surface any others).
+          findDuplicateClients()
+            .then(setDupeGroups)
+            .catch(() => setDupeGroups([]));
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

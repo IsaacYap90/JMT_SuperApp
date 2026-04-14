@@ -148,7 +148,7 @@ export function Sidebar({ profile }: { profile: User }) {
       </header>
 
       {/* Bottom tab bar — all screen sizes */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 pb-safe">
+      <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 pb-safe">
         <div className="max-w-lg mx-auto grid" style={{ gridTemplateColumns: `repeat(${mainLinks.length + 1}, 1fr)` }}>
           {mainLinks.map((link) => {
             const active = pathname === link.href;

@@ -151,6 +151,15 @@ export async function GET(req: NextRequest) {
     .lte("leave_date", ymd)
     .gte("leave_end_date", ymd);
 
+  // 6. Today's trial bookings (booked, not cancelled/no-show/showed)
+  const { data: trials } = await supabase
+    .from("trial_bookings")
+    .select(
+      "id, name, phone, class_id, booking_date, time_slot, status, class:classes(id, name, start_time, end_time, lead_coach_id, assistant_coach_id, class_coaches(coach_id))"
+    )
+    .eq("booking_date", ymd)
+    .eq("status", "booked");
+
   const onLeaveIds = new Set<string>((leaves || []).map((l) => l.coach_id));
   const onLeaveSummary =
     (leaves || [])
@@ -185,6 +194,24 @@ export async function GET(req: NextRequest) {
     assistant_coach_id: string | null;
     class_coaches: { coach_id: string }[] | null;
   };
+
+  // Resolve coach IDs assigned to a class (lead + assistant + class_coaches)
+  function classCoachIds(c: ClsRow | null): Set<string> {
+    const ids = new Set<string>();
+    if (!c) return ids;
+    if (c.lead_coach_id) ids.add(c.lead_coach_id);
+    if (c.assistant_coach_id) ids.add(c.assistant_coach_id);
+    for (const cc of c.class_coaches || []) {
+      if (cc.coach_id) ids.add(cc.coach_id);
+    }
+    return ids;
+  }
+
+  // Trial recipient rule:
+  //   - admins (role='admin', active) → always see ALL trials
+  //   - coaches → see trials for classes they're assigned to
+  // Half-day leave filter mirrors the class/PT handling: drop trials <18:30
+  // when the user is on half-day leave.
 
   let sent = 0;
   let skipped = 0;
@@ -274,6 +301,42 @@ export async function GET(req: NextRequest) {
         lines.push("");
       } else {
         lines.push("No classes or PT sessions today.");
+        lines.push("");
+      }
+
+      // Trial bookings for today — admins see all, coaches see trials for
+      // classes they're assigned to. Half-day leave filter applies.
+      const isAdminRole = u.role === "admin" || u.role === "master_admin";
+      const myTrials: Array<{ sortKey: string; line: string }> = [];
+      for (const t of trials || []) {
+        const rawClass = (t as { class: unknown }).class;
+        const tClass = (Array.isArray(rawClass) ? rawClass[0] : rawClass) as
+          | ClsRow
+          | null;
+        if (!tClass) continue;
+
+        const assigned = classCoachIds(tClass).has(u.id);
+        if (!isAdminRole && !assigned) continue;
+
+        if (isHalfDayLeave && tClass.start_time < "18:30:00") continue;
+
+        const timeLabel = `${fmtTime(tClass.start_time)}–${fmtTime(
+          tClass.end_time
+        )}`;
+        const phoneSuffix = (t as { phone?: string }).phone
+          ? ` (${(t as { phone?: string }).phone})`
+          : "";
+        myTrials.push({
+          sortKey: tClass.start_time,
+          line: `• ${timeLabel} ${tClass.name} — ${
+            (t as { name?: string }).name || "Trial"
+          }${phoneSuffix}`,
+        });
+      }
+      if (myTrials.length > 0) {
+        myTrials.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+        lines.push("🆕 Trials today:");
+        for (const t of myTrials) lines.push(t.line);
         lines.push("");
       }
     }

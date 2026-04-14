@@ -41,7 +41,7 @@ export default async function HomePage() {
       .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
       .toLowerCase();
 
-    const [classesRes, ptPackagesRes, ptSessionsRes, leavesRes, coachesRes, tomorrowPtRes] =
+    const [classesRes, ptPackagesRes, ptSessionsRes, leavesRes, coachesRes, tomorrowPtRes, trialsRes] =
       await Promise.all([
         db
           .from("classes")
@@ -80,6 +80,11 @@ export default async function HomePage() {
           .lt("scheduled_at", dayAfterTomorrowDate)
           .in("status", ["scheduled", "confirmed"])
           .order("scheduled_at"),
+        db
+          .from("trial_bookings")
+          .select("id, name, phone, status, class_id")
+          .eq("booking_date", todayDate)
+          .order("time_slot"),
       ]);
 
     const allClasses = (classesRes.data || []) as unknown as Class[];
@@ -94,6 +99,21 @@ export default async function HomePage() {
 
     const pendingLeaves = (leavesRes.data || []).length;
 
+    type TrialRowRaw = { id: string; name: string; phone: string | null; status: string; class_id: string };
+    const trialRowsRaw = (trialsRes.data || []) as TrialRowRaw[];
+    const todayTrials = trialRowsRaw.map((t) => {
+      const cls = allClasses.find((c) => c.id === t.class_id);
+      return {
+        id: t.id,
+        name: t.name,
+        phone: t.phone,
+        status: (t.status || "booked") as "booked" | "showed" | "no_show" | "cancelled",
+        class_name: cls?.name || "Class",
+        class_start_time: (cls?.start_time || "00:00").slice(0, 5),
+        class_end_time: (cls?.end_time || "00:00").slice(0, 5),
+      };
+    });
+
     return (
       <AdminDashboard
         todayClasses={todayClasses}
@@ -105,6 +125,7 @@ export default async function HomePage() {
         today={today}
         userName={profile.full_name}
         coaches={(coachesRes.data || []) as unknown as User[]}
+        todayTrials={todayTrials}
       />
     );
   }
@@ -199,6 +220,40 @@ export default async function HomePage() {
 
   const tomorrowPtSessions = (tomorrowPtData || []) as unknown as PtSession[];
 
+  // Today's trials for this coach's classes (read-only on overview)
+  const myClassIds = myClasses.map((c) => c.id);
+  let todayTrials: {
+    id: string;
+    name: string;
+    phone: string | null;
+    status: "booked" | "showed" | "no_show" | "cancelled";
+    class_name: string;
+    class_start_time: string;
+    class_end_time: string;
+  }[] = [];
+  if (myClassIds.length > 0) {
+    const { data: trialRows } = await supabase
+      .from("trial_bookings")
+      .select("id, name, phone, status, class_id")
+      .eq("booking_date", todayDate)
+      .in("class_id", myClassIds)
+      .order("time_slot");
+    todayTrials = ((trialRows || []) as { id: string; name: string; phone: string | null; status: string; class_id: string }[]).map(
+      (t) => {
+        const cls = myClasses.find((c) => c.id === t.class_id);
+        return {
+          id: t.id,
+          name: t.name,
+          phone: t.phone,
+          status: (t.status || "booked") as "booked" | "showed" | "no_show" | "cancelled",
+          class_name: cls?.name || "Class",
+          class_start_time: (cls?.start_time || "00:00").slice(0, 5),
+          class_end_time: (cls?.end_time || "00:00").slice(0, 5),
+        };
+      }
+    );
+  }
+
   return (
     <CoachDashboard
       todayClasses={todayClasses}
@@ -212,6 +267,7 @@ export default async function HomePage() {
       nextWeekPtSessions={nextWeekPtSessions}
       coachName={profile.full_name}
       today={today}
+      todayTrials={todayTrials}
     />
   );
 }

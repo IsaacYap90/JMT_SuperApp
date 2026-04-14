@@ -4,7 +4,13 @@ import { useState } from "react";
 import Link from "next/link";
 import { Class, PtSession, User } from "@/lib/types/database";
 import { getTodayHoliday } from "@/lib/sg-holidays";
-import { updatePtSession } from "@/app/actions/pt";
+import { NextUpStrip } from "@/components/next-up-strip";
+import { PullToRefresh } from "@/components/pull-to-refresh";
+import { updatePtSession, updateSessionStatus } from "@/app/actions/pt";
+import { SessionCompleteDialog, CompletePayload } from "@/components/session-complete-dialog";
+import { showToast } from "@/components/toast";
+import { haptic } from "@/lib/haptic";
+import { TodayTrialsStrip, TrialRow } from "@/components/today-trials-strip";
 
 function getSgtNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
@@ -72,6 +78,7 @@ export function AdminDashboard({
   today,
   userName,
   coaches,
+  todayTrials = [],
 }: {
   todayClasses: Class[];
   todayPtSessions: PtSession[];
@@ -82,6 +89,7 @@ export function AdminDashboard({
   today: string;
   userName: string;
   coaches: User[];
+  todayTrials?: TrialRow[];
 }) {
   void today; // passed by page but date is computed inline
   const todayHoliday = getTodayHoliday();
@@ -95,6 +103,37 @@ export function AdminDashboard({
   const [editTime, setEditTime] = useState("");
   const [editDuration, setEditDuration] = useState(60);
   const [saving, setSaving] = useState(false);
+
+  // Complete-with-signature dialog state
+  const [completeSession, setCompleteSession] = useState<PtSession | null>(null);
+  const [completing, setCompleting] = useState(false);
+
+  async function handleComplete(payload: CompletePayload) {
+    if (!completeSession) return;
+    const target = completeSession;
+    const prevStatus = target.status;
+    setPtSessions((prev) =>
+      prev.map((s) => (s.id === target.id ? { ...s, status: "completed" } : s))
+    );
+    setCompleteSession(null);
+    setEditingId(null);
+    setCompleting(true);
+    haptic("tap");
+    try {
+      await updateSessionStatus(target.id, "completed", payload);
+      haptic("success");
+      const paidBit = payload.paid_amount != null ? ` · $${payload.paid_amount} collected` : "";
+      showToast(`Completed — ${target.member?.full_name || "client"}${paidBit}`);
+    } catch (e) {
+      setPtSessions((prev) =>
+        prev.map((s) => (s.id === target.id ? { ...s, status: prevStatus } : s))
+      );
+      haptic("error");
+      showToast(e instanceof Error ? e.message : "Failed to complete", "error");
+    } finally {
+      setCompleting(false);
+    }
+  }
 
   // Tomorrow collapsed
   const [tomorrowOpen, setTomorrowOpen] = useState(false);
@@ -186,6 +225,7 @@ export function AdminDashboard({
     : "Nothing scheduled";
 
   return (
+    <PullToRefresh>
     <div className="space-y-5">
       {/* Compact header */}
       <div className="flex items-center justify-between">
@@ -206,6 +246,12 @@ export function AdminDashboard({
           </span>
         </div>
       </div>
+
+      {/* "Next up" glance strip */}
+      <NextUpStrip items={timelineItems} disabled={!!todayHoliday} />
+
+      {/* Today's trials — one-tap actions */}
+      <TodayTrialsStrip trials={todayTrials} actionable={true} />
 
       {/* Pending leave alert */}
       {pendingLeaves > 0 && (
@@ -236,8 +282,10 @@ export function AdminDashboard({
             <p className="text-red-400/70 text-sm">{todayHoliday.name}</p>
           </div>
         ) : timelineItems.length === 0 ? (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-sm">
-            No classes or PT sessions today.
+          <div className="bg-jai-card border border-jai-border rounded-xl p-8 text-center space-y-1">
+            <p className="text-2xl">📭</p>
+            <p className="text-jai-text text-sm font-medium">Quiet day at the gym</p>
+            <p className="text-jai-text/60 text-xs">No classes or PT sessions scheduled.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -401,6 +449,14 @@ export function AdminDashboard({
                             Cancel
                           </button>
                         </div>
+                        {s.status !== "completed" && s.status !== "cancelled" && s.status !== "no_show" && (
+                          <button
+                            onClick={() => setCompleteSession(s)}
+                            className="w-full py-2 bg-green-600/10 text-green-400 border border-green-500/20 text-xs rounded-lg font-medium hover:bg-green-600/20"
+                          >
+                            ✅ Mark Completed + Sign
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -493,6 +549,16 @@ export function AdminDashboard({
           </div>
         )}
       </section>
+      <SessionCompleteDialog
+        open={!!completeSession}
+        memberName={completeSession?.member?.full_name || "Client"}
+        saving={completing}
+        payPerClass={!!completeSession?.member?.pt_pay_per_class}
+        defaultPrice={completeSession?.member?.pt_default_price_per_class ?? null}
+        onCancel={() => setCompleteSession(null)}
+        onConfirm={handleComplete}
+      />
     </div>
+    </PullToRefresh>
   );
 }

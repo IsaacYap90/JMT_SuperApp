@@ -4,6 +4,9 @@ import { useState } from "react";
 import { Class, PtSession } from "@/lib/types/database";
 import { getTodayHoliday, isPublicHoliday } from "@/lib/sg-holidays";
 import { PtCard } from "./pt-card";
+import { NextUpStrip } from "./next-up-strip";
+import { PullToRefresh } from "./pull-to-refresh";
+import { TodayTrialsStrip, TrialRow } from "./today-trials-strip";
 
 function getSgtNow(): Date {
   return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
@@ -75,6 +78,7 @@ export function CoachDashboard({
   nextWeekPtSessions,
   coachName,
   today,
+  todayTrials = [],
 }: {
   todayClasses: Class[];
   todayPtSessions: PtSession[];
@@ -87,6 +91,7 @@ export function CoachDashboard({
   nextWeekPtSessions: PtSession[];
   coachName: string;
   today: string;
+  todayTrials?: TrialRow[];
 }) {
   const todayHoliday = getTodayHoliday();
 
@@ -139,6 +144,7 @@ export function CoachDashboard({
   }
 
   return (
+    <PullToRefresh>
     <div className="space-y-5">
       {/* Compact header */}
       <div className="flex items-center justify-between">
@@ -163,6 +169,12 @@ export function CoachDashboard({
           </div>
         </div>
       </div>
+
+      {/* "Next up" glance strip */}
+      <NextUpStrip items={todayItems} disabled={!!todayHoliday} />
+
+      {/* Today's trials peek (read-only for coaches) */}
+      <TodayTrialsStrip trials={todayTrials} actionable={false} />
 
       {/* Quick stats — single horizontal row */}
       <div className="flex gap-2">
@@ -193,8 +205,10 @@ export function CoachDashboard({
             <p className="text-red-400/70 text-sm">{todayHoliday.name}</p>
           </div>
         ) : todayItems.length === 0 ? (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center">
-            <p className="text-jai-text text-sm">No sessions today</p>
+          <div className="bg-jai-card border border-jai-border rounded-xl p-8 text-center space-y-1">
+            <p className="text-2xl">🏖️</p>
+            <p className="text-jai-text text-sm font-medium">Rest day</p>
+            <p className="text-jai-text/60 text-xs">No sessions on your plate today.</p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -285,6 +299,7 @@ export function CoachDashboard({
         weekTotalHours={weekTotalHours}
       />
     </div>
+    </PullToRefresh>
   );
 }
 
@@ -333,8 +348,9 @@ function TomorrowSection({ classes, ptSessions }: { classes: Class[]; ptSessions
     return (
       <section>
         <h2 className="text-sm font-semibold text-jai-text uppercase tracking-wider mb-3">Tomorrow</h2>
-        <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-sm">
-          No sessions tomorrow
+        <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center space-y-1">
+          <p className="text-xl">🌤️</p>
+          <p className="text-jai-text text-sm font-medium">Nothing booked for tomorrow</p>
         </div>
       </section>
     );
