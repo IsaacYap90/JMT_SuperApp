@@ -135,6 +135,8 @@ export async function createPtPackage(payload: {
   total_sessions: number;
   sessions_used: number;
   expiry_date: string | null;
+  guardian_name?: string | null;
+  guardian_phone?: string | null;
 }) {
   await requireAdmin();
   const admin = createAdminClient();
@@ -157,6 +159,8 @@ export async function updatePtPackage(
     total_sessions: number;
     sessions_used: number;
     expiry_date: string | null;
+    guardian_name?: string | null;
+    guardian_phone?: string | null;
   }
 ) {
   await requireAdmin();
@@ -176,6 +180,34 @@ export async function updatePtPackage(
 
   if (error) throw new Error(error.message);
   revalidatePath("/pt");
+}
+
+// Delete PT package. Blocks if the package has PT sessions still on it — the
+// admin must delete or reassign those sessions first. Any signed pt_contracts
+// referencing this package cascade via the FK (on delete cascade).
+export type DeletePtPackageResult = { ok: true } | { ok: false; error: string };
+
+export async function deletePtPackage(id: string): Promise<DeletePtPackageResult> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { count: sessCount } = await admin
+    .from("pt_sessions")
+    .select("*", { count: "exact", head: true })
+    .eq("package_id", id);
+
+  if ((sessCount ?? 0) > 0) {
+    return {
+      ok: false,
+      error: `Package has ${sessCount} PT session(s). Delete the session(s) first, then retry.`,
+    };
+  }
+
+  const { error } = await admin.from("pt_packages").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/pt");
+  return { ok: true };
 }
 
 // Create PT session (and auto-link to package + increment sessions_used)
@@ -710,7 +742,7 @@ export async function getContractDraft(id: string): Promise<ContractDraft | null
   return data as ContractDraft;
 }
 
-// Save a draft → creates PT client + package, marks draft as saved
+// Save a draft → creates or reuses PT client + creates package, marks draft as saved
 export async function saveContractDraft(
   draftId: string,
   payload: {
@@ -721,22 +753,40 @@ export async function saveContractDraft(
     sessions_used: number;
     total_price: number | null;
     expiry_date: string | null;
+    // If set, skip user insert and use this existing member's id
+    existing_user_id?: string | null;
+    // Optional payer (parent/guardian) — used when payer ≠ trainee
+    guardian_name?: string | null;
+    guardian_phone?: string | null;
   }
 ) {
   await requireAdmin();
   const admin = createAdminClient();
 
-  // 1. Create the PT client (member user)
-  const clientId = randomUUID();
-  const { error: clientErr } = await admin.from("users").insert({
-    id: clientId,
-    full_name: payload.client_name,
-    phone: payload.client_phone || null,
-    role: "member",
-    is_active: true,
-    email: `pt_${clientId.slice(0, 8)}@jmt.local`,
-  });
-  if (clientErr) throw new Error(`Failed to create client: ${clientErr.message}`);
+  // 1. Resolve the PT client — reuse existing member or create new
+  let clientId: string;
+  if (payload.existing_user_id) {
+    const { data: existing, error: lookupErr } = await admin
+      .from("users")
+      .select("id, role")
+      .eq("id", payload.existing_user_id)
+      .single();
+    if (lookupErr || !existing) {
+      throw new Error("Selected client not found");
+    }
+    clientId = existing.id as string;
+  } else {
+    clientId = randomUUID();
+    const { error: clientErr } = await admin.from("users").insert({
+      id: clientId,
+      full_name: payload.client_name,
+      phone: payload.client_phone || null,
+      role: "member",
+      is_active: true,
+      email: `pt_${clientId.slice(0, 8)}@jmt.local`,
+    });
+    if (clientErr) throw new Error(`Failed to create client: ${clientErr.message}`);
+  }
 
   // 2. Create the PT package
   const { error: pkgErr } = await admin.from("pt_packages").insert({
@@ -747,6 +797,8 @@ export async function saveContractDraft(
     price_paid: payload.total_price,
     expiry_date: payload.expiry_date || null,
     status: payload.sessions_used >= payload.total_sessions ? "completed" : "active",
+    guardian_name: payload.guardian_name?.trim() || null,
+    guardian_phone: payload.guardian_phone?.trim() || null,
   });
   if (pkgErr) throw new Error(`Failed to create package: ${pkgErr.message}`);
 

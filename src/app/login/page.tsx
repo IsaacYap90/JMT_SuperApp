@@ -48,7 +48,7 @@ function LoginPageContent() {
           <h1 className="text-3xl font-bold text-white">
             JAI <span className="text-jai-blue">MUAY THAI</span>
           </h1>
-          <p className="text-jai-text mt-2">Dashboard Login</p>
+          <p className="text-jai-text mt-2">JMT OS Login</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">

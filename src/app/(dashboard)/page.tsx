@@ -55,7 +55,7 @@ export default async function HomePage() {
         db
           .from("pt_sessions")
           .select(
-            "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*)"
+            "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)"
           )
           .gte("scheduled_at", todayDate)
           .lt("scheduled_at", tomorrowDate)
@@ -74,7 +74,7 @@ export default async function HomePage() {
         db
           .from("pt_sessions")
           .select(
-            "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*)"
+            "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)"
           )
           .gte("scheduled_at", tomorrowDate)
           .lt("scheduled_at", dayAfterTomorrowDate)
@@ -135,7 +135,7 @@ export default async function HomePage() {
       .eq("coach_id", user.id),
     supabase
       .from("pt_sessions")
-      .select("*, member:users!pt_sessions_member_id_fkey(*)")
+      .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
       .eq("coach_id", user.id)
       .gte("scheduled_at", todayDate)
       .lt("scheduled_at", tomorrowDate)
@@ -149,7 +149,7 @@ export default async function HomePage() {
       .lt("scheduled_at", sundayDate),
     supabase
       .from("pt_sessions")
-      .select("*, member:users!pt_sessions_member_id_fkey(*)")
+      .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
       .eq("coach_id", user.id)
       .gte("scheduled_at", sundayDate)
       .lt("scheduled_at", nextSundayDate)

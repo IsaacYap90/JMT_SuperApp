@@ -62,6 +62,8 @@ export interface PtPackage {
   expiry_date: string | null;
   status: string;
   created_at: string;
+  guardian_name: string | null;
+  guardian_phone: string | null;
   // joined
   member?: User;
   coach?: User;
@@ -82,6 +84,7 @@ export interface PtSession {
   // joined
   coach?: User;
   member?: User;
+  package?: { guardian_name: string | null; guardian_phone: string | null } | null;
 }
 
 export interface ClassSession {

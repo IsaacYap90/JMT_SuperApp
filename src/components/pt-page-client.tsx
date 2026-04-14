@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 
 // 30-minute time slots from 6:00am to 10:00pm for PT scheduling
@@ -21,6 +22,7 @@ import {
   deletePtClient,
   createPtPackage,
   updatePtPackage,
+  deletePtPackage,
   createPtSession,
   updatePtSession,
   updateSessionStatus,
@@ -30,6 +32,7 @@ import {
   copyPtSessionsToNextWeek,
 } from "@/app/actions/pt";
 import type { ContractDraft } from "@/app/actions/pt";
+import { getContractPdfSignedUrl } from "@/app/actions/pt-contracts";
 import { ContractDraftBanner, ContractDraftReviewForm } from "@/components/contract-draft-review";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 
@@ -99,6 +102,7 @@ export function PtPageClient({
   members,
   coaches,
   contractDrafts = [],
+  contractsByPackage = {},
 }: {
   ptPackages: PtPackage[];
   ptSessions?: PtSession[];
@@ -107,6 +111,7 @@ export function PtPageClient({
   members: User[];
   coaches: User[];
   contractDrafts?: ContractDraft[];
+  contractsByPackage?: Record<string, string>;
 }) {
   const router = useRouter();
   const admin = isAdmin(profile.role);
@@ -148,12 +153,17 @@ export function PtPageClient({
   // Package form state
   const [showPkgForm, setShowPkgForm] = useState(false);
   const [editingPkg, setEditingPkg] = useState<PtPackage | null>(null);
+  const [confirmDeletePkg, setConfirmDeletePkg] = useState(false);
+  const [deletingPkg, setDeletingPkg] = useState(false);
+  const [deletePkgError, setDeletePkgError] = useState<string | null>(null);
   const [memberId, setMemberId] = useState("");
   const [coachId, setCoachId] = useState("");
   const [packageType, setPackageType] = useState("10-pack");
   const [totalSessions, setTotalSessions] = useState(10);
   const [sessionsUsed, setSessionsUsed] = useState(0);
   const [expiryDate, setExpiryDate] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
 
   // Session form state
   const [showSessionForm, setShowSessionForm] = useState(false);
@@ -220,6 +230,8 @@ export function PtPageClient({
     setTotalSessions(10);
     setSessionsUsed(0);
     setExpiryDate("");
+    setGuardianName("");
+    setGuardianPhone("");
     setShowPkgForm(true);
   };
 
@@ -230,7 +242,28 @@ export function PtPageClient({
     setTotalSessions(pkg.total_sessions);
     setSessionsUsed(pkg.sessions_used);
     setExpiryDate(pkg.expiry_date || "");
+    setGuardianName(pkg.guardian_name || "");
+    setGuardianPhone(pkg.guardian_phone || "");
+    setConfirmDeletePkg(false);
+    setDeletePkgError(null);
     setShowPkgForm(true);
+  };
+
+  const handleDeletePkg = async () => {
+    if (!editingPkg) return;
+    setDeletingPkg(true);
+    setDeletePkgError(null);
+    const res = await deletePtPackage(editingPkg.id);
+    setDeletingPkg(false);
+    if (!res.ok) {
+      setDeletePkgError(res.error);
+      setConfirmDeletePkg(false);
+      return;
+    }
+    setShowPkgForm(false);
+    setEditingPkg(null);
+    setConfirmDeletePkg(false);
+    router.refresh();
   };
 
   const handlePkgTypeChange = (type: string) => {
@@ -250,6 +283,8 @@ export function PtPageClient({
         total_sessions: totalSessions,
         sessions_used: sessionsUsed,
         expiry_date: expiryDate || null,
+        guardian_name: guardianName.trim() || null,
+        guardian_phone: guardianPhone.trim() || null,
       };
       if (editingPkg) {
         await updatePtPackage(editingPkg.id, payload);
@@ -427,16 +462,40 @@ export function PtPageClient({
       <div className="space-y-6">
         <h1 className="text-2xl font-bold">My PT Clients</h1>
         <div className="space-y-2">
-          {ptPackages.map((pt) => (
-            <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-4">
-              <p className="font-medium">{pt.member?.full_name || "—"}</p>
-              <p className="text-jai-text text-sm mt-1">
-                {nextSessions[pt.user_id]
-                  ? `Next session: ${new Date(nextSessions[pt.user_id]).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
-                  : "No upcoming session"}
-              </p>
-            </div>
-          ))}
+          {ptPackages.map((pt) => {
+            const contactPhone = pt.guardian_phone || pt.member?.phone || "";
+            const waPhone = contactPhone.replace(/\D/g, "");
+            const contactLabel = pt.guardian_name
+              ? `${contactPhone} (${pt.guardian_name})`
+              : contactPhone;
+            const remaining = pt.total_sessions - pt.sessions_used;
+            return (
+              <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-medium">{pt.member?.full_name || "—"}</p>
+                  {waPhone && (
+                    <a
+                      href={`https://wa.me/65${waPhone}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs px-2 py-1 rounded-md bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 transition-colors"
+                    >
+                      {contactLabel}
+                    </a>
+                  )}
+                </div>
+                <p className="text-jai-text text-sm mt-1">
+                  {remaining} session{remaining === 1 ? "" : "s"} left
+                </p>
+                <p className="text-jai-text text-sm mt-1">
+                  {nextSessions[pt.user_id]
+                    ? `Next session: ${new Date(nextSessions[pt.user_id]).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+                    : "No upcoming session"}
+                </p>
+              </div>
+            );
+          })}
           {ptPackages.length === 0 && (
             <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center">
               No PT clients assigned
@@ -474,6 +533,7 @@ export function PtPageClient({
         <ContractDraftReviewForm
           draft={reviewingDraft}
           coaches={coaches.map((c) => ({ id: c.id, full_name: c.full_name }))}
+          members={members.map((m) => ({ id: m.id, full_name: m.full_name, phone: m.phone }))}
           onClose={() => setReviewingDraft(null)}
         />
       )}
@@ -929,14 +989,22 @@ export function PtPageClient({
       {/* CLIENTS TAB (merged Packages + Clients) */}
       {tab === "clients" && (
         <div className="space-y-4">
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 flex-wrap">
             {!showNewClient && !showPkgForm && (
-              <button
-                onClick={() => setShowNewClient(true)}
-                className="px-4 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
-              >
-                + New Client
-              </button>
+              <>
+                <Link
+                  href="/pt/new-contract"
+                  className="px-4 py-2.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 min-h-[44px] inline-flex items-center"
+                >
+                  ✍️ New Contract
+                </Link>
+                <button
+                  onClick={() => setShowNewClient(true)}
+                  className="px-4 py-2.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 min-h-[44px]"
+                >
+                  + New Client
+                </button>
+              </>
             )}
             <button
               onClick={showPkgForm ? () => setShowPkgForm(false) : openAddPkg}
@@ -1120,6 +1188,37 @@ export function PtPageClient({
                   />
                 </div>
               </div>
+              <div className="bg-jai-bg/30 border border-jai-border rounded-lg p-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-jai-text/60">
+                  Guardian / Payer (optional)
+                </p>
+                <p className="text-[11px] text-jai-text/60 -mt-1">
+                  Fill only if the payer is different from the trainee
+                  (e.g. parent paying for child).
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-jai-text block mb-1">Guardian Name</label>
+                    <input
+                      type="text"
+                      value={guardianName}
+                      onChange={(e) => setGuardianName(e.target.value)}
+                      placeholder="Parent / payer name"
+                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-jai-text block mb-1">Guardian Phone</label>
+                    <input
+                      type="tel"
+                      value={guardianPhone}
+                      onChange={(e) => setGuardianPhone(e.target.value)}
+                      placeholder="Parent / payer phone"
+                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                    />
+                  </div>
+                </div>
+              </div>
               <button
                 type="submit"
                 disabled={saving}
@@ -1131,6 +1230,52 @@ export function PtPageClient({
                   ? "Update Package"
                   : "Create Package"}
               </button>
+
+              {editingPkg && (
+                <div className="pt-3 border-t border-jai-border space-y-2">
+                  {deletePkgError && (
+                    <div className="text-xs text-red-500 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">
+                      {deletePkgError}
+                    </div>
+                  )}
+                  {!confirmDeletePkg ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmDeletePkg(true);
+                        setDeletePkgError(null);
+                      }}
+                      className="w-full py-2.5 bg-red-500/10 border border-red-500/40 text-red-400 text-sm rounded-lg font-medium min-h-[44px]"
+                    >
+                      Delete Package
+                    </button>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-jai-text">
+                        Delete this package permanently? This also removes any signed contract tied to it.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDeletePkg(false)}
+                          disabled={deletingPkg}
+                          className="flex-1 py-2.5 bg-jai-bg border border-jai-border text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeletePkg}
+                          disabled={deletingPkg}
+                          className="flex-1 py-2.5 bg-red-600 text-white text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                        >
+                          {deletingPkg ? "Deleting..." : "Yes, delete"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </form>
           )}
 
@@ -1198,6 +1343,7 @@ export function PtPageClient({
           <ClientsWithPackages
             members={members}
             ptPackages={ptPackages}
+            contractsByPackage={contractsByPackage}
             onEditPkg={openEditPkg}
             onQuickSchedule={(pkg) => {
               setQuickSchedulePkg(pkg);
@@ -1214,11 +1360,13 @@ export function PtPageClient({
 function ClientsWithPackages({
   members,
   ptPackages,
+  contractsByPackage,
   onEditPkg,
   onQuickSchedule,
 }: {
   members: User[];
   ptPackages: PtPackage[];
+  contractsByPackage: Record<string, string>;
   onEditPkg: (pkg: PtPackage) => void;
   onQuickSchedule: (pkg: PtPackage) => void;
 }) {
@@ -1341,7 +1489,14 @@ function ClientsWithPackages({
                 onClick={() => !isEditing && openEdit(m)}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm">{m.full_name}</p>
+                  <p className="font-medium text-sm flex items-center gap-1.5">
+                    {m.full_name}
+                    {memberPkgs.some((p) => p.guardian_name) && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/25 font-normal uppercase tracking-wider">
+                        kid
+                      </span>
+                    )}
+                  </p>
                   {m.phone && (
                     <a
                       href={`tel:${m.phone}`}
@@ -1396,18 +1551,46 @@ function ClientsWithPackages({
                         <span>
                           Coach: {pkg.coach?.full_name || "—"} · {remaining} left
                           {pkg.expiry_date && ` · Exp: ${pkg.expiry_date}`}
+                          {pkg.guardian_name && (
+                            <>
+                              {" · "}
+                              <span className="text-jai-blue">
+                                👤 {pkg.guardian_name}
+                                {pkg.guardian_phone ? ` ${pkg.guardian_phone}` : ""}
+                              </span>
+                            </>
+                          )}
                         </span>
-                        {pkg.status === "active" && remaining > 0 && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onQuickSchedule(pkg);
-                            }}
-                            className="px-2 py-1 bg-green-600/10 text-green-400 border border-green-500/20 text-[10px] rounded-md font-medium hover:bg-green-600/20 transition-colors"
-                          >
-                            Schedule
-                          </button>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {contractsByPackage[pkg.id] && (
+                            <button
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                try {
+                                  const url = await getContractPdfSignedUrl(contractsByPackage[pkg.id]);
+                                  window.open(url, "_blank", "noopener");
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : "Could not open contract");
+                                }
+                              }}
+                              title="View signed contract PDF"
+                              className="px-2 py-1 bg-purple-600/10 text-purple-400 border border-purple-500/20 text-[10px] rounded-md font-medium hover:bg-purple-600/20 transition-colors"
+                            >
+                              📄 Contract
+                            </button>
+                          )}
+                          {pkg.status === "active" && remaining > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onQuickSchedule(pkg);
+                              }}
+                              className="px-2 py-1 bg-green-600/10 text-green-400 border border-green-500/20 text-[10px] rounded-md font-medium hover:bg-green-600/20 transition-colors"
+                            >
+                              Schedule
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

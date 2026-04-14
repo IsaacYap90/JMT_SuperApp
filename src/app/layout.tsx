@@ -1,15 +1,21 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Dancing_Script } from "next/font/google";
 import Script from "next/script";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
+const dancingScript = Dancing_Script({
+  subsets: ["latin"],
+  weight: ["700"],
+  variable: "--font-dancing-script",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "JMT Dashboard",
+  title: "JMT OS",
   description: "Jai Muay Thai Gym Dashboard",
   manifest: "/manifest.webmanifest",
-  applicationName: "JMT Dashboard",
+  applicationName: "JMT OS",
   appleWebApp: {
     capable: true,
     title: "JMT",
@@ -42,7 +48,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={`dark ${dancingScript.variable}`}>
       <body className={`${inter.className} bg-jai-bg text-white antialiased`}>
         {children}
         <Script id="register-sw" strategy="afterInteractive">

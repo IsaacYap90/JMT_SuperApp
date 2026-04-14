@@ -1,7 +1,7 @@
 {
-  "name": "JMT Dashboard",
+  "name": "JMT OS",
   "short_name": "JMT",
-  "description": "Jai Muay Thai coach & admin dashboard",
+  "description": "Jai Muay Thai Gym OS — coach & admin portal",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

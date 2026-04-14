@@ -106,8 +106,13 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
     >
       <div className="flex items-center justify-between">
         <div>
-          <p className="font-medium text-sm">
+          <p className="font-medium text-sm flex items-center gap-1.5">
             PT — {s.member?.full_name || "Client"}
+            {s.package?.guardian_name && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/25 font-normal uppercase tracking-wider">
+                kid
+              </span>
+            )}
           </p>
           <p className="text-jai-text text-sm">
             {dayLabel ? `${dayLabel} · ` : ""}{time} - {endTime} · {s.duration_minutes || 60}min
@@ -132,11 +137,17 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
 
       {expanded && !isResolved && (
         <div className="mt-3 pt-3 border-t border-jai-border space-y-3">
-          {s.member?.phone && (
-            <a href={`tel:${s.member.phone}`} className="flex items-center gap-2 text-jai-blue text-sm hover:underline">
-              <span>📞</span> {s.member.phone}
-            </a>
-          )}
+          {(() => {
+            const contactPhone = s.package?.guardian_phone || s.member?.phone || "";
+            const contactLabel = s.package?.guardian_name
+              ? `${contactPhone} (${s.package.guardian_name})`
+              : contactPhone;
+            return contactPhone ? (
+              <a href={`tel:${contactPhone}`} className="flex items-center gap-2 text-jai-blue text-sm hover:underline">
+                <span>📞</span> {contactLabel}
+              </a>
+            ) : null;
+          })()}
           {!rescheduling && (
             <button
               onClick={(e) => { e.stopPropagation(); openReschedule(); }}
