@@ -130,7 +130,8 @@ export async function submitLeave(payload: {
   const { data: admins } = await admin
     .from("users")
     .select("id")
-    .in("role", ["admin", "master_admin"]);
+    .in("role", ["admin", "master_admin"])
+    .is("merged_into_id", null);
 
   if (admins) {
     const dateRange = payload.leave_date === (payload.leave_end_date || payload.leave_date)

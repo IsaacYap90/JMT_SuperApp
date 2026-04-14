@@ -63,6 +63,7 @@ export default async function LeavePage() {
       .eq("is_active", true)
       .eq("employment_type", "full_time")
       .neq("id", user.id)
+      .is("merged_into_id", null)
       .order("full_name");
     coaches = (coachData || []) as Pick<User, "id" | "full_name" | "role">[];
   }

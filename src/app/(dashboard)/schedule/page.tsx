@@ -41,6 +41,7 @@ export default async function SchedulePage() {
         .select("*")
         .in("role", ["coach", "admin", "master_admin"])
         .eq("is_active", true)
+        .is("merged_into_id", null)
         .order("full_name"),
       db
         .from("pt_sessions")

@@ -179,7 +179,8 @@ export async function adminCreateTrialBooking(data: {
     .from("users")
     .select("id")
     .in("role", ["admin", "master_admin"])
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .is("merged_into_id", null);
   const adminIds = new Set<string>((admins || []).map((u) => u.id));
 
   const recipients = new Set<string>();
