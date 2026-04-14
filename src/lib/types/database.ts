@@ -18,6 +18,9 @@ export interface User {
   is_active: boolean;
   is_first_login: boolean;
   created_at: string;
+  pt_pay_per_class?: boolean;
+  pt_default_price_per_class?: number | null;
+  merged_into_id?: string | null;
 }
 
 export interface ClassCoach {
@@ -71,7 +74,7 @@ export interface PtPackage {
 
 export interface PtSession {
   id: string;
-  package_id: string;
+  package_id: string | null;
   coach_id: string;
   member_id: string;
   scheduled_at: string;
@@ -81,6 +84,10 @@ export interface PtSession {
   session_type: string | null;
   notes: string | null;
   created_at: string;
+  paid_amount?: number | null;
+  signed_on_paper?: boolean;
+  client_signature?: string | null;
+  signed_at?: string | null;
   // joined
   coach?: User;
   member?: User;

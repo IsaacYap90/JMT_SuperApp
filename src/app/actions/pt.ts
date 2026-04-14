@@ -35,7 +35,11 @@ async function requireAdmin() {
 }
 
 // Create a PT client profile (name + phone, role=member)
-export async function createPtClient(fullName: string, phone: string) {
+export async function createPtClient(
+  fullName: string,
+  phone: string,
+  opts?: { pay_per_class?: boolean; default_price_per_class?: number | null }
+) {
   await requireAdmin();
   const admin = createAdminClient();
 
@@ -47,6 +51,8 @@ export async function createPtClient(fullName: string, phone: string) {
     role: "member",
     is_active: true,
     email: `pt_${id.slice(0, 8)}@jmt.local`,
+    pt_pay_per_class: opts?.pay_per_class ?? false,
+    pt_default_price_per_class: opts?.default_price_per_class ?? null,
   }).select().single();
 
   if (error) throw new Error(error.message);
@@ -55,14 +61,25 @@ export async function createPtClient(fullName: string, phone: string) {
 }
 
 // Update PT client
-export async function updatePtClient(id: string, fullName: string, phone: string) {
+export async function updatePtClient(
+  id: string,
+  fullName: string,
+  phone: string,
+  opts?: { pay_per_class?: boolean; default_price_per_class?: number | null }
+) {
   await requireAdmin();
   const admin = createAdminClient();
 
-  const { error } = await admin.from("users").update({
+  const update: Record<string, unknown> = {
     full_name: fullName,
     phone: phone || null,
-  }).eq("id", id);
+  };
+  if (opts) {
+    update.pt_pay_per_class = opts.pay_per_class ?? false;
+    update.pt_default_price_per_class = opts.default_price_per_class ?? null;
+  }
+
+  const { error } = await admin.from("users").update(update).eq("id", id);
 
   if (error) throw new Error(error.message);
   revalidatePath("/pt");
@@ -220,7 +237,9 @@ export async function createPtSession(payload: {
   await requireAdmin();
   const admin = createAdminClient();
 
-  // Find active package for this member+coach
+  // Find active package for this member+coach. Pay-per-class clients won't
+  // have one — fall back to a null package_id (pt_sessions.package_id is
+  // nullable for this case).
   const { data: pkg } = await admin
     .from("pt_packages")
     .select("id, sessions_used, total_sessions")
@@ -229,7 +248,7 @@ export async function createPtSession(payload: {
     .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(1)
-    .single();
+    .maybeSingle();
 
   const { data: session, error } = await admin
     .from("pt_sessions")
@@ -325,10 +344,19 @@ export async function updatePtSession(
   return session;
 }
 
+export type SessionSignaturePayload = {
+  signed_on_paper: boolean;
+  // Data URL of the client's drawn signature. Empty when signed_on_paper=true.
+  client_signature: string;
+  // For pay-per-class sessions: amount received for this class.
+  paid_amount?: number | null;
+};
+
 // Update session status (completed, cancelled, no_show)
 export async function updateSessionStatus(
   sessionId: string,
-  newStatus: "completed" | "cancelled" | "no_show"
+  newStatus: "completed" | "cancelled" | "no_show",
+  signature?: SessionSignaturePayload
 ) {
   const adminUser = await requireAdmin();
   const admin = createAdminClient();
@@ -342,10 +370,19 @@ export async function updateSessionStatus(
 
   if (!session) throw new Error("Session not found");
 
-  // Update session status
+  // Update session status (plus signature fields when completing)
+  const updatePayload: Record<string, unknown> = { status: newStatus };
+  if (newStatus === "completed" && signature) {
+    updatePayload.signed_on_paper = signature.signed_on_paper;
+    updatePayload.client_signature = signature.signed_on_paper ? null : signature.client_signature || null;
+    updatePayload.signed_at = new Date().toISOString();
+    updatePayload.signed_by = adminUser.id;
+    if (signature.paid_amount != null) updatePayload.paid_amount = signature.paid_amount;
+  }
+
   const { error } = await admin
     .from("pt_sessions")
-    .update({ status: newStatus })
+    .update(updatePayload)
     .eq("id", sessionId);
 
   if (error) throw new Error(error.message);
@@ -586,7 +623,8 @@ export async function autoExpirePackages() {
 // Coach-facing: mark own PT session as completed or cancelled
 export async function coachUpdatePtStatus(
   sessionId: string,
-  newStatus: "completed" | "cancelled" | "no_show"
+  newStatus: "completed" | "cancelled" | "no_show",
+  signature?: SessionSignaturePayload
 ) {
   const supabase = createClient();
   const {
@@ -606,10 +644,19 @@ export async function coachUpdatePtStatus(
 
   if (!session) throw new Error("Session not found or not assigned to you");
 
-  // Update session status
+  // Update session status (plus signature fields when completing)
+  const updatePayload: Record<string, unknown> = { status: newStatus };
+  if (newStatus === "completed" && signature) {
+    updatePayload.signed_on_paper = signature.signed_on_paper;
+    updatePayload.client_signature = signature.signed_on_paper ? null : signature.client_signature || null;
+    updatePayload.signed_at = new Date().toISOString();
+    updatePayload.signed_by = user.id;
+    if (signature.paid_amount != null) updatePayload.paid_amount = signature.paid_amount;
+  }
+
   const { error } = await admin
     .from("pt_sessions")
-    .update({ status: newStatus })
+    .update(updatePayload)
     .eq("id", sessionId);
 
   if (error) throw new Error(error.message);
@@ -823,4 +870,191 @@ export async function discardContractDraft(draftId: string) {
     .eq("id", draftId);
 
   revalidatePath("/pt");
+}
+
+// -------- Duplicate client detection + merge --------
+
+function normalisePhone(raw: string | null | undefined): string {
+  if (!raw) return "";
+  // Strip all non-digits, then trim any leading country code (65) so we group
+  // "+65 98340698" with "98340698".
+  const digits = raw.replace(/\D/g, "");
+  return digits.replace(/^65(?=\d{8}$)/, "");
+}
+
+export type DuplicateGroup = {
+  phone: string;
+  clients: Array<{
+    id: string;
+    full_name: string;
+    phone: string | null;
+    pt_pay_per_class: boolean;
+    pt_default_price_per_class: number | null;
+    session_count: number;
+    package_count: number;
+    created_at: string;
+  }>;
+};
+
+export async function findDuplicateClients(): Promise<DuplicateGroup[]> {
+  await requireAdmin();
+  const admin = createAdminClient();
+
+  const { data: clients, error } = await admin
+    .from("users")
+    .select("id, full_name, phone, pt_pay_per_class, pt_default_price_per_class, created_at")
+    .eq("role", "member")
+    .is("merged_into_id", null);
+
+  if (error) throw new Error(error.message);
+
+  // Group by normalised phone (skip blanks — can't dedupe without a phone).
+  const groups = new Map<string, DuplicateGroup["clients"]>();
+  for (const c of clients || []) {
+    const key = normalisePhone(c.phone);
+    if (!key) continue;
+    const arr = groups.get(key) || [];
+    arr.push({
+      id: c.id,
+      full_name: c.full_name,
+      phone: c.phone,
+      pt_pay_per_class: !!c.pt_pay_per_class,
+      pt_default_price_per_class: c.pt_default_price_per_class ?? null,
+      session_count: 0,
+      package_count: 0,
+      created_at: c.created_at,
+    });
+    groups.set(key, arr);
+  }
+
+  const dupes = Array.from(groups.entries())
+    .filter(([, arr]) => arr.length > 1)
+    .map(([phone, clients]) => ({ phone, clients }));
+
+  if (dupes.length === 0) return [];
+
+  // Fetch session + package counts for the dupe candidates only.
+  const allIds = dupes.flatMap(g => g.clients.map(c => c.id));
+
+  const [sessCounts, pkgCounts] = await Promise.all([
+    admin.from("pt_sessions").select("member_id").in("member_id", allIds),
+    admin.from("pt_packages").select("user_id").in("user_id", allIds),
+  ]);
+
+  const sessMap = new Map<string, number>();
+  for (const row of sessCounts.data || []) {
+    sessMap.set(row.member_id, (sessMap.get(row.member_id) || 0) + 1);
+  }
+  const pkgMap = new Map<string, number>();
+  for (const row of pkgCounts.data || []) {
+    pkgMap.set(row.user_id, (pkgMap.get(row.user_id) || 0) + 1);
+  }
+
+  for (const g of dupes) {
+    for (const c of g.clients) {
+      c.session_count = sessMap.get(c.id) || 0;
+      c.package_count = pkgMap.get(c.id) || 0;
+    }
+    // Sort by "has-more-data" first — the richer row is usually the keeper.
+    g.clients.sort((a, b) => {
+      const aScore = a.session_count + a.package_count;
+      const bScore = b.session_count + b.package_count;
+      if (aScore !== bScore) return bScore - aScore;
+      return a.created_at.localeCompare(b.created_at);
+    });
+  }
+
+  return dupes;
+}
+
+export type MergePayload = {
+  full_name: string;
+  phone: string | null;
+  pt_pay_per_class: boolean;
+  pt_default_price_per_class: number | null;
+};
+
+export async function mergeClients(
+  winnerId: string,
+  loserIds: string[],
+  payload: MergePayload
+): Promise<{ sessions_moved: number; packages_moved: number; contracts_moved: number; notifications_moved: number }> {
+  await requireAdmin();
+  if (!winnerId || loserIds.length === 0) throw new Error("Nothing to merge");
+  if (loserIds.includes(winnerId)) throw new Error("Winner cannot also be a loser");
+
+  const admin = createAdminClient();
+
+  // Verify all ids are role=member and not already merged.
+  const { data: rows, error: loadErr } = await admin
+    .from("users")
+    .select("id, role, merged_into_id")
+    .in("id", [winnerId, ...loserIds]);
+  if (loadErr) throw new Error(loadErr.message);
+  if (!rows || rows.length !== loserIds.length + 1) throw new Error("One of the clients could not be loaded");
+  for (const r of rows) {
+    if (r.role !== "member") throw new Error("Merge only allowed between member profiles");
+    if (r.merged_into_id) throw new Error("One of the clients was already merged — refresh");
+  }
+
+  // 1) Reassign pt_sessions.member_id
+  const { data: sessMoved, error: sErr } = await admin
+    .from("pt_sessions")
+    .update({ member_id: winnerId })
+    .in("member_id", loserIds)
+    .select("id");
+  if (sErr) throw new Error(`sessions: ${sErr.message}`);
+
+  // 2) Reassign pt_packages.user_id
+  const { data: pkgMoved, error: pErr } = await admin
+    .from("pt_packages")
+    .update({ user_id: winnerId })
+    .in("user_id", loserIds)
+    .select("id");
+  if (pErr) throw new Error(`packages: ${pErr.message}`);
+
+  // 3) Reassign pt_contracts.client_user_id
+  const { data: ctMoved, error: cErr } = await admin
+    .from("pt_contracts")
+    .update({ client_user_id: winnerId })
+    .in("client_user_id", loserIds)
+    .select("id");
+  if (cErr) throw new Error(`contracts: ${cErr.message}`);
+
+  // 4) Reassign notifications.user_id (if any — usually coach-addressed so may be 0)
+  const { data: notifMoved, error: nErr } = await admin
+    .from("notifications")
+    .update({ user_id: winnerId })
+    .in("user_id", loserIds)
+    .select("id");
+  if (nErr) throw new Error(`notifications: ${nErr.message}`);
+
+  // 5) Apply merged payload to winner.
+  const { error: uErr } = await admin
+    .from("users")
+    .update({
+      full_name: payload.full_name,
+      phone: payload.phone,
+      pt_pay_per_class: payload.pt_pay_per_class,
+      pt_default_price_per_class: payload.pt_default_price_per_class,
+    })
+    .eq("id", winnerId);
+  if (uErr) throw new Error(`winner update: ${uErr.message}`);
+
+  // 6) Soft-delete losers.
+  const { error: mErr } = await admin
+    .from("users")
+    .update({ merged_into_id: winnerId, is_active: false })
+    .in("id", loserIds);
+  if (mErr) throw new Error(`soft-delete: ${mErr.message}`);
+
+  revalidatePath("/pt");
+  revalidatePath("/");
+
+  return {
+    sessions_moved: sessMoved?.length || 0,
+    packages_moved: pkgMoved?.length || 0,
+    contracts_moved: ctMoved?.length || 0,
+    notifications_moved: notifMoved?.length || 0,
+  };
 }

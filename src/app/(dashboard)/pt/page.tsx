@@ -101,7 +101,7 @@ export default async function PtPage() {
   let contractDrafts: ContractDraft[] = [];
   if (admin) {
     const [membersRes, coachesRes, draftsRes] = await Promise.all([
-      db.from("users").select("*").eq("role", "member").eq("is_active", true).order("full_name"),
+      db.from("users").select("*").eq("role", "member").eq("is_active", true).is("merged_into_id", null).order("full_name"),
       db
         .from("users")
         .select("*")

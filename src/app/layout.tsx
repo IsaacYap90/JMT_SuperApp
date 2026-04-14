@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Dancing_Script } from "next/font/google";
 import Script from "next/script";
+import { ToastHost } from "@/components/toast";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -51,6 +52,7 @@ export default function RootLayout({
     <html lang="en" className={`dark ${dancingScript.variable}`}>
       <body className={`${inter.className} bg-jai-bg text-white antialiased`}>
         {children}
+        <ToastHost />
         <Script id="register-sw" strategy="afterInteractive">
           {`
             if ('serviceWorker' in navigator) {
