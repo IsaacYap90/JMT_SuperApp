@@ -18,7 +18,6 @@ const adminMainLinks = [
 
 const adminProfileLinks = [
   { href: "/profile", label: "Profile", icon: "profile" },
-  { href: "/trial-settings", label: "Trial Settings", icon: "settings" },
   { href: "/sunday-prep", label: "Sunday Prep", icon: "send" },
   { href: "/leave", label: "Leave", icon: "leave" },
 ];
