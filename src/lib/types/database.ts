@@ -84,6 +84,7 @@ export interface PtSession {
   // joined
   coach?: User;
   member?: User;
+  package?: { guardian_name: string | null; guardian_phone: string | null } | null;
 }
 
 export interface ClassSession {

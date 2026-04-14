@@ -132,11 +132,17 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
 
       {expanded && !isResolved && (
         <div className="mt-3 pt-3 border-t border-jai-border space-y-3">
-          {s.member?.phone && (
-            <a href={`tel:${s.member.phone}`} className="flex items-center gap-2 text-jai-blue text-sm hover:underline">
-              <span>📞</span> {s.member.phone}
-            </a>
-          )}
+          {(() => {
+            const contactPhone = s.package?.guardian_phone || s.member?.phone || "";
+            const contactLabel = s.package?.guardian_name
+              ? `${contactPhone} (${s.package.guardian_name})`
+              : contactPhone;
+            return contactPhone ? (
+              <a href={`tel:${contactPhone}`} className="flex items-center gap-2 text-jai-blue text-sm hover:underline">
+                <span>📞</span> {contactLabel}
+              </a>
+            ) : null;
+          })()}
           {!rescheduling && (
             <button
               onClick={(e) => { e.stopPropagation(); openReschedule(); }}

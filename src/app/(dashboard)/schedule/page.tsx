@@ -45,7 +45,7 @@ export default async function SchedulePage() {
       db
         .from("pt_sessions")
         .select(
-          "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*)"
+          "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)"
         )
         .gte("scheduled_at", pastDate)
         .in("status", ["scheduled", "confirmed", "completed"])
@@ -77,7 +77,7 @@ export default async function SchedulePage() {
       .eq("coach_id", user.id),
     supabase
       .from("pt_sessions")
-      .select("*, member:users!pt_sessions_member_id_fkey(*)")
+      .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
       .eq("coach_id", user.id)
       .gte("scheduled_at", pastDate)
       .in("status", ["scheduled", "confirmed", "completed"])
