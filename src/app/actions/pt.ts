@@ -135,6 +135,8 @@ export async function createPtPackage(payload: {
   total_sessions: number;
   sessions_used: number;
   expiry_date: string | null;
+  guardian_name?: string | null;
+  guardian_phone?: string | null;
 }) {
   await requireAdmin();
   const admin = createAdminClient();
@@ -157,6 +159,8 @@ export async function updatePtPackage(
     total_sessions: number;
     sessions_used: number;
     expiry_date: string | null;
+    guardian_name?: string | null;
+    guardian_phone?: string | null;
   }
 ) {
   await requireAdmin();

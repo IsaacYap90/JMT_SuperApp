@@ -154,6 +154,8 @@ export function PtPageClient({
   const [totalSessions, setTotalSessions] = useState(10);
   const [sessionsUsed, setSessionsUsed] = useState(0);
   const [expiryDate, setExpiryDate] = useState("");
+  const [guardianName, setGuardianName] = useState("");
+  const [guardianPhone, setGuardianPhone] = useState("");
 
   // Session form state
   const [showSessionForm, setShowSessionForm] = useState(false);
@@ -220,6 +222,8 @@ export function PtPageClient({
     setTotalSessions(10);
     setSessionsUsed(0);
     setExpiryDate("");
+    setGuardianName("");
+    setGuardianPhone("");
     setShowPkgForm(true);
   };
 
@@ -230,6 +234,8 @@ export function PtPageClient({
     setTotalSessions(pkg.total_sessions);
     setSessionsUsed(pkg.sessions_used);
     setExpiryDate(pkg.expiry_date || "");
+    setGuardianName(pkg.guardian_name || "");
+    setGuardianPhone(pkg.guardian_phone || "");
     setShowPkgForm(true);
   };
 
@@ -250,6 +256,8 @@ export function PtPageClient({
         total_sessions: totalSessions,
         sessions_used: sessionsUsed,
         expiry_date: expiryDate || null,
+        guardian_name: guardianName.trim() || null,
+        guardian_phone: guardianPhone.trim() || null,
       };
       if (editingPkg) {
         await updatePtPackage(editingPkg.id, payload);
@@ -1145,6 +1153,37 @@ export function PtPageClient({
                   />
                 </div>
               </div>
+              <div className="bg-jai-bg/30 border border-jai-border rounded-lg p-3 space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-jai-text/60">
+                  Guardian / Payer (optional)
+                </p>
+                <p className="text-[11px] text-jai-text/60 -mt-1">
+                  Fill only if the payer is different from the trainee
+                  (e.g. parent paying for child).
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs text-jai-text block mb-1">Guardian Name</label>
+                    <input
+                      type="text"
+                      value={guardianName}
+                      onChange={(e) => setGuardianName(e.target.value)}
+                      placeholder="Parent / payer name"
+                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-jai-text block mb-1">Guardian Phone</label>
+                    <input
+                      type="tel"
+                      value={guardianPhone}
+                      onChange={(e) => setGuardianPhone(e.target.value)}
+                      placeholder="Parent / payer phone"
+                      className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
+                    />
+                  </div>
+                </div>
+              </div>
               <button
                 type="submit"
                 disabled={saving}
@@ -1366,7 +1405,14 @@ function ClientsWithPackages({
                 onClick={() => !isEditing && openEdit(m)}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="font-medium text-sm">{m.full_name}</p>
+                  <p className="font-medium text-sm flex items-center gap-1.5">
+                    {m.full_name}
+                    {memberPkgs.some((p) => p.guardian_name) && (
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-300 border border-pink-500/25 font-normal uppercase tracking-wider">
+                        kid
+                      </span>
+                    )}
+                  </p>
                   {m.phone && (
                     <a
                       href={`tel:${m.phone}`}
@@ -1421,6 +1467,15 @@ function ClientsWithPackages({
                         <span>
                           Coach: {pkg.coach?.full_name || "—"} · {remaining} left
                           {pkg.expiry_date && ` · Exp: ${pkg.expiry_date}`}
+                          {pkg.guardian_name && (
+                            <>
+                              {" · "}
+                              <span className="text-jai-blue">
+                                👤 {pkg.guardian_name}
+                                {pkg.guardian_phone ? ` ${pkg.guardian_phone}` : ""}
+                              </span>
+                            </>
+                          )}
                         </span>
                         {pkg.status === "active" && remaining > 0 && (
                           <button
