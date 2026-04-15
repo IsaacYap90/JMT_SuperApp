@@ -81,6 +81,7 @@ export interface PtSession {
   duration_minutes: number;
   status: string;
   coach_notes: string | null;
+  next_focus: string | null;
   session_type: string | null;
   notes: string | null;
   created_at: string;

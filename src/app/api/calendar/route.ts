@@ -294,6 +294,9 @@ export async function GET(req: NextRequest) {
     lines.push("END:VEVENT");
   }
 
+  // Base URL for deep-linking calendar events back into the dashboard.
+  const baseUrl = (process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`).replace(/\/$/, "");
+
   // PT sessions — one VEVENT each, all history + all future.
   for (const pt of ptSessions || []) {
     if (!pt.scheduled_at) continue;
@@ -305,6 +308,7 @@ export async function GET(req: NextRequest) {
     const e = sgtParts(endUtc);
 
     const clientName = pt.member?.full_name || "Client";
+    const logUrl = `${baseUrl}/pt/log/${pt.id}`;
 
     lines.push(
       "BEGIN:VEVENT",
@@ -313,8 +317,9 @@ export async function GET(req: NextRequest) {
       `DTEND;TZID=Asia/Singapore:${toLocalIcs(e.y, e.m, e.d, e.h, e.min)}`,
       `SUMMARY:PT — ${escapeIcs(clientName)}`,
       `DESCRIPTION:${escapeIcs(
-        `PT Session · ${pt.duration_minutes || 60}min${pt.coach?.full_name ? ` · ${pt.coach.full_name}` : ""}`
+        `PT Session · ${pt.duration_minutes || 60}min${pt.coach?.full_name ? ` · ${pt.coach.full_name}` : ""}\n\nTap to log session → ${logUrl}`
       )}`,
+      `URL:${logUrl}`,
       "CATEGORIES:PT",
       "END:VEVENT"
     );

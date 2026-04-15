@@ -737,6 +737,53 @@ export async function coachReschedulePtSession(
   revalidatePath("/schedule");
 }
 
+// Log a PT session: coach fills "what we did" + "focus next week" after the session.
+// Coach who owns the session, or any admin, can write.
+export async function logPtSession(
+  sessionId: string,
+  coachNotes: string,
+  nextFocus: string
+) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: profile } = await supabase
+    .from("users")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  const admin = createAdminClient();
+
+  const { data: session } = await admin
+    .from("pt_sessions")
+    .select("id, coach_id")
+    .eq("id", sessionId)
+    .single();
+  if (!session) throw new Error("Session not found");
+
+  const isOwnerCoach = session.coach_id === user.id;
+  const isAdminUser = profile && isAdmin(profile.role as "admin" | "master_admin" | "coach" | "member");
+  if (!isOwnerCoach && !isAdminUser) throw new Error("Not authorised to log this session");
+
+  const { error } = await admin
+    .from("pt_sessions")
+    .update({
+      coach_notes: coachNotes.trim() || null,
+      next_focus: nextFocus.trim() || null,
+      edited_by: user.id,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", sessionId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/pt");
+  revalidatePath(`/pt/log/${sessionId}`);
+}
+
 // ── Contract draft actions ──
 
 export type ContractDraft = {
