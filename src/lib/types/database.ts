@@ -93,6 +93,8 @@ export interface PtSession {
   coach?: User;
   member?: User;
   package?: { guardian_name: string | null; guardian_phone: string | null } | null;
+  // derived client-side: focus from member's last logged session, attached only to their next upcoming session
+  previousFocus?: { date: string; text: string } | null;
 }
 
 export interface ClassSession {

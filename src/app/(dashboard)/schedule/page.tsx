@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { CoachSchedule } from "@/components/coach-schedule";
 import { SchedulePageClient } from "@/components/schedule-page-client";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
+import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
 
 export const dynamic = "force-dynamic";
 
@@ -53,11 +54,18 @@ export default async function SchedulePage() {
         .order("scheduled_at"),
     ]);
 
+    const rawPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
+    const adminFocusMap = await fetchPreviousFocusMap(
+      db,
+      rawPtSessions.map((s) => s.member_id)
+    );
+    const ptSessions = attachPreviousFocusToNext(rawPtSessions, adminFocusMap);
+
     return (
       <SchedulePageClient
         classes={(classesRes.data || []) as unknown as Class[]}
         coaches={(coachesRes.data || []) as unknown as User[]}
-        ptSessions={(ptSessionsRes.data || []) as unknown as PtSession[]}
+        ptSessions={ptSessions}
         isAdmin={true}
         adminId={user.id}
       />
@@ -97,7 +105,12 @@ export default async function SchedulePage() {
       classCoachClassIds.has(c.id)
   );
 
-  const ptSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
+  const rawPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
+  const coachFocusMap = await fetchPreviousFocusMap(
+    supabase,
+    rawPtSessions.map((s) => s.member_id)
+  );
+  const ptSessions = attachPreviousFocusToNext(rawPtSessions, coachFocusMap);
 
   return <CoachSchedule classes={myClasses} ptSessions={ptSessions} showFilter coachId={user.id} />;
 }

@@ -28,7 +28,6 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
   const [rescheduling, setRescheduling] = useState(false);
   const [newDate, setNewDate] = useState("");
   const [newTime, setNewTime] = useState("");
-  const [newDuration, setNewDuration] = useState(s.duration_minutes || 60);
   const [saving, setSaving] = useState(false);
   const [showComplete, setShowComplete] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -62,6 +61,26 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
   });
 
   const isResolved = status === "completed" || status === "cancelled" || status === "no_show";
+  const trimmedNotes = s.coach_notes?.trim() ?? "";
+  const trimmedFocus = s.next_focus?.trim() ?? "";
+  const hasLog = Boolean(trimmedNotes || trimmedFocus);
+  const previousFocus = !isResolved ? s.previousFocus ?? null : null;
+  const previousFocusDateLabel = previousFocus
+    ? new Date(previousFocus.date).toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+        timeZone: "Asia/Singapore",
+      })
+    : null;
+  const actionsLocked = updating !== null || completing;
+
+  const snapToHalfHour = (h: number, m: number): string => {
+    const total = h * 60 + m;
+    const snapped = Math.min(Math.round(total / 30) * 30, 22 * 60);
+    const nh = Math.floor(snapped / 60);
+    const nm = snapped % 60;
+    return `${String(nh).padStart(2, "0")}:${String(nm).padStart(2, "0")}`;
+  };
 
   const handleStatus = async (newStatus: "completed" | "cancelled" | "no_show") => {
     const prev = status;
@@ -113,11 +132,8 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
     const yyyy = sgt.getFullYear();
     const mm = String(sgt.getMonth() + 1).padStart(2, "0");
     const dd = String(sgt.getDate()).padStart(2, "0");
-    const hh = String(sgt.getHours()).padStart(2, "0");
-    const mi = String(sgt.getMinutes()).padStart(2, "0");
     setNewDate(`${yyyy}-${mm}-${dd}`);
-    setNewTime(`${hh}:${mi}`);
-    setNewDuration(s.duration_minutes || 60);
+    setNewTime(snapToHalfHour(sgt.getHours(), sgt.getMinutes()));
     setRescheduling(true);
   };
 
@@ -128,7 +144,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
     try {
       const localISO = `${newDate}T${newTime}:00+08:00`;
       const utcISO = new Date(localISO).toISOString();
-      await coachReschedulePtSession(s.id, utcISO, newDuration);
+      await coachReschedulePtSession(s.id, utcISO, s.duration_minutes || 60);
       haptic("success");
       setRescheduling(false);
       showToast(`Rescheduled — ${s.member?.full_name || "client"} · Jeremy notified`);
@@ -150,7 +166,9 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
       style={swipeX !== 0 ? { transform: `translateX(${swipeX}px)`, transition: "none" } : { transform: "translateX(0)", transition: "transform 200ms" }}
       onClick={() => setExpanded(!expanded)}
       onTouchStart={(e) => {
-        if (isResolved || isPast || rescheduling) return;
+        if (isResolved || isPast || rescheduling || completing || showComplete || showDatePicker) return;
+        const target = e.target as HTMLElement;
+        if (target.closest("button, a, select, input, textarea")) return;
         touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
       }}
       onTouchMove={(e) => {
@@ -235,20 +253,28 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
               </a>
             ) : null;
           })()}
-          {(s.coach_notes || s.next_focus) && (
+          {hasLog && (
             <div className="bg-jai-bg/40 p-3 rounded-lg border border-jai-border space-y-2">
-              {s.coach_notes && (
+              {trimmedNotes && (
                 <div>
                   <p className="text-[10px] text-jai-text/60 uppercase tracking-wider">What we did</p>
-                  <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{s.coach_notes}</p>
+                  <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{trimmedNotes}</p>
                 </div>
               )}
-              {s.next_focus && (
+              {trimmedFocus && (
                 <div>
                   <p className="text-[10px] text-jai-text/60 uppercase tracking-wider">Focus next</p>
-                  <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{s.next_focus}</p>
+                  <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{trimmedFocus}</p>
                 </div>
               )}
+            </div>
+          )}
+          {previousFocus && (
+            <div className="bg-purple-500/5 p-3 rounded-lg border border-purple-500/20">
+              <p className="text-[10px] text-purple-300/80 uppercase tracking-wider">
+                Focus from last session{previousFocusDateLabel ? ` · ${previousFocusDateLabel}` : ""}
+              </p>
+              <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{previousFocus.text}</p>
             </div>
           )}
           <Link
@@ -256,7 +282,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
             onClick={(e) => e.stopPropagation()}
             className="block w-full min-h-[44px] py-2.5 text-sm font-medium rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 text-center transition-colors"
           >
-            📝 {s.coach_notes || s.next_focus ? "Edit log" : "Log session"}
+            📝 {hasLog ? "Edit log" : "Log session"}
           </Link>
           {!isResolved && !rescheduling && (
             <button
@@ -290,17 +316,6 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
                   ))}
                 </select>
               </div>
-              <select
-                value={newDuration}
-                onChange={(e) => setNewDuration(Number(e.target.value))}
-                className="w-full bg-jai-card border border-jai-border rounded-md px-2 py-1.5 text-xs"
-              >
-                <option value={30}>30 min</option>
-                <option value={45}>45 min</option>
-                <option value={60}>60 min</option>
-                <option value={90}>90 min</option>
-                <option value={120}>120 min</option>
-              </select>
               <p className="text-[10px] text-jai-text/50">Jeremy will be notified of the change.</p>
               <div className="flex gap-2">
                 <button
@@ -324,21 +339,21 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
           <div className="flex gap-2">
             <button
               onClick={(e) => { e.stopPropagation(); setShowComplete(true); }}
-              disabled={updating !== null}
+              disabled={actionsLocked}
               className="flex-1 min-h-[44px] py-2.5 text-sm font-medium rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 disabled:opacity-50 transition-colors"
             >
               Completed
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleStatus("no_show"); }}
-              disabled={updating !== null}
+              disabled={actionsLocked}
               className="flex-1 min-h-[44px] py-2.5 text-sm font-medium rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
             >
               {updating === "no_show" ? "..." : "No Show"}
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); handleStatus("cancelled"); }}
-              disabled={updating !== null}
+              disabled={actionsLocked}
               className="flex-1 min-h-[44px] py-2.5 text-sm font-medium rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
             >
               {updating === "cancelled" ? "..." : "Cancelled"}

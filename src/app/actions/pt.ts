@@ -781,6 +781,8 @@ export async function logPtSession(
   if (error) throw new Error(error.message);
 
   revalidatePath("/pt");
+  revalidatePath("/");
+  revalidatePath("/schedule");
   revalidatePath(`/pt/log/${sessionId}`);
 }
 

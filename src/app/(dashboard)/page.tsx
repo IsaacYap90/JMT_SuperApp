@@ -5,6 +5,7 @@ import { AdminDashboard } from "@/components/admin-dashboard";
 import { CoachDashboard } from "@/components/coach-dashboard";
 import { ActivityFeed } from "@/components/activity-feed";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
+import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
 
 export const dynamic = "force-dynamic";
 
@@ -91,8 +92,15 @@ export default async function HomePage() {
     const allClasses = (classesRes.data || []) as unknown as Class[];
     const todayClasses = allClasses.filter((c) => c.day_of_week === today);
     const tomorrowClasses = allClasses.filter((c) => c.day_of_week === tomorrowDay);
-    const todayPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
-    const tomorrowPtSessions = (tomorrowPtRes.data || []) as unknown as PtSession[];
+    const rawTodayPt = (ptSessionsRes.data || []) as unknown as PtSession[];
+    const rawTomorrowPt = (tomorrowPtRes.data || []) as unknown as PtSession[];
+    const combinedUpcoming = [...rawTodayPt, ...rawTomorrowPt];
+    const focusMap = await fetchPreviousFocusMap(
+      db,
+      combinedUpcoming.map((s) => s.member_id)
+    );
+    const todayPtSessions = attachPreviousFocusToNext(rawTodayPt, focusMap, combinedUpcoming);
+    const tomorrowPtSessions = attachPreviousFocusToNext(rawTomorrowPt, focusMap, combinedUpcoming);
 
     const activePtPackages = (ptPackagesRes.data || []).filter(
       (pt: { sessions_used: number; total_sessions: number }) => pt.sessions_used < pt.total_sessions
@@ -192,7 +200,7 @@ export default async function HomePage() {
   );
 
   const todayClasses = myClasses.filter((c) => c.day_of_week === today);
-  const todayPtSessions = (todayPtRes.data || []) as unknown as PtSession[];
+  const rawTodayPt = (todayPtRes.data || []) as unknown as PtSession[];
   const weekPtData = (weekPtRes.data || []) as { id: string; duration_minutes: number; status: string }[];
   const weekPtCount = weekPtData.length;
   const weekPtHours = weekPtData.reduce((sum, s) => sum + (s.duration_minutes || 60) / 60, 0);
@@ -202,7 +210,7 @@ export default async function HomePage() {
     cancelled: weekPtData.filter((s) => s.status === "cancelled").length,
     noShow: weekPtData.filter((s) => s.status === "no_show").length,
   };
-  const nextWeekPtSessions = (nextWeekPtRes.data || []) as unknown as PtSession[];
+  const rawNextWeekPt = (nextWeekPtRes.data || []) as unknown as PtSession[];
 
   // Tomorrow's data
   const tomorrow = new Date(Date.now() + 86400000)
@@ -220,7 +228,16 @@ export default async function HomePage() {
     .in("status", ["scheduled", "confirmed"])
     .order("scheduled_at");
 
-  const tomorrowPtSessions = (tomorrowPtData || []) as unknown as PtSession[];
+  const rawTomorrowPt = (tomorrowPtData || []) as unknown as PtSession[];
+
+  const combinedCoachUpcoming = [...rawTodayPt, ...rawTomorrowPt, ...rawNextWeekPt];
+  const coachFocusMap = await fetchPreviousFocusMap(
+    supabase,
+    combinedCoachUpcoming.map((s) => s.member_id)
+  );
+  const todayPtSessions = attachPreviousFocusToNext(rawTodayPt, coachFocusMap, combinedCoachUpcoming);
+  const tomorrowPtSessions = attachPreviousFocusToNext(rawTomorrowPt, coachFocusMap, combinedCoachUpcoming);
+  const nextWeekPtSessions = attachPreviousFocusToNext(rawNextWeekPt, coachFocusMap, combinedCoachUpcoming);
 
   // Today's trials for this coach's classes (read-only on overview)
   const myClassIds = myClasses.map((c) => c.id);
