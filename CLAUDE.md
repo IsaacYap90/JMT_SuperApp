@@ -3,6 +3,9 @@
 ## Tech Stack
 Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel | Telegram Bot (notifications)
 
+## Legal entity
+- Jai Muay Thai Pte. Ltd. — UEN `202239849D` — Singapore-registered (ACRA). Use this for any privacy policy / legal / Meta app / dev account reference.
+
 ## Supabase
 - Project URL: `https://xioimcyqglfxqumvbqsg.supabase.co`
 - Auth: `auth.users` ↔ `public.users` (linked by id). `public.users.role` = `coach` | `admin` | `master_admin`
@@ -24,5 +27,7 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - `/jmt-pt` — Personal training sessions (booking, status, coach reschedule)
 - `/jmt-classes` — Recurring classes, schedule grid, coach assignments
 - `/jmt-trials` — Trial management + trial settings
+- `/jmt-meta-leads` — Meta Lead Ads pipeline: webhook, token refresh, app publish flow
+- `/jmt-calendar` — ICS calendar feed: RRULE/EXDATE, SGT timezone, PT deep-links
 - `/jmt-structure` — Project structure (routes, tables, server actions, components)
 - `/jmt-gotchas` — Class-of-bug notes (HH:MM:SS string compare, SGT timezone construction, Supabase join cardinality, notifications type constraint, half-day rule). Read before touching leave/PT/classes code.
