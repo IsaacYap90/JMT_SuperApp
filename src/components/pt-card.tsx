@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PtSession } from "@/lib/types/database";
 import { coachUpdatePtStatus, coachReschedulePtSession } from "@/app/actions/pt";
@@ -147,7 +148,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
           : isPast ? "border-jai-border opacity-40" : "border-jai-border cursor-pointer active:bg-jai-card/80"
       }`}
       style={swipeX !== 0 ? { transform: `translateX(${swipeX}px)`, transition: "none" } : { transform: "translateX(0)", transition: "transform 200ms" }}
-      onClick={() => !isResolved && setExpanded(!expanded)}
+      onClick={() => setExpanded(!expanded)}
       onTouchStart={(e) => {
         if (isResolved || isPast || rescheduling) return;
         touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -221,7 +222,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
         </div>
       </div>
 
-      {expanded && !isResolved && (
+      {expanded && (
         <div className="mt-3 pt-3 border-t border-jai-border space-y-3">
           {(() => {
             const contactPhone = s.package?.guardian_phone || s.member?.phone || "";
@@ -234,7 +235,30 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
               </a>
             ) : null;
           })()}
-          {!rescheduling && (
+          {(s.coach_notes || s.next_focus) && (
+            <div className="bg-jai-bg/40 p-3 rounded-lg border border-jai-border space-y-2">
+              {s.coach_notes && (
+                <div>
+                  <p className="text-[10px] text-jai-text/60 uppercase tracking-wider">What we did</p>
+                  <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{s.coach_notes}</p>
+                </div>
+              )}
+              {s.next_focus && (
+                <div>
+                  <p className="text-[10px] text-jai-text/60 uppercase tracking-wider">Focus next</p>
+                  <p className="text-xs text-jai-text whitespace-pre-wrap mt-0.5">{s.next_focus}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <Link
+            href={`/pt/log/${s.id}`}
+            onClick={(e) => e.stopPropagation()}
+            className="block w-full min-h-[44px] py-2.5 text-sm font-medium rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 text-center transition-colors"
+          >
+            📝 {s.coach_notes || s.next_focus ? "Edit log" : "Log session"}
+          </Link>
+          {!isResolved && !rescheduling && (
             <button
               onClick={(e) => { e.stopPropagation(); openReschedule(); }}
               className="w-full min-h-[44px] py-2.5 text-sm font-medium rounded-lg bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
@@ -242,7 +266,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
               📅 Reschedule
             </button>
           )}
-          {rescheduling && (
+          {!isResolved && rescheduling && (
             <div className="space-y-2 bg-jai-bg/40 p-3 rounded-lg border border-jai-border" onClick={(e) => e.stopPropagation()}>
               <p className="text-[10px] text-jai-text/60 uppercase tracking-wider">Reschedule session</p>
               <div className="grid grid-cols-2 gap-2">
@@ -296,6 +320,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
               </div>
             </div>
           )}
+          {!isResolved && (
           <div className="flex gap-2">
             <button
               onClick={(e) => { e.stopPropagation(); setShowComplete(true); }}
@@ -319,6 +344,7 @@ export function PtCard({ s, isPast, showDate }: { s: PtSession; isPast?: boolean
               {updating === "cancelled" ? "..." : "Cancelled"}
             </button>
           </div>
+          )}
         </div>
       )}
       <SessionCompleteDialog
