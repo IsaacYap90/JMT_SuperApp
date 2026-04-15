@@ -127,10 +127,66 @@ The DB guard covers the race that the code guard can't (two parallel calls readi
 
 ---
 
+## 8. Meta Lead Ads — field names are form-specific, not a fixed schema
+
+**Symptom:** The webhook inserts a lead with empty `phone` even though the user clearly typed their phone number in the form. `name`, `email`, `interest` all populate correctly.
+
+**Root cause:** Meta Lead Ads form fields are named by whoever built the form, not by a fixed schema. The Graph API returns `field_data` as an array of `{name, values}` pairs where `name` is whatever the form creator typed. JMT's 2026 form uses `contact_no:` instead of `phone` or `phone_number`, so a hardcoded `get("phone") || get("phone_number")` lookup silently returns empty.
+
+**Fix pattern:** in `fetchLeadData`, use a broad list of candidates for each logical field. For phone:
+```ts
+phone: get("phone") || get("phone_number") || get("contact_no") || get("contact") || get("mobile") || ""
+```
+The `get` helper uses `.includes(key)` so any substring match wins. Add new aliases whenever Jeremy/marketing spin up a new form with a different field label — don't assume the previous form's field names carry over.
+
+**Where it lives:** `fetchLeadData()` in `src/app/api/meta/lead-webhook/route.ts`.
+
+**When this applies:** any time a new Meta Lead Ad form is created. Before trusting the webhook, fetch one lead manually via `GET /{leadgen_id}?fields=field_data` with a Page Access Token and eyeball the field names. Add any unfamiliar names to the candidate list.
+
+---
+
+## 9. Meta Graph API — User token vs Page token, `/me/accounts` vs `/{page-id}`
+
+**Symptom A:** `(#100) Tried accessing nonexisting field (accounts)` when querying `/me/accounts` — happens when the token in hand is a Page Access Token, not a User Access Token. Pages don't have an `accounts` edge.
+
+**Symptom B:** `(#190) This method must be called with a Page Access Token` when querying `/{page-id}/leadgen_forms` — this edge requires a Page token, not the User token you got from `/me/accounts`.
+
+**Root cause:** Graph API Explorer's "User or Page" dropdown silently swaps the token type when you change the selection. If you forget you switched it, you'll hit one of the above depending on which edge you're calling.
+
+**Fix pattern:**
+- To list the Pages an admin manages → User token → `/me/accounts?fields=id,name,access_token,tasks`
+- To read Page insights, leadgen forms, or subscribe webhooks → Page token → `/{page-id}/...`
+- Exchange Page token from the `access_token` field in the `/me/accounts` response — that's already a Page token, no extra exchange needed.
+
+**For production env:** store the Page Access Token returned from `/me/accounts` (never-expiring once the user token is long-lived) as `META_PAGE_ACCESS_TOKEN` on Vercel. Do NOT store a User token and call `/me/accounts` at request time — that token expires.
+
+**When this applies:** any new Meta integration or when Meta tokens expire. Always name env vars explicitly (`META_PAGE_ACCESS_TOKEN`, `META_USER_ACCESS_TOKEN`) so you know what you're holding.
+
+---
+
+## 10. Meta webhook UI "green success" doesn't mean delivery
+
+**Symptom:** In App Dashboard → Webhooks → "Test this webhook" the UI shows a green checkmark but the callback URL receives nothing. Logs empty, Supabase row not created.
+
+**Root cause:** The "Send to server" button in the Meta testing panel validates that *Meta accepted the payload for dispatch*, not that your endpoint received it. App is often Unpublished at this stage, which Meta uses as a pretext to silently no-op real delivery while showing success in the UI.
+
+**Fix pattern:** always verify the endpoint independently with a real `curl` before assuming the wiring works:
+```bash
+curl -X POST https://{callback-url}/api/meta/lead-webhook \
+  -H "Content-Type: application/json" \
+  -d '{"object":"page","entry":[{"id":"...","time":123,"changes":[{"field":"leadgen","value":{"form_id":"...","leadgen_id":"...","created_time":123,"page_id":"..."}}]}]}'
+```
+Expect `200 {"ok":true,"processed":N}`. If that works, your endpoint is fine — any "test but no delivery" is on Meta's side (usually: submit for App Review to enable production delivery).
+
+**When this applies:** any new Meta product integration. Don't declare the webhook wiring done until both (a) Meta's testing panel is green AND (b) a real curl payload reaches the endpoint AND (c) a real lead form submission results in a DB row.
+
+---
+
 ## How to use this skill
 - Editing leave or PT code → re-read sections 1, 2, 5, 7
 - Editing classes / class assignments → re-read section 3
 - Adding any new notification type → re-read section 4
 - Adding any new Telegram alert with dynamic user content → re-read section 6
 - Adding any status-mutation server action → re-read section 7
-- When you fix a new class-of-bug worth remembering, append it as section 8, 9, etc. Keep each section to: Symptom → Root cause → Fix pattern → When it applies.
+- Any Meta Lead Ads / webhook / Graph API work → re-read sections 8, 9, 10
+- When you fix a new class-of-bug worth remembering, append it as section 11, 12, etc. Keep each section to: Symptom → Root cause → Fix pattern → When it applies.

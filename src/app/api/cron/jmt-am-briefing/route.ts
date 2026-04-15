@@ -137,13 +137,6 @@ export async function GET(req: NextRequest) {
     .neq("status", "cancelled")
     .order("scheduled_at");
 
-  // 5. Today's trial bookings (booked, not cancelled)
-  const { data: trialBookings } = await supabase
-    .from("trial_bookings")
-    .select("id, name, phone, class_id, booking_date, time_slot, status")
-    .eq("booking_date", ymd)
-    .eq("status", "booked");
-
   // 6. Approved leaves covering today
   const { data: leaves } = await supabase
     .from("leaves")
@@ -342,27 +335,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Trial bookings today — admins see all, coaches see only their classes
-    const isAdminUser = u.role === "admin" || u.role === "master_admin";
-    const myClassIds = new Set<string>(myClasses.map((c) => c.id));
-    const myTrials = (trialBookings || []).filter(
-      (t) => isAdminUser || myClassIds.has(t.class_id)
-    );
-
-    if (myTrials.length > 0) {
-      lines.push("🆕 Trials today:");
-      for (const t of myTrials) {
-        const cls = (classes || []).find(
-          (c) => (c as ClsRow).id === t.class_id
-        ) as ClsRow | undefined;
-        const classTime = cls
-          ? `${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name}`
-          : t.time_slot;
-        lines.push(`• ${classTime} — ${t.name} (${t.phone})`);
-      }
-      lines.push("");
-    }
-
     // Who's on leave (only show others, not yourself)
     const otherLeave = (leaves || []).filter((l) => l.coach_id !== u.id);
     if (otherLeave.length > 0) {
@@ -394,7 +366,7 @@ export async function GET(req: NextRequest) {
     classes: (classes || []).length,
     cancelled: cancelledIds.size,
     pt: (ptSessions || []).length,
-    trials: (trialBookings || []).length,
+    trials: (trials || []).length,
     onLeave: onLeaveIds.size,
     onLeaveSummary,
     sent,

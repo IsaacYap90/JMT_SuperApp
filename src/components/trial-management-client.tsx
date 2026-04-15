@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateTrialBookingStatus, adminCreateTrialBooking } from "@/app/actions/trials";
+import { PullToRefresh } from "./pull-to-refresh";
 
 interface Booking {
   id: string;
@@ -65,6 +66,21 @@ function statusBadge(status: string) {
       return "bg-jai-text/10 text-jai-text";
     default:
       return "bg-jai-text/10 text-jai-text";
+  }
+}
+
+function statusStrip(status: string) {
+  switch (status) {
+    case "booked":
+      return "bg-blue-400";
+    case "showed":
+      return "bg-green-400";
+    case "no_show":
+      return "bg-red-400";
+    case "cancelled":
+      return "bg-jai-text/40";
+    default:
+      return "bg-jai-text/40";
   }
 }
 
@@ -178,7 +194,8 @@ export function TrialManagementClient({
   };
 
   return (
-    <div className="space-y-6">
+    <PullToRefresh>
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-xl md:text-2xl font-bold">Trial Bookings</h1>
@@ -329,12 +346,13 @@ export function TrialManagementClient({
       </div>
 
       {/* Booking cards */}
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {displayed.map((b) => (
           <div
             key={b.id}
-            className="bg-jai-card border border-jai-border rounded-xl p-4"
+            className="relative bg-jai-card border border-jai-border rounded-xl p-4 pl-5 overflow-hidden"
           >
+            <span className={`absolute left-0 top-0 bottom-0 w-1 ${statusStrip(b.status)}`} aria-hidden />
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -420,5 +438,6 @@ export function TrialManagementClient({
         )}
       </div>
     </div>
+    </PullToRefresh>
   );
 }

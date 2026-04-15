@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { CoachDashboard } from "@/components/coach-dashboard";
+import { ActivityFeed } from "@/components/activity-feed";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 
 export const dynamic = "force-dynamic";
@@ -126,6 +127,7 @@ export default async function HomePage() {
         userName={profile.full_name}
         coaches={(coachesRes.data || []) as unknown as User[]}
         todayTrials={todayTrials}
+        activityFeed={<ActivityFeed />}
       />
     );
   }

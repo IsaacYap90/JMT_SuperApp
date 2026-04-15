@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
+import { PullToRefresh } from "./pull-to-refresh";
 
 // 30-minute time slots from 6:00am to 10:00pm for PT scheduling
 const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
@@ -81,6 +82,32 @@ function statusBadge(status: string) {
   }
 }
 
+function sessionStrip(status: string) {
+  switch (status) {
+    case "scheduled":
+    case "confirmed":
+      return "bg-blue-400";
+    case "completed":
+      return "bg-green-400";
+    case "cancelled":
+      return "bg-jai-text/40";
+    case "no_show":
+      return "bg-red-400";
+    default:
+      return "bg-jai-text/40";
+  }
+}
+
+function packageStrip(status: string, pct: number) {
+  if (status !== "active") {
+    if (status === "expired") return "bg-red-400";
+    if (status === "completed") return "bg-jai-text/40";
+    return "bg-jai-text/40";
+  }
+  if (pct >= 0.85) return "bg-amber-400";
+  return "bg-green-400";
+}
+
 export function PtPageClient({
   ptPackages,
   ptSessions: initialSessions,
@@ -106,6 +133,7 @@ export function PtPageClient({
   // Tab state for admin
   const [tab, setTab] = useState<"sessions" | "clients">("sessions");
   const [copying, setCopying] = useState(false);
+  const [coachSearch, setCoachSearch] = useState("");
 
   async function handleCopyToNextWeek() {
     setCopying(true);
@@ -471,19 +499,38 @@ export function PtPageClient({
 
   // Coach simplified view
   if (!admin) {
+    const q = coachSearch.trim().toLowerCase();
+    const filteredCoachPkgs = q
+      ? ptPackages.filter((pt) => {
+          const name = (pt.member?.full_name || "").toLowerCase();
+          const guardian = (pt.guardian_name || "").toLowerCase();
+          const phone = (pt.guardian_phone || pt.member?.phone || "").toLowerCase();
+          return name.includes(q) || guardian.includes(q) || phone.includes(q);
+        })
+      : ptPackages;
     return (
-      <div className="space-y-6">
+      <PullToRefresh>
+      <div className="space-y-6 max-w-5xl mx-auto">
         <h1 className="text-2xl font-bold">My PT Clients</h1>
-        <div className="space-y-2">
-          {ptPackages.map((pt) => {
+        <input
+          type="text"
+          value={coachSearch}
+          onChange={(e) => setCoachSearch(e.target.value)}
+          placeholder="Search client by name, guardian, or phone…"
+          className="w-full px-3 py-2.5 bg-jai-bg border border-jai-border rounded-lg text-sm min-h-[44px]"
+        />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {filteredCoachPkgs.map((pt) => {
             const contactPhone = pt.guardian_phone || pt.member?.phone || "";
             const waPhone = contactPhone.replace(/\D/g, "");
             const contactLabel = pt.guardian_name
               ? `${contactPhone} (${pt.guardian_name})`
               : contactPhone;
             const remaining = pt.total_sessions - pt.sessions_used;
+            const usedPct = pt.total_sessions > 0 ? pt.sessions_used / pt.total_sessions : 0;
             return (
-              <div key={pt.id} className="bg-jai-card border border-jai-border rounded-xl p-4">
+              <div key={pt.id} className="relative bg-jai-card border border-jai-border rounded-xl p-4 pl-5 overflow-hidden">
+                <span className={`absolute left-0 top-0 bottom-0 w-1 ${packageStrip(pt.status || "active", usedPct)}`} aria-hidden />
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-medium">{pt.member?.full_name || "—"}</p>
                   {waPhone && (
@@ -514,14 +561,21 @@ export function PtPageClient({
               No PT clients assigned
             </div>
           )}
+          {ptPackages.length > 0 && filteredCoachPkgs.length === 0 && (
+            <div className="bg-jai-card border border-jai-border rounded-xl p-4 text-jai-text text-center">
+              No clients match &quot;{coachSearch}&quot;
+            </div>
+          )}
         </div>
       </div>
+      </PullToRefresh>
     );
   }
 
   // Admin view with tabs
   return (
-    <div className="space-y-6">
+    <PullToRefresh>
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <h1 className="text-xl md:text-2xl font-bold">PT Management</h1>
         <button
@@ -815,7 +869,7 @@ export function PtPageClient({
           )}
 
           {/* Session list */}
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {filteredSessions.map((s) => {
               const dt = new Date(s.scheduled_at);
               const dateStr = dt.toLocaleDateString("en-SG", {
@@ -836,8 +890,9 @@ export function PtPageClient({
               return (
                 <div
                   key={s.id}
-                  className="bg-jai-card border border-jai-border rounded-xl p-4"
+                  className="relative bg-jai-card border border-jai-border rounded-xl p-4 pl-5 overflow-hidden"
                 >
+                  <span className={`absolute left-0 top-0 bottom-0 w-1 ${sessionStrip(s.status)}`} aria-hidden />
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-sm flex items-center gap-1.5">
@@ -1414,6 +1469,7 @@ export function PtPageClient({
         onConfirm={handleCompleteConfirm}
       />
     </div>
+    </PullToRefresh>
   );
 }
 
@@ -1577,18 +1633,25 @@ function ClientsWithPackages({
         onChange={(e) => setSearch(e.target.value)}
         className="w-full px-3 py-2.5 bg-jai-bg border border-jai-border rounded-lg text-sm min-h-[44px]"
       />
-      <div className="space-y-2">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         {filtered.map(({ member: m, packages: memberPkgs }) => {
           const activePkg = memberPkgs.find((p) => p.status === "active");
           const isEditing = editingId === m.id;
+          const stripPkg = activePkg
+            ? packageStrip(
+                activePkg.status || "active",
+                activePkg.total_sessions > 0 ? activePkg.sessions_used / activePkg.total_sessions : 0
+              )
+            : "bg-jai-text/40";
 
           return (
             <div
               key={m.id}
-              className={`bg-jai-card border rounded-xl p-4 transition-colors ${
+              className={`relative bg-jai-card border rounded-xl p-4 pl-5 overflow-hidden transition-colors ${
                 isEditing ? "border-jai-blue/40" : "border-jai-border"
               }`}
             >
+              <span className={`absolute left-0 top-0 bottom-0 w-1 ${stripPkg}`} aria-hidden />
               {/* Client header */}
               <div
                 className={`flex items-center justify-between ${!isEditing ? "cursor-pointer" : ""}`}
