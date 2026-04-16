@@ -137,9 +137,12 @@ export function Sidebar({ profile }: { profile: User }) {
             height={28}
             className="rounded-full"
           />
-          <span className="text-sm font-bold">
-            JAI <span className="text-jai-blue">MUAY THAI</span>
-          </span>
+          <div className="flex flex-col leading-tight">
+            <span className="text-sm font-bold">
+              JAI <span className="text-jai-blue">MUAY THAI</span>
+            </span>
+            <span className="text-[9px] text-jai-text/40">by IonicX AI</span>
+          </div>
         </div>
         <div className="flex items-center gap-1">
           <NotificationBell />
@@ -227,6 +230,9 @@ export function Sidebar({ profile }: { profile: User }) {
                 })}
               </div>
             )}
+
+            {/* IonicX AI credit */}
+            <p className="text-center text-[10px] text-jai-text/40 mt-2 mb-1">Built by IonicX AI</p>
 
             {/* Logout button */}
             <button

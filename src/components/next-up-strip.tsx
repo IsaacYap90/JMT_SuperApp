@@ -41,10 +41,7 @@ export function NextUpStrip({ items, disabled }: { items: NextUpTimelineItem[]; 
     } else {
       const s = item.data;
       const endMs = new Date(s.scheduled_at).getTime() + (s.duration_minutes || 60) * 60000;
-      const endSgt = new Date(new Date(endMs).toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-      const endMin = endSgt.getHours() * 60 + endSgt.getMinutes() + endSgt.getDate() * 24 * 60;
-      const nowMinFull = nowMin + now.getDate() * 24 * 60;
-      if (nowMinFull < endMin) {
+      if (Date.now() < endMs) {
         nextIdx = i;
         break;
       }
@@ -71,15 +68,16 @@ export function NextUpStrip({ items, disabled }: { items: NextUpTimelineItem[]; 
   } else {
     const s = item.data;
     const dt = new Date(s.scheduled_at);
-    const startSgt = new Date(dt.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-    const startMin = startSgt.getHours() * 60 + startSgt.getMinutes();
     const dur = s.duration_minutes || 60;
-    const endMin = startMin + dur;
-    const endDt = new Date(dt.getTime() + dur * 60000);
-    const endSgt = new Date(endDt.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+    const startMs = dt.getTime();
+    const endMs = startMs + dur * 60000;
+    const startSgt = new Date(dt.toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+    const endSgt = new Date(new Date(endMs).toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
     timeRange = `${fmt12(startSgt.getHours(), startSgt.getMinutes())} – ${fmt12(endSgt.getHours(), endSgt.getMinutes())}`;
-    isNow = nowMin >= startMin && nowMin < endMin;
-    hint = isNow ? formatHint(endMin - nowMin, true) : formatHint(startMin - nowMin, false);
+    isNow = Date.now() >= startMs && Date.now() < endMs;
+    hint = isNow
+      ? formatHint(Math.round((endMs - Date.now()) / 60000), true)
+      : formatHint(Math.round((startMs - Date.now()) / 60000), false);
     title = `PT — ${s.member?.full_name || "Client"}`;
   }
 

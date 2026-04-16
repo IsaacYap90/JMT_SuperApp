@@ -35,10 +35,14 @@ export default async function HomePage() {
     .toLowerCase();
   const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
   const tomorrowDate = new Date(Date.now() + 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  // SGT-aware boundaries for timestamptz queries (bare date strings compare as UTC midnight)
+  const todayStartSGT = `${todayDate}T00:00:00+08:00`;
+  const tomorrowStartSGT = `${tomorrowDate}T00:00:00+08:00`;
 
   if (isAdmin(profile.role)) {
     const db = createAdminClient();
     const dayAfterTomorrowDate = new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+    const dayAfterTomorrowStartSGT = `${dayAfterTomorrowDate}T00:00:00+08:00`;
     const tomorrowDay = new Date(Date.now() + 86400000)
       .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
       .toLowerCase();
@@ -59,8 +63,8 @@ export default async function HomePage() {
           .select(
             "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)"
           )
-          .gte("scheduled_at", todayDate)
-          .lt("scheduled_at", tomorrowDate)
+          .gte("scheduled_at", todayStartSGT)
+          .lt("scheduled_at", tomorrowStartSGT)
           .in("status", ["scheduled", "confirmed", "completed"])
           .order("scheduled_at"),
         db
@@ -78,8 +82,8 @@ export default async function HomePage() {
           .select(
             "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)"
           )
-          .gte("scheduled_at", tomorrowDate)
-          .lt("scheduled_at", dayAfterTomorrowDate)
+          .gte("scheduled_at", tomorrowStartSGT)
+          .lt("scheduled_at", dayAfterTomorrowStartSGT)
           .in("status", ["scheduled", "confirmed"])
           .order("scheduled_at"),
         db
@@ -168,8 +172,8 @@ export default async function HomePage() {
       .from("pt_sessions")
       .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
       .eq("coach_id", user.id)
-      .gte("scheduled_at", todayDate)
-      .lt("scheduled_at", tomorrowDate)
+      .gte("scheduled_at", todayStartSGT)
+      .lt("scheduled_at", tomorrowStartSGT)
       .in("status", ["scheduled", "confirmed", "completed"])
       .order("scheduled_at"),
     supabase
@@ -217,14 +221,15 @@ export default async function HomePage() {
     .toLocaleDateString("en-US", { weekday: "long", timeZone: "Asia/Singapore" })
     .toLowerCase();
   const dayAfterTomorrowDate = new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const dayAfterTomorrowStartSGT = `${dayAfterTomorrowDate}T00:00:00+08:00`;
   const tomorrowClasses = myClasses.filter((c) => c.day_of_week === tomorrow);
 
   const { data: tomorrowPtData } = await supabase
     .from("pt_sessions")
     .select("*, member:users!pt_sessions_member_id_fkey(*)")
     .eq("coach_id", user.id)
-    .gte("scheduled_at", tomorrowDate)
-    .lt("scheduled_at", dayAfterTomorrowDate)
+    .gte("scheduled_at", tomorrowStartSGT)
+    .lt("scheduled_at", dayAfterTomorrowStartSGT)
     .in("status", ["scheduled", "confirmed"])
     .order("scheduled_at");
 

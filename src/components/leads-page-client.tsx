@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { Lead, LeadStatus } from "@/app/actions/leads";
 import { updateLeadStatus, updateLeadNotes } from "@/app/actions/leads";
 import { PullToRefresh } from "./pull-to-refresh";
+import { createClient } from "@/lib/supabase/client";
 
 const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string; bg: string; border: string; strip: string }> = {
   new: { label: "New", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", strip: "bg-blue-400" },
@@ -81,6 +82,7 @@ function LeadCard({
   selected,
   focused,
   selectMode,
+  isNew,
   onToggleSelect,
   onStatusChange,
   onFocus,
@@ -90,6 +92,7 @@ function LeadCard({
   selected: boolean;
   focused: boolean;
   selectMode: boolean;
+  isNew: boolean;
   onToggleSelect: () => void;
   onStatusChange: () => void;
   onFocus: () => void;
@@ -138,11 +141,19 @@ function LeadCard({
       ref={cardRef}
       onClick={onFocus}
       className={`relative bg-jai-card border rounded-xl p-4 pl-5 transition-all overflow-hidden ${
+        isNew ? "border-green-500/50 ring-1 ring-green-500/30 animate-pulse-once" :
         focused ? "border-jai-blue/40 ring-1 ring-jai-blue/30" : "border-jai-border"
       } ${selected ? "ring-1 ring-jai-blue/60" : ""}`}
     >
       {/* Status strip */}
       <span className={`absolute left-0 top-0 bottom-0 w-1 ${cfg.strip}`} aria-hidden />
+
+      {/* Live "just arrived" badge */}
+      {isNew && (
+        <span className="absolute top-2 right-2 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 border border-green-500/30 uppercase tracking-wide">
+          Just in
+        </span>
+      )}
 
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 flex-1 min-w-0">
@@ -300,10 +311,42 @@ function saveSavedPreset(id: string) {
   if (typeof window !== "undefined") localStorage.setItem("jmt-leads-preset", id);
 }
 
-export function LeadsPageClient({ leads, isAdmin = false }: { leads: Lead[]; isAdmin?: boolean }) {
+export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { leads: Lead[]; isAdmin?: boolean }) {
   const router = useRouter();
+  const [leads, setLeads] = useState<Lead[]>(initialLeads);
+  const [newLeadIds, setNewLeadIds] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<LeadStatus | "all">("all");
   const [presetId, setPresetId] = useState<string>("all");
+
+  // Live subscription — prepend new leads as they arrive via Meta webhook
+  useEffect(() => {
+    const supabase = createClient();
+    const channel = supabase
+      .channel("leads-live")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "leads" },
+        (payload) => {
+          const newLead = payload.new as Lead;
+          setLeads((prev) => {
+            if (prev.some((l) => l.id === newLead.id)) return prev;
+            return [newLead, ...prev];
+          });
+          setNewLeadIds((prev) => new Set(prev).add(newLead.id));
+          // Clear the "new" flash after 10s
+          setTimeout(() => {
+            setNewLeadIds((prev) => {
+              const next = new Set(prev);
+              next.delete(newLead.id);
+              return next;
+            });
+          }, 10000);
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
   const [search, setSearch] = useState("");
   const [focusedIdx, setFocusedIdx] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -587,6 +630,7 @@ export function LeadsPageClient({ leads, isAdmin = false }: { leads: Lead[]; isA
               selected={selected.has(lead.id)}
               focused={idx === focusedIdx}
               selectMode={selectMode}
+              isNew={newLeadIds.has(lead.id)}
               onToggleSelect={() => toggleSelected(lead.id)}
               onFocus={() => setFocusedIdx(idx)}
               onStatusChange={() => router.refresh()}

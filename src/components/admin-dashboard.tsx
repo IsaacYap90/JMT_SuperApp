@@ -373,8 +373,7 @@ export function AdminDashboard({
                           )}
                         </div>
                         <p className="text-jai-text text-xs mt-0.5">
-                          {time} · {s.duration_minutes || 60}min
-                          {s.coach && ` · ${s.coach.full_name}`}
+                          {time}{s.coach && ` · ${s.coach.full_name}`}
                         </p>
                       </div>
                       {!isEditing && (
@@ -543,8 +542,7 @@ export function AdminDashboard({
                         PT — {s.member?.full_name || "Client"}
                       </p>
                       <p className="text-jai-text text-xs mt-0.5">
-                        {time} · {s.duration_minutes || 60}min
-                        {s.coach && ` · ${s.coach.full_name}`}
+                        {time}{s.coach && ` · ${s.coach.full_name}`}
                       </p>
                     </div>
                   );

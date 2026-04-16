@@ -88,6 +88,7 @@ function LoginPageContent() {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
+        <p className="text-center text-[10px] text-jai-text/50 mt-6">Built by IonicX AI</p>
       </div>
     </div>
   );

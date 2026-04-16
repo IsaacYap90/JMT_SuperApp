@@ -5,12 +5,20 @@
       "schedule": "0 22 * * *"
     },
     {
+      "path": "/api/cron/jmt-pm-reminder",
+      "schedule": "0 13 * * *"
+    },
+    {
       "path": "/api/cron/trial-reminder",
       "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/cron/trial-reminder-24h",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/meta-lead-sync",
+      "schedule": "0 0 * * *"
     }
   ]
 }
