@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
   // Get all master_admin users (Jeremy + any future admins)
   let adminQuery = supabase
     .from("users")
-    .select("id, full_name")
+    .select("*")
     .eq("role", "master_admin")
     .eq("is_active", true)
     .is("merged_into_id", null);

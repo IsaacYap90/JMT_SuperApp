@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
   // 1. All staff (coaches + admins, active). If ?only= passed, filter to that id.
   let staffQuery = supabase
     .from("users")
-    .select("id, full_name, role")
+    .select("*")
     .in("role", ["coach", "admin", "master_admin"])
     .eq("is_active", true)
     .is("merged_into_id", null);
