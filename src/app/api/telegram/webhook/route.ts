@@ -336,7 +336,7 @@ async function handleExtract(token: string, chatId: number, telegramUserId: numb
     }
 
     // Build summary message
-    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL || "https://dashboard.jaimuaythai.com";
+    const dashboardUrl = process.env.NEXT_PUBLIC_APP_URL || "https://dashboard-isaacs-projects-14fce6f6.vercel.app";
     const lines = [
       `✅ Contract extracted!`,
       ``,
