@@ -31,7 +31,9 @@ function formatPhone(phone: string): string {
 function waLink(phone: string, name?: string): string {
   const digits = formatPhone(phone).replace(/\+/g, "");
   const first = (name || "").trim().split(/\s+/)[0] || "there";
-  const msg = `Hi ${first}! This is Jeremy from Jai Muay Thai. Thanks for your interest — are you looking to start a trial class soon? Happy to help you pick a time that works 💪`;
+  const sgHour = (new Date().getUTCHours() + 8) % 24;
+  const greeting = sgHour < 12 ? "Good morning" : sgHour < 18 ? "Good afternoon" : "Good evening";
+  const msg = `${greeting} ${first}! Thanks for getting in touch via our Facebook/Instagram!\n\nWe'd love to help you get started in learning the art of Muay Thai.\n\nWould you like to schedule a session for yourself?\n\nThank you :)\n\nJeremy Jude\nJai Muay Thai\n\nFind out more about our sessions here too: https://jaimuaythai.com/adults/`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 

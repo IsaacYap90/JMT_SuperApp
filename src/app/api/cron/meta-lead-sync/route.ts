@@ -24,7 +24,9 @@ function formatPhone(phone: string): string {
 function waLink(phone: string, name?: string): string {
   const digits = formatPhone(phone).replace(/\+/g, "");
   const first = (name || "").trim().split(/\s+/)[0] || "there";
-  const msg = `Hi ${first}! This is Jeremy from Jai Muay Thai. Thanks for your interest — are you looking to start a trial class soon? Happy to help you pick a time that works 💪`;
+  const sgHour = (new Date().getUTCHours() + 8) % 24;
+  const greeting = sgHour < 12 ? "Good morning" : sgHour < 18 ? "Good afternoon" : "Good evening";
+  const msg = `${greeting} ${first}! Thanks for getting in touch via our Facebook/Instagram!\n\nWe'd love to help you get started in learning the art of Muay Thai.\n\nWould you like to schedule a session for yourself?\n\nThank you :)\n\nJeremy Jude\nJai Muay Thai\n\nFind out more about our sessions here too: https://jaimuaythai.com/adults/`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -51,27 +53,55 @@ export async function GET(req: NextRequest) {
   // Look back 3 days to catch any webhook misses
   const since = Math.floor(Date.now() / 1000) - 3 * 24 * 60 * 60;
 
-  // Fetch recent leads directly from the Meta page
-  const metaRes = await fetch(
-    `https://graph.facebook.com/v21.0/${pageId}/leads?access_token=${pageToken}&fields=id,created_time,ad_name,field_data&filtering=[{"field":"time_created","operator":"GREATER_THAN","value":${since}}]&limit=50`
-  );
-
-  if (!metaRes.ok) {
-    const err = await metaRes.text();
-    console.error("[meta-lead-sync] Graph API error:", err);
-    return NextResponse.json({ error: "Meta API error", detail: err }, { status: 500 });
-  }
-
-  const metaData = await metaRes.json();
-  const metaLeads: Array<{
+  type MetaLead = {
     id: string;
     created_time: string;
     ad_name?: string;
     field_data: Array<{ name: string; values: string[] }>;
-  }> = metaData.data || [];
+  };
+
+  // Step 1: get all active leadgen forms for the page
+  const formsRes = await fetch(
+    `https://graph.facebook.com/v21.0/${pageId}/leadgen_forms?access_token=${pageToken}&fields=id,name,status&limit=25`
+  );
+  if (!formsRes.ok) {
+    const err = await formsRes.text();
+    console.error("[meta-lead-sync] Failed to fetch forms:", err);
+    return NextResponse.json({ error: "Meta forms API error", detail: err }, { status: 500 });
+  }
+  const formsData = await formsRes.json();
+  const forms: Array<{ id: string; name: string; status: string }> = formsData.data || [];
+  const activeFormIds = forms.map((f) => f.id);
+
+  if (activeFormIds.length === 0) {
+    return NextResponse.json({ synced: 0, message: "No leadgen forms found for page" });
+  }
+
+  // Step 2: fetch leads from each form (Meta only supports /formId/leads, not /pageId/leads)
+  const allLeads: MetaLead[] = [];
+  for (const formId of activeFormIds) {
+    const metaRes = await fetch(
+      `https://graph.facebook.com/v21.0/${formId}/leads?access_token=${pageToken}&fields=id,created_time,ad_name,field_data&filtering=[{"field":"time_created","operator":"GREATER_THAN","value":${since}}]&limit=50`
+    );
+    if (!metaRes.ok) {
+      const err = await metaRes.text();
+      console.error(`[meta-lead-sync] Error fetching leads for form ${formId}:`, err);
+      continue;
+    }
+    const metaData = await metaRes.json();
+    allLeads.push(...(metaData.data || []));
+  }
+
+  // Deduplicate by lead ID (a lead can't appear in multiple forms, but be safe)
+  const seen = new Set<string>();
+  const metaLeads = allLeads.filter((l) => {
+    if (seen.has(l.id)) return false;
+    seen.add(l.id);
+    return true;
+  });
 
   if (metaLeads.length === 0) {
-    return NextResponse.json({ synced: 0, message: "No Meta leads in last 3 days" });
+    return NextResponse.json({ synced: 0, message: "No Meta leads in last 3 days", forms_checked: activeFormIds.length });
   }
 
   // Check which ones are already in our DB
@@ -135,5 +165,5 @@ export async function GET(req: NextRequest) {
     synced++;
   }
 
-  return NextResponse.json({ synced, checked: metaLeads.length, missing: missing.length });
+  return NextResponse.json({ synced, checked: metaLeads.length, missing: missing.length, forms_checked: activeFormIds.length });
 }
