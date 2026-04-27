@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# expo / mobile app workspace
+.expo/
+jai-muaythai-app/
+
+# personal session logs
+logs/
