@@ -1,3 +1,9 @@
+## Confidence Rule (project-wide)
+
+Do not make changes until you have 95% confidence in what to build. Ask follow-up questions until you reach that confidence. No writes/edits/deploys before then.
+
+---
+
 # JMT Dashboard — Coach + admin portal for Jai Muay Thai (Singapore)
 
 ## Tech Stack
@@ -31,3 +37,6 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - `/jmt-calendar` — ICS calendar feed: RRULE/EXDATE, SGT timezone, PT deep-links
 - `/jmt-structure` — Project structure (routes, tables, server actions, components)
 - `/jmt-gotchas` — Class-of-bug notes (HH:MM:SS string compare, SGT timezone construction, Supabase join cardinality, notifications type constraint, half-day rule). Read before touching leave/PT/classes code.
+
+## Reply Style
+- No explanation. Answer only. Caveman mode. Under 100 words.
