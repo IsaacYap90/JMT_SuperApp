@@ -17,6 +17,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/trial-reminder-backstop",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/cron/meta-lead-sync",
       "schedule": "*/30 * * * *"
     }

@@ -18,9 +18,15 @@ import {
   type CalendlyInviteePayload,
 } from "@/lib/calendly";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { resolveTrialRecipients } from "@/lib/trial-recipients";
 
 // Jeremy (JMT master admin) — always DM'd on new Calendly bookings.
 const JEREMY_USER_ID = "2ee6ecaf-f68e-4a0a-a249-0fe7ce019db8";
+
+// If a booking is made within this many hours of the trial start, the 24h
+// reminder cron's [23.5h, 24.5h] window will never fire — so we ping the full
+// coaches+admins recipient list immediately.
+const LATE_BOOKING_THRESHOLD_HOURS = 24;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -201,21 +207,64 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Fire-and-forget DM to Jeremy for brand-new bookings only. Re-sent webhooks
-  // (same calendly_event_uri) skip the ping so he isn't spammed on retries.
+  // Hours between booking-now and trial start (in SGT-anchored absolute time)
+  const trialStartUtc = new Date(`${bookingDate}T${cls.start_time}+08:00`).getTime();
+  const hoursUntilTrial = (trialStartUtc - Date.now()) / (1000 * 60 * 60);
+  const isLateBooking = hoursUntilTrial < LATE_BOOKING_THRESHOLD_HOURS;
+
+  let lateCoachesNotified = 0;
   if (isNew) {
     const prettyDate = new Date(`${bookingDate}T00:00:00+08:00`).toLocaleDateString(
       "en-SG",
       { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Singapore" }
     );
-    const lines = [
+
+    // Standard "new booking" DM to Jeremy on every brand-new booking.
+    const newBookingLines = [
       "🆕 New trial booking",
       `${name} — ${cls.name}`,
       `${prettyDate} · ${timeSlot}`,
       phone ? `📞 ${phone}` : null,
       notes ? `📝 ${notes}` : null,
     ].filter(Boolean) as string[];
-    await sendTelegramPlainToUser(JEREMY_USER_ID, lines.join("\n"));
+    await sendTelegramPlainToUser(JEREMY_USER_ID, newBookingLines.join("\n"));
+
+    // If the booking is too late for the 24h cron's window to ever catch,
+    // immediately ping the full recipient list (coaches assigned to the class
+    // + all admins). Without this, a 14h-out booking would only surface in
+    // the next 6am AM briefing — which can be hours away on the day-of.
+    if (isLateBooking) {
+      // Re-fetch class with its coach roster for the recipient resolver
+      const { data: classWithCoaches } = await supabase
+        .from("classes")
+        .select(
+          "id, name, start_time, end_time, lead_coach_id, assistant_coach_id, class_coaches(coach_id)"
+        )
+        .eq("id", cls.id)
+        .single();
+
+      if (classWithCoaches) {
+        const recipientIds = await resolveTrialRecipients(
+          supabase,
+          classWithCoaches
+        );
+        const lateLines = [
+          `⚡ Late trial booking (${hoursUntilTrial.toFixed(1)}h notice)`,
+          `${name} — ${cls.name}`,
+          `${prettyDate} · ${timeSlot}`,
+          phone ? `📞 ${phone}` : null,
+          notes ? `📝 ${notes}` : null,
+        ].filter(Boolean) as string[];
+        const message = lateLines.join("\n");
+
+        // Don't double-ping Jeremy — he already got the new-booking DM above
+        const filtered = recipientIds.filter((id) => id !== JEREMY_USER_ID);
+        for (const uid of filtered) {
+          const ok = await sendTelegramPlainToUser(uid, message);
+          if (ok) lateCoachesNotified += 1;
+        }
+      }
+    }
   }
 
   return NextResponse.json({
@@ -224,5 +273,8 @@ export async function POST(req: NextRequest) {
     booking_date: bookingDate,
     time_slot: timeSlot,
     notified_jeremy: isNew,
+    late_booking: isLateBooking,
+    late_coaches_notified: lateCoachesNotified,
+    hours_until_trial: Number(hoursUntilTrial.toFixed(2)),
   });
 }
