@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { isPublicHoliday } from "@/lib/sg-holidays";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -106,6 +107,40 @@ export async function GET(req: NextRequest) {
 
   if (!staff || staff.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, reason: "no staff" });
+  }
+
+  // Short-circuit on SG public holidays — no class/PT/trial briefing,
+  // just a friendly note so coaches don't expect a schedule.
+  const ph = isPublicHoliday(ymd);
+  if (ph) {
+    const prettyDateUtcSafe = new Date(`${ymd}T00:00:00+08:00`).toLocaleDateString(
+      "en-SG",
+      { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Singapore" }
+    );
+    let phSent = 0;
+    let phSkipped = 0;
+    for (const u of staff) {
+      const greeting = `Good morning ${u.full_name?.split(" ")[0] || ""}`.trim() + "!";
+      const message = [
+        "📅 Today's schedule",
+        greeting,
+        prettyDateUtcSafe,
+        "",
+        `Public holiday — ${ph.name}. No classes today. Enjoy 🌴`,
+      ].join("\n");
+      const ok = await sendTelegramPlainToUser(u.id, message);
+      if (ok) phSent++;
+      else phSkipped++;
+    }
+    return NextResponse.json({
+      ok: true,
+      date: ymd,
+      day: dayOfWeek,
+      holiday: ph.name,
+      staff: staff.length,
+      sent: phSent,
+      skipped: phSkipped,
+    });
   }
 
   // 2. Today's recurring classes (this day_of_week, active) with all coach links
