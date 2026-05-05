@@ -11,7 +11,29 @@ export const dynamic = "force-dynamic";
 const CLASS_SELECT =
   "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
 
-export default async function SchedulePage() {
+// Resolve anchor date from ?date=YYYY-MM-DD in SGT, default to today.
+function resolveAnchorDate(raw?: string): string {
+  const todaySgt = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+  const todayIso = `${todaySgt.getFullYear()}-${String(todaySgt.getMonth() + 1).padStart(2, "0")}-${String(todaySgt.getDate()).padStart(2, "0")}`;
+  if (!raw) return todayIso;
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : todayIso;
+}
+
+function shiftIsoDate(iso: string, deltaDays: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + deltaDays);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+export default async function SchedulePage({
+  searchParams,
+}: {
+  searchParams: { date?: string };
+}) {
+  const anchorDate = resolveAnchorDate(searchParams.date);
+  const rangeStart = shiftIsoDate(anchorDate, -14);
+  const rangeEnd = shiftIsoDate(anchorDate, 21);
   const supabase = createClient();
 
   const {
@@ -30,7 +52,6 @@ export default async function SchedulePage() {
 
   if (isAdmin(profile.role)) {
     const db = createAdminClient();
-    const pastDate = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
     const [classesRes, coachesRes, ptSessionsRes] = await Promise.all([
       db
         .from("classes")
@@ -49,8 +70,9 @@ export default async function SchedulePage() {
         .select(
           "*, coach:users!pt_sessions_coach_id_fkey(*), member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)"
         )
-        .gte("scheduled_at", pastDate)
-        .in("status", ["scheduled", "confirmed", "completed"])
+        .gte("scheduled_at", rangeStart)
+        .lte("scheduled_at", `${rangeEnd}T23:59:59+08:00`)
+        .in("status", ["scheduled", "confirmed", "completed", "cancelled", "no_show"])
         .order("scheduled_at"),
     ]);
 
@@ -68,12 +90,12 @@ export default async function SchedulePage() {
         ptSessions={ptSessions}
         isAdmin={true}
         adminId={user.id}
+        anchorDate={anchorDate}
       />
     );
   }
 
-  // Coach view: fetch classes + PT sessions (7 days back + 14 days forward)
-  const pastDate = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0];
+  // Coach view: window centered on anchor date.
   const [classesRes, classCoachesRes, ptSessionsRes] = await Promise.all([
     supabase
       .from("classes")
@@ -88,8 +110,9 @@ export default async function SchedulePage() {
       .from("pt_sessions")
       .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
       .eq("coach_id", user.id)
-      .gte("scheduled_at", pastDate)
-      .in("status", ["scheduled", "confirmed", "completed"])
+      .gte("scheduled_at", rangeStart)
+      .lte("scheduled_at", `${rangeEnd}T23:59:59+08:00`)
+      .in("status", ["scheduled", "confirmed", "completed", "cancelled", "no_show"])
       .order("scheduled_at"),
   ]);
 
@@ -112,5 +135,5 @@ export default async function SchedulePage() {
   );
   const ptSessions = attachPreviousFocusToNext(rawPtSessions, coachFocusMap);
 
-  return <CoachSchedule classes={myClasses} ptSessions={ptSessions} showFilter coachId={user.id} />;
+  return <CoachSchedule classes={myClasses} ptSessions={ptSessions} showFilter coachId={user.id} anchorDate={anchorDate} />;
 }

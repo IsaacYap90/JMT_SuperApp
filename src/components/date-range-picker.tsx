@@ -49,10 +49,6 @@ export function DateRangePicker({ startDate, endDate, onStartChange, onEndChange
 
   const handleDayClick = (date: Date) => {
     const dateStr = toDateStr(date);
-    const todayStr = toDateStr(today);
-
-    // Don't allow past dates
-    if (dateStr < todayStr) return;
 
     if (!selectingEnd || !startDate) {
       // Selecting start date
@@ -101,10 +97,10 @@ export function DateRangePicker({ startDate, endDate, onStartChange, onEndChange
     const isInRange = startDate && endDate && dateStr > startDate && dateStr < endDate;
     const isToday = dateStr === todayStr;
 
-    if (isPast) return "text-white/20 cursor-not-allowed";
     if (isStart || isEnd) return "bg-jai-blue text-white font-bold";
     if (isInRange) return isSunday ? "bg-jai-blue/10 text-white/40 line-through" : "bg-jai-blue/20 text-white";
     if (isToday) return "ring-1 ring-jai-blue text-white";
+    if (isPast) return isSunday ? "text-white/20" : "text-white/50 hover:bg-white/10";
     if (isSunday) return "text-white/30";
     return "text-white hover:bg-white/10";
   };

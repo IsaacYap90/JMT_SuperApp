@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Class, PtSession, User } from "@/lib/types/database";
 import { ClassModal } from "./class-modal";
 import { createClient } from "@/lib/supabase/client";
@@ -13,21 +14,35 @@ const CLASS_SELECT =
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function getDates() {
+function isoTodaySgt(): string {
   const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-  today.setHours(0, 0, 0, 0);
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function parseIsoToLocalDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date();
+  dt.setFullYear(y, m - 1, d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function getDates(anchorDate: string) {
+  const todayIso = isoTodaySgt();
+  const anchor = parseIsoToLocalDate(anchorDate);
 
   const dates: { date: Date; dayName: string; label: string; dateNum: number; isToday: boolean }[] = [];
-  for (let i = -7; i <= 14; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
+  for (let i = -14; i <= 21; i++) {
+    const d = new Date(anchor);
+    d.setDate(anchor.getDate() + i);
     const dow = d.getDay();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     dates.push({
       date: d,
       dayName: DAY_NAMES[dow],
       label: DAY_LABELS[dow],
       dateNum: d.getDate(),
-      isToday: i === 0,
+      isToday: iso === todayIso,
     });
   }
   return dates;
@@ -106,17 +121,31 @@ export function SchedulePageClient({
   ptSessions: initialPtSessions,
   isAdmin,
   adminId,
+  anchorDate,
 }: {
   classes: Class[];
   coaches: User[];
   ptSessions: PtSession[];
   isAdmin: boolean;
   adminId?: string;
+  anchorDate: string;
 }) {
-  const dates = getDates();
-  const todayIdx = dates.findIndex((d) => d.isToday);
-  const [selectedIdx, setSelectedIdx] = useState(todayIdx >= 0 ? todayIdx : 0);
+  const router = useRouter();
+  const dates = getDates(anchorDate);
+  // Default to anchor date itself (centered in strip).
+  const anchorIdx = dates.findIndex((d) => {
+    const iso = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, "0")}-${String(d.date.getDate()).padStart(2, "0")}`;
+    return iso === anchorDate;
+  });
+  const [selectedIdx, setSelectedIdx] = useState(anchorIdx >= 0 ? anchorIdx : 14);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const todayIso = isoTodaySgt();
+
+  function jumpToDate(iso: string) {
+    if (iso === anchorDate) return;
+    router.push(`/schedule?date=${iso}`);
+  }
 
   const [classes, setClasses] = useState<Class[]>(initialClasses);
   const [ptSessions, setPtSessions] = useState<PtSession[]>(initialPtSessions);
@@ -267,26 +296,43 @@ export function SchedulePageClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold">Schedule</h1>
-        {isAdmin && (
-          <div className="flex gap-2">
-            {adminId && <CalendarSubscribeButton userId={adminId} isAdmin />}
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="date"
+            value={anchorDate}
+            onChange={(e) => e.target.value && jumpToDate(e.target.value)}
+            className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors min-h-[40px]"
+            aria-label="Jump to date"
+          />
+          {anchorDate !== todayIso && (
             <button
-              onClick={handleCopyToNextWeek}
-              disabled={copying}
-              className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50"
+              onClick={() => jumpToDate(todayIso)}
+              className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors"
             >
-              {copying ? "Copying..." : "Copy PT → Next Week"}
+              Today
             </button>
-            <button
-              onClick={() => setShowAddClass(true)}
-              className="px-4 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
-            >
-              + Add Class
-            </button>
-          </div>
-        )}
+          )}
+          {isAdmin && (
+            <>
+              {adminId && <CalendarSubscribeButton userId={adminId} isAdmin />}
+              <button
+                onClick={handleCopyToNextWeek}
+                disabled={copying}
+                className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50"
+              >
+                {copying ? "Copying..." : "Copy PT → Next Week"}
+              </button>
+              <button
+                onClick={() => setShowAddClass(true)}
+                className="px-4 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
+              >
+                + Add Class
+              </button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Date scroller */}
