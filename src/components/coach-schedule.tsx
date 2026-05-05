@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Class, PtSession } from "@/lib/types/database";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 import { PtCard } from "./pt-card";
@@ -75,22 +76,35 @@ function CalendarSubscribeButton({ coachId }: { coachId: string }) {
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-function getDates(): { date: Date; dayName: string; label: string; dateNum: number; isToday: boolean }[] {
+function isoTodaySgt(): string {
   const today = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-  today.setHours(0, 0, 0, 0);
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+}
+
+function parseIsoToLocalDate(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date();
+  dt.setFullYear(y, m - 1, d);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function getDates(anchorDate: string): { date: Date; dayName: string; label: string; dateNum: number; isToday: boolean }[] {
+  const todayIso = isoTodaySgt();
+  const anchor = parseIsoToLocalDate(anchorDate);
 
   const dates: { date: Date; dayName: string; label: string; dateNum: number; isToday: boolean }[] = [];
-  // 7 days back + today + 14 days forward = 22 days total
-  for (let i = -7; i <= 14; i++) {
-    const d = new Date(today);
-    d.setDate(today.getDate() + i);
+  for (let i = -14; i <= 21; i++) {
+    const d = new Date(anchor);
+    d.setDate(anchor.getDate() + i);
     const dow = d.getDay();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     dates.push({
       date: d,
       dayName: DAY_NAMES[dow],
       label: DAY_LABELS[dow],
       dateNum: d.getDate(),
-      isToday: i === 0,
+      isToday: iso === todayIso,
     });
   }
   return dates;
@@ -115,17 +129,30 @@ export function CoachSchedule({
   ptSessions,
   showFilter = false,
   coachId,
+  anchorDate,
 }: {
   classes: Class[];
   ptSessions: PtSession[];
   showFilter?: boolean;
   coachId?: string;
+  anchorDate: string;
 }) {
-  const dates = getDates();
-  const todayIdx = dates.findIndex((d) => d.isToday);
-  const [selectedIdx, setSelectedIdx] = useState(todayIdx >= 0 ? todayIdx : 0);
+  const router = useRouter();
+  const dates = getDates(anchorDate);
+  const anchorIdx = dates.findIndex((d) => {
+    const iso = `${d.date.getFullYear()}-${String(d.date.getMonth() + 1).padStart(2, "0")}-${String(d.date.getDate()).padStart(2, "0")}`;
+    return iso === anchorDate;
+  });
+  const [selectedIdx, setSelectedIdx] = useState(anchorIdx >= 0 ? anchorIdx : 14);
   const [filter, setFilter] = useState<FilterType>("all");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const todayIso = isoTodaySgt();
+
+  function jumpToDate(iso: string) {
+    if (iso === anchorDate) return;
+    router.push(`/schedule?date=${iso}`);
+  }
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -217,9 +244,24 @@ export function CoachSchedule({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl md:text-2xl font-bold">Schedule</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            type="date"
+            value={anchorDate}
+            onChange={(e) => e.target.value && jumpToDate(e.target.value)}
+            className="px-3 py-1.5 bg-jai-card border border-jai-border text-jai-text text-xs rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors"
+            aria-label="Jump to date"
+          />
+          {anchorDate !== todayIso && (
+            <button
+              onClick={() => jumpToDate(todayIso)}
+              className="px-3 py-1.5 bg-jai-card border border-jai-border text-jai-text text-xs rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors"
+            >
+              Today
+            </button>
+          )}
           {coachId && <CalendarSubscribeButton coachId={coachId} />}
           {showFilter && (
             <div className="flex bg-jai-card border border-jai-border rounded-lg overflow-hidden">

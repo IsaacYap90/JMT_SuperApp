@@ -553,6 +553,12 @@ export function PtPageClient({
                     ? `Next session: ${new Date(nextSessions[pt.user_id]).toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
                     : "No upcoming session"}
                 </p>
+                <Link
+                  href={`/pt/client/${pt.user_id}`}
+                  className="inline-flex items-center gap-1 text-xs text-jai-text hover:text-white mt-2"
+                >
+                  📅 Session history
+                </Link>
               </div>
             );
           })}
@@ -1672,15 +1678,24 @@ function ClientsWithPackages({
                       </span>
                     )}
                   </p>
-                  {m.phone && (
-                    <a
-                      href={`tel:${m.phone}`}
+                  <div className="flex items-center gap-3 mt-0.5">
+                    {m.phone && (
+                      <a
+                        href={`tel:${m.phone}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="text-jai-blue text-xs hover:underline"
+                      >
+                        {m.phone}
+                      </a>
+                    )}
+                    <Link
+                      href={`/pt/client/${m.id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-jai-blue text-xs hover:underline"
+                      className="text-xs text-jai-text hover:text-white inline-flex items-center gap-1"
                     >
-                      {m.phone}
-                    </a>
-                  )}
+                      📅 History
+                    </Link>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2 ml-3">
                   {activePkg ? (

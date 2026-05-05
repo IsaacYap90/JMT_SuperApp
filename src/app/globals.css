@@ -91,3 +91,43 @@ textarea:focus-visible,
   outline-offset: 2px;
   border-radius: 6px;
 }
+
+/* Global button polish — applies to every <button> and role="button" element.
+   Doesn't change layout, sizes, or colors set by Tailwind classes; just adds
+   smoother transitions, a subtle press affordance, and a fade-out on disable. */
+button:not(:disabled),
+[role="button"]:not(:disabled) {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 120ms ease,
+    opacity 180ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tactile press feedback — works for both mouse and touch.
+   Only applies on hover-capable devices to avoid mobile "stuck" states. */
+@media (hover: hover) {
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    transform: scale(0.97);
+  }
+}
+
+/* Touch-device press feedback uses a brief scale via :active too. */
+@media (hover: none) {
+  button:not(:disabled):active,
+  [role="button"]:not(:disabled):active {
+    transform: scale(0.96);
+    transition-duration: 80ms;
+  }
+}
+
+/* Disabled state — uniform fade + cursor across the whole app. */
+button:disabled,
+[role="button"][aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

@@ -21,6 +21,20 @@ function escapeIcs(text: string): string {
   return text.replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\n/g, "\\n");
 }
 
+// Deterministic colored-dot emoji per coach name. Hard-coded mappings for
+// Isaac/Jeremy/Shafiq per Isaac's spec; rest fall back to a stable hash.
+const COACH_FALLBACK_DOTS = ["🟠", "🟣", "🟡", "🟤", "⚫", "⚪"];
+function coachDot(name: string | undefined | null): string {
+  const n = (name || "").toLowerCase();
+  if (n.includes("isaac")) return "🔴";
+  if (n.includes("jeremy")) return "🔵";
+  if (n.includes("shafiq")) return "🟢";
+  if (!n) return "⚪";
+  let hash = 0;
+  for (let i = 0; i < n.length; i++) hash = (hash * 31 + n.charCodeAt(i)) >>> 0;
+  return COACH_FALLBACK_DOTS[hash % COACH_FALLBACK_DOTS.length];
+}
+
 // Local (SGT) ICS datetime string — meant to be used with TZID=Asia/Singapore
 function toLocalIcs(y: number, m: number, d: number, h: number, min: number): string {
   return `${y}${pad(m)}${pad(d)}T${pad(h)}${pad(min)}00`;
@@ -308,6 +322,9 @@ export async function GET(req: NextRequest) {
     const e = sgtParts(endUtc);
 
     const clientName = pt.member?.full_name || "Client";
+    const coachName = pt.coach?.full_name || "";
+    const dot = coachDot(coachName);
+    const titlePrefix = coachName ? `${dot} ${coachName.split(/\s+/)[0]} · PT` : `${dot} PT`;
     const logUrl = `${baseUrl}/pt/log/${pt.id}`;
 
     lines.push(
@@ -315,9 +332,9 @@ export async function GET(req: NextRequest) {
       `UID:pt-${pt.id}@jaimuaythai`,
       `DTSTART;TZID=Asia/Singapore:${toLocalIcs(s.y, s.m, s.d, s.h, s.min)}`,
       `DTEND;TZID=Asia/Singapore:${toLocalIcs(e.y, e.m, e.d, e.h, e.min)}`,
-      `SUMMARY:PT — ${escapeIcs(clientName)}`,
+      `SUMMARY:${escapeIcs(`${titlePrefix} — ${clientName}`)}`,
       `DESCRIPTION:${escapeIcs(
-        `PT Session · ${pt.duration_minutes || 60}min${pt.coach?.full_name ? ` · ${pt.coach.full_name}` : ""}\n\nTap to log session → ${logUrl}`
+        `PT Session · ${pt.duration_minutes || 60}min${coachName ? ` · ${coachName}` : ""}\n\nTap to log session → ${logUrl}`
       )}`,
       `URL:${logUrl}`,
       "CATEGORIES:PT",
