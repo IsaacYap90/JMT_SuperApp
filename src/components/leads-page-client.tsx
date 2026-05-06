@@ -518,32 +518,23 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
   return (
     <PullToRefresh>
     <div className="p-4 pb-28 max-w-5xl mx-auto space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-bold">Leads</h1>
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl md:text-2xl font-bold">Leads</h1>
+        {isAdmin && (
           <button
-            onClick={() => setShowHelp(true)}
-            className="hidden md:inline-flex text-xs text-jai-text hover:text-white px-2 py-1 border border-jai-border rounded-lg"
-            aria-label="Keyboard shortcuts"
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+            className={`px-4 py-2 min-h-[40px] text-sm rounded-full border transition-colors ${
+              selectMode
+                ? "bg-jai-blue/20 text-jai-blue border-jai-blue/30"
+                : "bg-jai-card text-jai-text border-jai-border hover:text-white"
+            }`}
           >
-            ? shortcuts
+            {selectMode ? "Done" : "Select"}
           </button>
-          {isAdmin && (
-            <button
-              onClick={() => {
-                setSelectMode((v) => !v);
-                setSelected(new Set());
-              }}
-              className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${
-                selectMode
-                  ? "bg-jai-blue/20 text-jai-blue border-jai-blue/30"
-                  : "text-jai-text border-jai-border hover:text-white"
-              }`}
-            >
-              {selectMode ? "Done" : "Select"}
-            </button>
-          )}
-        </div>
+        )}
       </div>
 
       {/* Stats cards */}

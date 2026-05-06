@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { updateTrialBookingStatus, adminCreateTrialBooking } from "@/app/actions/trials";
 import { PullToRefresh } from "./pull-to-refresh";
+import { Fab } from "./ui/button";
 
 interface Booking {
   id: string;
@@ -203,15 +204,6 @@ export function TrialManagementClient({
             {upcoming.length} upcoming trial{upcoming.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setShowAdd(true);
-          }}
-          className="bg-jai-blue text-white text-sm font-medium px-4 py-2 rounded-lg min-h-[44px] whitespace-nowrap"
-        >
-          + New
-        </button>
       </div>
 
       {showAdd && (
@@ -437,6 +429,17 @@ export function TrialManagementClient({
           </div>
         )}
       </div>
+
+      {/* Floating action button — primary "+" New trial */}
+      {!showAdd && (
+        <Fab
+          ariaLabel="New trial booking"
+          onClick={() => {
+            resetForm();
+            setShowAdd(true);
+          }}
+        />
+      )}
     </div>
     </PullToRefresh>
   );

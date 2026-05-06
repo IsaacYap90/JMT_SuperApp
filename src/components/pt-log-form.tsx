@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { logPtSession } from "@/app/actions/pt";
+import { Button } from "./ui/button";
 
 export function PtLogForm({
   sessionId,
@@ -64,24 +65,27 @@ export function PtLogForm({
         </div>
       )}
 
-      <button
+      <Button
         onClick={handleSave}
         disabled={saving}
-        className={`w-full py-3 rounded-lg text-sm font-medium min-h-[48px] transition-colors ${
-          saved
-            ? "bg-green-500/20 text-green-400 border border-green-500/30"
-            : "bg-jai-blue text-white disabled:opacity-50"
-        }`}
+        loading={saving}
+        loadingText="Saving…"
+        variant={saved ? "secondary" : "primary"}
+        size="lg"
+        fullWidth
+        className={saved ? "!bg-green-500/20 !text-green-400 !border-green-500/30" : ""}
       >
-        {saved ? "Saved ✓" : saving ? "Saving…" : "Save log"}
-      </button>
+        {saved ? "Saved ✓" : "Save log"}
+      </Button>
 
-      <button
+      <Button
         onClick={() => router.push("/")}
-        className="w-full py-2 text-xs text-jai-text/70 hover:text-white"
+        variant="ghost"
+        size="sm"
+        fullWidth
       >
         Back to overview
-      </button>
+      </Button>
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Class, DayOfWeek, User } from "@/lib/types/database";
 import { createClient } from "@/lib/supabase/client";
 import { createNotification } from "@/app/actions/notifications";
+import { Button } from "./ui/button";
 
 const DAYS: DayOfWeek[] = [
   "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
@@ -380,20 +381,12 @@ export function ClassModal({
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
           <div className="flex gap-3 pt-2 pb-safe">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-3 md:py-2 border border-jai-border text-jai-text rounded-lg hover:text-white transition-colors text-base"
-            >
+            <Button type="button" onClick={onClose} fullWidth size="lg">
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-3 md:py-2 bg-jai-blue text-white rounded-lg hover:bg-jai-blue/90 disabled:opacity-50 transition-colors text-base font-medium"
-            >
-              {loading ? "Saving..." : cls ? "Update" : "Add Class"}
-            </button>
+            </Button>
+            <Button type="submit" variant="primary" loading={loading} loadingText="Saving…" fullWidth size="lg">
+              {cls ? "Update" : "Add Class"}
+            </Button>
           </div>
         </form>
       </div>

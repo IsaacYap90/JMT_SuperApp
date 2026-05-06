@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import { PullToRefresh } from "./pull-to-refresh";
+import { Button } from "./ui/button";
 
 // 30-minute time slots from 6:00am to 10:00pm for PT scheduling
 const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
@@ -582,14 +583,15 @@ export function PtPageClient({
   return (
     <PullToRefresh>
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl md:text-2xl font-bold">PT Management</h1>
         <button
           onClick={handleCopyToNextWeek}
           disabled={copying}
-          className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50"
+          aria-label="Copy PT sessions to next week"
+          className="px-3 py-2 min-h-[40px] bg-jai-card border border-jai-border text-jai-text text-sm rounded-full hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50 whitespace-nowrap"
         >
-          {copying ? "Copying..." : "Copy PT → Next Week"}
+          {copying ? "Copying…" : "Copy → Next Week"}
         </button>
       </div>
 
@@ -612,10 +614,10 @@ export function PtPageClient({
       )}
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-jai-card border border-jai-border rounded-lg p-1">
+      <div className="flex gap-1 bg-jai-card border border-jai-border rounded-full p-1">
         <button
           onClick={() => setTab("sessions")}
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+          className={`flex-1 py-2 text-sm font-medium rounded-full transition-colors ${
             tab === "sessions" ? "bg-jai-blue text-white" : "text-jai-text hover:text-white"
           }`}
         >
@@ -623,7 +625,7 @@ export function PtPageClient({
         </button>
         <button
           onClick={() => setTab("clients")}
-          className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${
+          className={`flex-1 py-2 text-sm font-medium rounded-full transition-colors ${
             tab === "clients" ? "bg-jai-blue text-white" : "text-jai-text hover:text-white"
           }`}
         >
@@ -864,13 +866,17 @@ export function PtPageClient({
                   <option value={90}>90 min</option>
                 </select>
               </div>
-              <button
+              <Button
                 type="submit"
+                variant="primary"
+                size="lg"
+                fullWidth
                 disabled={saving}
-                className="w-full py-2.5 bg-jai-blue text-white text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                loading={saving}
+                loadingText="Scheduling…"
               >
-                {saving ? "Scheduling..." : "Schedule Session"}
-              </button>
+                Schedule Session
+              </Button>
             </form>
           )}
 
@@ -1035,20 +1041,25 @@ export function PtPageClient({
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <button
+                        <Button
                           type="submit"
+                          variant="primary"
+                          size="md"
+                          fullWidth
                           disabled={saving}
-                          className="flex-1 py-2 bg-jai-blue text-white text-xs rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                          loading={saving}
+                          loadingText="Saving…"
                         >
-                          {saving ? "Saving..." : "Save Changes"}
-                        </button>
-                        <button
+                          Save Changes
+                        </Button>
+                        <Button
                           type="button"
+                          variant="ghost"
+                          size="md"
                           onClick={() => setEditingSessionId(null)}
-                          className="px-4 py-2 text-jai-text text-xs rounded-lg min-h-[44px]"
                         >
                           Cancel
-                        </button>
+                        </Button>
                       </div>
                     </form>
                   )}
@@ -1151,20 +1162,26 @@ export function PtPageClient({
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
                   disabled={creatingClient || !newClientName.trim()}
-                  className="flex-1 py-2.5 bg-green-600 text-white text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                  loading={creatingClient}
+                  loadingText="Creating…"
+                  className="!bg-green-600 !border-green-600 hover:!bg-green-600/90"
                 >
-                  {creatingClient ? "Creating..." : "Create Client"}
-                </button>
-                <button
+                  Create Client
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="lg"
                   onClick={() => setShowNewClient(false)}
-                  className="px-4 py-2.5 text-jai-text text-sm rounded-lg min-h-[44px]"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           )}
@@ -1325,17 +1342,17 @@ export function PtPageClient({
                   </div>
                 </div>
               </div>
-              <button
+              <Button
                 type="submit"
+                variant="primary"
+                size="lg"
+                fullWidth
                 disabled={saving}
-                className="w-full py-2.5 bg-jai-blue text-white text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                loading={saving}
+                loadingText="Saving…"
               >
-                {saving
-                  ? "Saving..."
-                  : editingPkg
-                  ? "Update Package"
-                  : "Create Package"}
-              </button>
+                {editingPkg ? "Update Package" : "Create Package"}
+              </Button>
 
               {editingPkg && (
                 <div className="pt-3 border-t border-jai-border space-y-2">
@@ -1427,20 +1444,26 @@ export function PtPageClient({
                 </div>
               </div>
               <div className="flex gap-2">
-                <button
+                <Button
                   type="submit"
+                  variant="primary"
+                  size="lg"
+                  fullWidth
                   disabled={saving}
-                  className="flex-1 py-2.5 bg-green-600 text-white text-sm rounded-lg font-medium min-h-[44px] disabled:opacity-50"
+                  loading={saving}
+                  loadingText="Scheduling…"
+                  className="!bg-green-600 !border-green-600 hover:!bg-green-600/90"
                 >
-                  {saving ? "Scheduling..." : "Schedule"}
-                </button>
-                <button
+                  Schedule
+                </Button>
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="lg"
                   onClick={() => setQuickSchedulePkg(null)}
-                  className="px-4 py-2.5 text-jai-text text-sm rounded-lg min-h-[44px]"
                 >
                   Cancel
-                </button>
+                </Button>
               </div>
             </form>
           )}
