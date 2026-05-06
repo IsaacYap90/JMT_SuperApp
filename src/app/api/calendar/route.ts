@@ -323,8 +323,12 @@ export async function GET(req: NextRequest) {
 
     const clientName = pt.member?.full_name || "Client";
     const coachName = pt.coach?.full_name || "";
-    const dot = coachDot(coachName);
-    const titlePrefix = coachName ? `${dot} ${coachName.split(/\s+/)[0]} · PT` : `${dot} PT`;
+    // Coach-name prefix + colored dot only matter when one feed shows multiple
+    // coaches (admin subscription). On a coach's personal feed every event is
+    // already theirs, so the prefix is noise — keep the original "PT — Name".
+    const titlePrefix = isAdminMode
+      ? (coachName ? `${coachDot(coachName)} ${coachName.split(/\s+/)[0]} · PT` : `${coachDot(coachName)} PT`)
+      : "PT";
     const logUrl = `${baseUrl}/pt/log/${pt.id}`;
 
     lines.push(
