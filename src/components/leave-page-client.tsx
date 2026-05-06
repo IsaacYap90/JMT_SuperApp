@@ -6,6 +6,7 @@ import { User, Leave, LeaveType, isAdmin } from "@/lib/types/database";
 import { cancelLeave, submitLeave, reviewLeave, addInLieuCredit } from "@/app/actions/leave";
 import { DateRangePicker } from "./date-range-picker";
 import { PullToRefresh } from "./pull-to-refresh";
+import { Button, Fab } from "./ui/button";
 
 const LEAVE_TYPES: { value: LeaveType; label: string }[] = [
   { value: "annual", label: "Annual Leave" },
@@ -286,16 +287,16 @@ export function LeavePageClient({
   return (
     <PullToRefresh>
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold">
           {admin ? "Leave Requests" : "My Leave"}
         </h1>
-        {!admin && (
+        {!admin && showForm && (
           <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-jai-blue text-white px-4 py-2 rounded-lg text-sm font-medium min-h-[44px]"
+            onClick={() => setShowForm(false)}
+            className="px-4 py-2 min-h-[40px] bg-jai-card border border-jai-border text-jai-text text-sm rounded-full hover:text-white transition-colors"
           >
-            {showForm ? "Cancel" : "Apply Leave"}
+            Cancel
           </button>
         )}
       </div>
@@ -586,30 +587,38 @@ export function LeavePageClient({
             <p className="text-jai-text text-xs mt-1">{leave.reason}</p>
             {admin && leave.status === "pending" && (
               <div className="flex gap-2 mt-2">
-                <button
+                <Button
                   onClick={() => handleAction(leave.id, "approved")}
                   disabled={actioningId === leave.id}
-                  className="flex-1 bg-green-500/10 text-green-400 py-1.5 rounded-lg text-xs font-medium min-h-[44px] disabled:opacity-50"
+                  size="sm"
+                  fullWidth
+                  className="!bg-green-500/10 !text-green-400 !border-green-500/20 hover:!text-green-300"
                 >
                   Approve
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => handleAction(leave.id, "rejected")}
                   disabled={actioningId === leave.id}
-                  className="flex-1 bg-red-500/10 text-red-400 py-1.5 rounded-lg text-xs font-medium min-h-[44px] disabled:opacity-50"
+                  variant="destructive"
+                  size="sm"
+                  fullWidth
                 >
                   Reject
-                </button>
+                </Button>
               </div>
             )}
             {canCancel(leave) && (
-              <button
-                onClick={() => handleCancel(leave.id)}
-                disabled={actioningId === leave.id}
-                className="w-full mt-2 bg-red-500/10 text-red-400 border border-red-500/20 py-1.5 rounded-lg text-xs font-medium min-h-[44px] disabled:opacity-50"
-              >
-                Cancel Leave
-              </button>
+              <div className="mt-2">
+                <Button
+                  onClick={() => handleCancel(leave.id)}
+                  disabled={actioningId === leave.id}
+                  variant="destructive"
+                  size="sm"
+                  fullWidth
+                >
+                  Cancel Leave
+                </Button>
+              </div>
             )}
           </div>
         ))}
@@ -700,6 +709,11 @@ export function LeavePageClient({
           </tbody>
         </table>
       </div>
+
+      {/* Floating action button — coach only, primary "Apply Leave" */}
+      {!admin && !showForm && (
+        <Fab ariaLabel="Apply Leave" onClick={() => setShowForm(true)} />
+      )}
     </div>
     </PullToRefresh>
   );

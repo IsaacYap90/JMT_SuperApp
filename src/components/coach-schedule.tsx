@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Class, PtSession } from "@/lib/types/database";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 import { PtCard } from "./pt-card";
+import { Button } from "./ui/button";
 
 function CalendarSubscribeButton({ coachId }: { coachId: string }) {
   const [showModal, setShowModal] = useState(false);
@@ -255,12 +256,9 @@ export function CoachSchedule({
             aria-label="Jump to date"
           />
           {anchorDate !== todayIso && (
-            <button
-              onClick={() => jumpToDate(todayIso)}
-              className="px-3 py-1.5 bg-jai-card border border-jai-border text-jai-text text-xs rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors"
-            >
+            <Button size="sm" onClick={() => jumpToDate(todayIso)}>
               Today
-            </button>
+            </Button>
           )}
           {coachId && <CalendarSubscribeButton coachId={coachId} />}
           {showFilter && (

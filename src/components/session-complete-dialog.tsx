@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import SignaturePad from "signature_pad";
+import { Button } from "./ui/button";
 
 export type CompletePayload = {
   signed_on_paper: boolean;
@@ -203,20 +204,21 @@ export function SessionCompleteDialog({
           )}
 
           <div className="flex gap-2 pt-2">
-            <button
-              onClick={onCancel}
-              disabled={saving}
-              className="flex-1 py-2 text-xs font-medium rounded-lg bg-jai-card border border-jai-border text-jai-text/70 hover:bg-jai-card/60 disabled:opacity-50"
-            >
+            <Button onClick={onCancel} disabled={saving} fullWidth size="sm">
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleConfirm}
               disabled={saving || (!paper && empty)}
-              className="flex-1 py-2 text-xs font-medium rounded-lg bg-green-500/20 text-green-300 border border-green-500/30 hover:bg-green-500/30 disabled:opacity-50"
+              loading={saving}
+              loadingText="Saving…"
+              variant="primary"
+              fullWidth
+              size="sm"
+              className="!bg-green-500/20 !text-green-300 !border-green-500/30 hover:!bg-green-500/30"
             >
-              {saving ? "Saving..." : "Mark Completed"}
-            </button>
+              Mark Completed
+            </Button>
           </div>
         </div>
       </div>

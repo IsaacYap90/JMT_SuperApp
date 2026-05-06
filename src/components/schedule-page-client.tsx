@@ -6,7 +6,8 @@ import { Class, PtSession, User } from "@/lib/types/database";
 import { ClassModal } from "./class-modal";
 import { createClient } from "@/lib/supabase/client";
 import { isPublicHoliday } from "@/lib/sg-holidays";
-import { updatePtSession, getNextWeekPtCount, copyPtSessionsToNextWeek } from "@/app/actions/pt";
+import { updatePtSession } from "@/app/actions/pt";
+import { Button, Fab } from "./ui/button";
 
 const CLASS_SELECT =
   "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
@@ -159,7 +160,6 @@ export function SchedulePageClient({
   const [editTime, setEditTime] = useState("");
   const [editDuration, setEditDuration] = useState(60);
   const [saving, setSaving] = useState(false);
-  const [copying, setCopying] = useState(false);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -228,32 +228,6 @@ export function SchedulePageClient({
     }
   }
 
-  async function handleCopyToNextWeek() {
-    setCopying(true);
-    try {
-      const existingCount = await getNextWeekPtCount();
-      if (existingCount > 0) {
-        const proceed = confirm(
-          `Next week already has ${existingCount} PT session${existingCount > 1 ? "s" : ""}. Copy anyway?`
-        );
-        if (!proceed) {
-          setCopying(false);
-          return;
-        }
-      }
-      const { copied } = await copyPtSessionsToNextWeek();
-      if (copied === 0) {
-        alert("No PT sessions found in the current week to copy.");
-      } else {
-        alert(`Copied ${copied} PT session${copied > 1 ? "s" : ""} to next week.`);
-      }
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to copy sessions");
-    } finally {
-      setCopying(false);
-    }
-  }
-
   // Check if selected date is past or today
   const sgtNow = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
   const sgtTodayStr = `${sgtNow.getFullYear()}-${String(sgtNow.getMonth() + 1).padStart(2, "0")}-${String(sgtNow.getDate()).padStart(2, "0")}`;
@@ -296,42 +270,28 @@ export function SchedulePageClient({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+      <div className="flex items-center justify-between gap-2">
         <h1 className="text-xl md:text-2xl font-bold">Schedule</h1>
-        <div className="flex items-center gap-2 flex-wrap">
-          <input
-            type="date"
-            value={anchorDate}
-            onChange={(e) => e.target.value && jumpToDate(e.target.value)}
-            className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors min-h-[40px]"
-            aria-label="Jump to date"
-          />
+        <div className="flex items-center gap-1.5">
+          <label className="relative inline-flex items-center px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-full hover:text-white hover:border-jai-blue/40 transition-colors min-h-[40px] cursor-pointer">
+            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span className="whitespace-nowrap">
+              {new Date(anchorDate + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}
+            </span>
+            <input
+              type="date"
+              value={anchorDate}
+              onChange={(e) => e.target.value && jumpToDate(e.target.value)}
+              className="absolute inset-0 opacity-0 cursor-pointer"
+              aria-label="Jump to date"
+            />
+          </label>
           {anchorDate !== todayIso && (
-            <button
-              onClick={() => jumpToDate(todayIso)}
-              className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-jai-blue/40 transition-colors"
-            >
-              Today
-            </button>
+            <Button onClick={() => jumpToDate(todayIso)}>Today</Button>
           )}
-          {isAdmin && (
-            <>
-              {adminId && <CalendarSubscribeButton userId={adminId} isAdmin />}
-              <button
-                onClick={handleCopyToNextWeek}
-                disabled={copying}
-                className="px-3 py-2 bg-jai-card border border-jai-border text-jai-text text-sm rounded-lg hover:text-white hover:border-green-500/50 transition-colors disabled:opacity-50"
-              >
-                {copying ? "Copying..." : "Copy PT → Next Week"}
-              </button>
-              <button
-                onClick={() => setShowAddClass(true)}
-                className="px-4 py-2 bg-jai-blue text-white text-sm rounded-lg hover:bg-jai-blue/90 transition-colors"
-              >
-                + Add Class
-              </button>
-            </>
-          )}
+          {adminId && isAdmin && <CalendarSubscribeButton userId={adminId} isAdmin />}
         </div>
       </div>
 
@@ -563,6 +523,9 @@ export function SchedulePageClient({
           }}
         />
       )}
+
+      {/* Floating action button — admin only, primary "+" Add Class */}
+      {isAdmin && <Fab ariaLabel="Add Class" onClick={() => setShowAddClass(true)} />}
     </div>
   );
 }
