@@ -100,8 +100,22 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.event === "invitee.canceled") {
-    // Mark any matching trial as cancelled. Idempotent — if we never received
-    // the original created event, there's nothing to cancel and that's fine.
+    // Look up the trial first so we can notify the coaches+admins who got the
+    // original heads-up. Idempotent: if status is already cancelled OR the row
+    // doesn't exist, skip the alert (Calendly retries shouldn't double-notify).
+    const { data: existing } = await supabase
+      .from("trial_bookings")
+      .select("id, name, phone, class_id, booking_date, time_slot, status")
+      .eq("calendly_event_uri", eventUri)
+      .maybeSingle();
+
+    if (!existing) {
+      return NextResponse.json({ ok: true, action: "cancel-skipped", reason: "no matching booking", uri: eventUri });
+    }
+    if (existing.status === "cancelled") {
+      return NextResponse.json({ ok: true, action: "cancel-skipped", reason: "already cancelled", uri: eventUri });
+    }
+
     const { error } = await supabase
       .from("trial_bookings")
       .update({ status: "cancelled" })
@@ -110,7 +124,42 @@ export async function POST(req: NextRequest) {
       console.error("[calendly-webhook] cancel update failed:", error.message);
       return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ ok: true, action: "cancelled", uri: eventUri });
+
+    // Notify the same recipients who would have received the trial reminder.
+    let notified = 0;
+    try {
+      const { data: cls } = await supabase
+        .from("classes")
+        .select("id, name, start_time, end_time, lead_coach_id, assistant_coach_id, class_coaches(coach_id)")
+        .eq("id", existing.class_id)
+        .maybeSingle();
+      if (cls) {
+        const recipients = await resolveTrialRecipients(supabase, cls);
+        const prettyDate = new Date(`${existing.booking_date}T00:00:00+08:00`).toLocaleDateString("en-SG", {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          timeZone: "Asia/Singapore",
+        });
+        const lines = [
+          `❌ Trial cancelled`,
+          `${existing.name} — ${cls.name}`,
+          `${prettyDate} · ${existing.time_slot}`,
+          existing.phone ? `📞 ${existing.phone}` : null,
+        ].filter(Boolean) as string[];
+        const message = lines.join("\n");
+        for (const userId of recipients) {
+          const ok = await sendTelegramPlainToUser(userId, message);
+          if (ok) notified++;
+        }
+      }
+    } catch (e) {
+      // Notification failure shouldn't fail the webhook — Calendly will retry
+      // and re-cancel a row that's already cancelled, which we now no-op above.
+      console.error("[calendly-webhook] cancel-notify error:", e);
+    }
+
+    return NextResponse.json({ ok: true, action: "cancelled", uri: eventUri, notified });
   }
 
   if (body.event !== "invitee.created") {
