@@ -61,11 +61,15 @@ export async function GET(req: NextRequest) {
   const tomD = tomorrow.getDate();
   const tomorrowYmd = `${tomY}-${String(tomM).padStart(2, "0")}-${String(tomD).padStart(2, "0")}`;
 
+  // Only pick up trials the 24h cron didn't already cover. The 24h cron
+  // sets reminder_24h_sent_at after at least one recipient receives the
+  // ping, so a non-null value means the coach has already been notified.
   const { data: trials } = await supabase
     .from("trial_bookings")
-    .select("id, name, phone, class_id, booking_date, time_slot, status")
+    .select("id, name, phone, class_id, booking_date, time_slot, status, reminder_24h_sent_at")
     .in("booking_date", [todayYmd, tomorrowYmd])
-    .eq("status", "booked");
+    .eq("status", "booked")
+    .is("reminder_24h_sent_at", null);
 
   if (!trials || trials.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, reason: "no upcoming trials" });

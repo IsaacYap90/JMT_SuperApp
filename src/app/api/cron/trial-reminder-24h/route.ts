@@ -110,6 +110,7 @@ export async function GET(req: NextRequest) {
 
   let sent = 0;
   let skipped = 0;
+  const deliveredTrialIds = new Set<string>();
 
   for (const [userId, items] of Array.from(recipientTrials)) {
     const lines: string[] = [];
@@ -123,8 +124,22 @@ export async function GET(req: NextRequest) {
 
     const message = lines.join("\n").trim();
     const ok = await sendTelegramPlainToUser(userId, message);
-    if (ok) sent++;
-    else skipped++;
+    if (ok) {
+      sent++;
+      for (const { trial } of items) deliveredTrialIds.add(trial.id);
+    } else {
+      skipped++;
+    }
+  }
+
+  // Mark trials whose 24h reminder reached at least one recipient, so the
+  // 6h backstop cron skips them. Trials with zero successful deliveries stay
+  // null and the backstop will pick them up.
+  if (deliveredTrialIds.size > 0) {
+    await supabase
+      .from("trial_bookings")
+      .update({ reminder_24h_sent_at: new Date().toISOString() })
+      .in("id", Array.from(deliveredTrialIds));
   }
 
   return NextResponse.json({
@@ -134,5 +149,6 @@ export async function GET(req: NextRequest) {
     recipients: recipientTrials.size,
     sent,
     skipped,
+    marked: deliveredTrialIds.size,
   });
 }
