@@ -53,7 +53,8 @@ export async function GET(req: NextRequest) {
     .from("trial_bookings")
     .select("id, name, phone, class_id, booking_date, time_slot, status")
     .eq("booking_date", ymd)
-    .eq("status", "booked");
+    .eq("status", "booked")
+    .is("reminder_24h_sent_at", null);
 
   if (!trials || trials.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, reason: "no trials tomorrow" });
