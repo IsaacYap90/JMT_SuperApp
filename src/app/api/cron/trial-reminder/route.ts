@@ -7,7 +7,7 @@
 // Recipients: coaches assigned to the class + all admins (Jeremy).
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 
 export const dynamic = "force-dynamic";
@@ -31,15 +31,13 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: "Supabase env vars missing" },
       { status: 500 }
     );
   }
-  const supabase = createClient(url, key);
+  const supabase = createAdminClient();
 
   // Today in SGT
   const now = new Date();

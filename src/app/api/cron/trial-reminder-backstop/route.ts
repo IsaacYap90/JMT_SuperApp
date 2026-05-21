@@ -13,7 +13,7 @@
 // Runs every 30 minutes via Vercel Cron.
 
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { resolveTrialRecipients } from "@/lib/trial-recipients";
 
@@ -38,12 +38,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Supabase env vars missing" }, { status: 500 });
   }
-  const supabase = createClient(url, key);
+  const supabase = createAdminClient();
 
   // Today and tomorrow in SGT — backstop window can straddle midnight if
   // the cron runs late evening for an early-morning trial.
