@@ -108,7 +108,15 @@ export interface ClassSession {
   class?: Class;
 }
 
-export type LeaveType = "sick" | "annual" | "emergency" | "hospital" | "in_lieu";
+// Single source of truth for allowed leave types. The LeaveType union is derived
+// from this array, and the server action validates against it (see submitLeave).
+// Add a new type here once and the type + validation stay in sync — no DB migration
+// needed (we validate in the app rather than via a DB CHECK constraint).
+export const LEAVE_TYPE_VALUES = ["sick", "annual", "emergency", "hospital", "in_lieu"] as const;
+export type LeaveType = (typeof LEAVE_TYPE_VALUES)[number];
+export function isValidLeaveType(v: unknown): v is LeaveType {
+  return typeof v === "string" && (LEAVE_TYPE_VALUES as readonly string[]).includes(v);
+}
 export type LeaveStatus = "pending" | "approved" | "rejected";
 
 export interface Leave {

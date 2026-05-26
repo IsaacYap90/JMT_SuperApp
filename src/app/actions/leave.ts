@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createNotification } from "./notifications";
+import { isValidLeaveType } from "@/lib/types/database";
 import { revalidatePath } from "next/cache";
 
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -75,6 +76,13 @@ export async function submitLeave(payload: {
   reason: string;
   target_coach_id?: string;
 }) {
+  // Validate leave type in the app (single source of truth = LEAVE_TYPE_VALUES).
+  // This replaces the old DB CHECK constraint, so the form's types can never
+  // drift out of sync with what the backend accepts.
+  if (!isValidLeaveType(payload.leave_type)) {
+    throw new Error(`Invalid leave type: ${payload.leave_type}`);
+  }
+
   const userId = await getAuthUser();
   const admin = createAdminClient();
 
