@@ -880,8 +880,8 @@ export function PtPageClient({
             </form>
           )}
 
-          {/* Session list */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {/* Session list — single-column list (chronological, like Schedule tab) so the next/latest PT is easy to scan */}
+          <div className="grid grid-cols-1 gap-2">
             {filteredSessions.map((s) => {
               const dt = new Date(s.scheduled_at);
               const dateStr = dt.toLocaleDateString("en-SG", {
