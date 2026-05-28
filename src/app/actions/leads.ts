@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/types/database";
+import { sendConversionLeadEvent, STATUS_EVENT_MAP } from "@/lib/meta/capi";
 
 export type LeadStatus = "new" | "contacted" | "converted" | "lost";
 
@@ -66,6 +67,33 @@ export async function updateLeadStatus(leadId: string, status: LeadStatus) {
     .eq("id", leadId);
 
   if (error) throw new Error(error.message);
+
+  // Meta Conversions API feedback (non-fatal): if this status maps to a funnel
+  // event, the lead came from a Meta lead form, and CAPI env is configured,
+  // tell Meta so it can optimize lead-ad delivery. Mirrors Airple / Lead OS.
+  const eventName = STATUS_EVENT_MAP[status];
+  const datasetId = process.env.JMT_META_CAPI_DATASET_ID;
+  const accessToken = process.env.JMT_META_CAPI_ACCESS_TOKEN;
+  if (eventName && datasetId && accessToken) {
+    const { data: lead } = await db
+      .from("leads")
+      .select("meta_lead_id")
+      .eq("id", leadId)
+      .maybeSingle();
+    if (lead?.meta_lead_id) {
+      try {
+        await sendConversionLeadEvent({
+          leadId,
+          datasetId,
+          accessToken,
+          metaLeadId: lead.meta_lead_id,
+          eventName,
+        });
+      } catch {
+        /* non-fatal — never block the status update on CAPI */
+      }
+    }
+  }
 }
 
 export async function updateLeadNotes(leadId: string, notes: string) {
