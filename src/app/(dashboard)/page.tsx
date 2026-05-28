@@ -70,7 +70,8 @@ export default async function HomePage() {
         db
           .from("leaves")
           .select("id")
-          .eq("status", "pending"),
+          .eq("status", "pending")
+          .is("deleted_at", null),
         db
           .from("users")
           .select("*")

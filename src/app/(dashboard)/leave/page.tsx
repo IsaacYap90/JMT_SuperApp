@@ -26,6 +26,7 @@ export default async function LeavePage() {
   let query = supabase
     .from("leaves")
     .select("*, coach:users!leaves_coach_id_fkey!inner(*), reviewer:users!leaves_reviewed_by_fkey(*)")
+    .is("deleted_at", null)
     .order("leave_date", { ascending: false });
 
   if (!isAdmin(profile.role)) {

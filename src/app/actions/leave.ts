@@ -174,6 +174,7 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
     .from("leaves")
     .select("id, coach_id, leave_date, leave_end_date, leave_type, is_half_day, status, coach:users!leaves_coach_id_fkey(full_name)")
     .eq("id", leaveId)
+    .is("deleted_at", null)
     .single();
 
   if (!leave) throw new Error("Leave not found");
@@ -265,12 +266,14 @@ export async function cancelLeave(leaveId: string) {
   // profile after correction).
   const { data: leave } = await admin
     .from("leaves")
-    .select("coach_id, leave_date")
+    .select("coach_id, leave_date, leave_end_date, leave_type, status")
     .eq("id", leaveId)
+    .is("deleted_at", null)
     .single();
 
   if (!leave) throw new Error("Leave not found");
 
+  let isAdminCancel = false;
   if (leave.coach_id !== userId) {
     const { data: callerProfile } = await admin
       .from("users")
@@ -281,14 +284,36 @@ export async function cancelLeave(leaveId: string) {
     if (callerRole !== "admin" && callerRole !== "master_admin") {
       throw new Error("Not authorized");
     }
+    isAdminCancel = true;
   } else {
     // Owner cancelling their own leave — past leaves stay locked.
     const today = new Date().toISOString().split("T")[0];
     if (leave.leave_date < today) throw new Error("Cannot cancel past leaves");
   }
 
-  const { error } = await admin.from("leaves").delete().eq("id", leaveId);
+  // Soft-delete (preserves the audit trail + makes undo trivial) instead of a
+  // hard delete that left no trace.
+  const { error } = await admin
+    .from("leaves")
+    .update({ deleted_at: new Date().toISOString(), deleted_by: userId })
+    .eq("id", leaveId);
   if (error) throw new Error(error.message);
+
+  // If an admin cancelled a leave that was already APPROVED, the coach's
+  // approval has been reversed — notify them so the inbox isn't left showing a
+  // phantom approval (the original bug).
+  if (isAdminCancel && leave.status === "approved") {
+    const range =
+      leave.leave_end_date && leave.leave_end_date !== leave.leave_date
+        ? `${leave.leave_date} to ${leave.leave_end_date}`
+        : leave.leave_date;
+    await createNotification(
+      leave.coach_id,
+      "leave",
+      "⚠️ Leave Cancelled by Admin",
+      `Your approved ${leave.leave_type} leave (${range}) has been cancelled by an admin. Please check with management if you have any questions.`
+    );
+  }
 
   revalidatePath("/leave");
 }
