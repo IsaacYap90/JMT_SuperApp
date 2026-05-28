@@ -28,6 +28,7 @@ const SG_HOLIDAYS: PublicHoliday[] = [
   { date: "2026-05-01", name: "Labour Day" },
   { date: "2026-05-27", name: "Hari Raya Haji" },
   { date: "2026-05-31", name: "Vesak Day" },
+  { date: "2026-06-01", name: "Vesak Day (in lieu)" },
   { date: "2026-08-09", name: "National Day" },
   { date: "2026-11-08", name: "Deepavali" },
   { date: "2026-12-25", name: "Christmas Day" },
