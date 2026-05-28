@@ -36,6 +36,7 @@ export async function ActivityFeed({ limit = 6 }: { limit?: number }) {
     db
       .from("leaves")
       .select("id, status, reason, coach_id, updated_at, coach:users!leaves_coach_id_fkey(full_name)")
+      .is("deleted_at", null)
       .gte("updated_at", sinceIso)
       .neq("status", "pending")
       .order("updated_at", { ascending: false })

@@ -177,6 +177,7 @@ export async function GET(req: NextRequest) {
     .from("leaves")
     .select("coach_id, leave_type, is_half_day, coach:users!leaves_coach_id_fkey(full_name)")
     .eq("status", "approved")
+    .is("deleted_at", null)
     .lte("leave_date", ymd)
     .gte("leave_end_date", ymd);
 

@@ -176,6 +176,7 @@ export async function GET(req: NextRequest) {
           .from("leaves")
           .select("coach_id, leave_date, leave_end_date, is_half_day")
           .eq("status", "approved")
+          .is("deleted_at", null)
           .in("coach_id", Array.from(leaveCoachIds))
       : { data: [] as Array<{ coach_id: string; leave_date: string; leave_end_date: string | null; is_half_day: boolean }> };
 
