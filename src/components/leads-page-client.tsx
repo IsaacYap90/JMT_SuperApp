@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Lead, LeadStatus } from "@/app/actions/leads";
 import { updateLeadStatus, updateLeadNotes } from "@/app/actions/leads";
@@ -360,7 +361,10 @@ function LeadDetailModal({
   const created = new Date(lead.created_at).toLocaleString("en-SG", { timeZone: "Asia/Singapore", dateStyle: "medium", timeStyle: "short" });
   const formEntries = lead.form_fields ? Object.entries(lead.form_fields).filter(([, v]) => v) : [];
 
-  return (
+  if (typeof document === "undefined") return null;
+  // Portal to body so the overlay escapes PullToRefresh's transform (which would
+  // otherwise trap `position: fixed` to the page, not the viewport).
+  return createPortal(
     <div onClick={onClose} className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
       <div onClick={(e) => e.stopPropagation()} className="bg-jai-card border border-jai-border w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-jai-card border-b border-jai-border px-5 py-4 flex items-start justify-between gap-3 z-10">
@@ -425,7 +429,8 @@ function LeadDetailModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
