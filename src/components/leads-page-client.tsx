@@ -695,7 +695,7 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
 
       {/* Stats cards */}
       <div className="grid grid-cols-4 gap-2">
-        {(["new", "contacted", "scheduled", "won", "lost"] as LeadStatus[]).map((s) => {
+        {(["new", "contacted", "scheduled", "won"] as LeadStatus[]).map((s) => {
           const c = STATUS_CONFIG[s];
           return (
             <button
