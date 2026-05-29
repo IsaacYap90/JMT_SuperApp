@@ -65,18 +65,16 @@ function waLink(phone: string, name?: string): string {
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
-function timeAgo(dateStr: string): string {
-  const now = new Date();
-  const d = new Date(dateStr);
-  const diffMs = now.getTime() - d.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Asia/Singapore" });
+function leadDateTime(dateStr: string): string {
+  // Absolute date + time the lead came in (SGT), e.g. "29 May, 3:42 pm".
+  return new Date(dateStr).toLocaleString("en-GB", {
+    timeZone: "Asia/Singapore",
+    day: "numeric",
+    month: "short",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 function WhatsAppIcon({ className = "w-5 h-5" }: { className?: string }) {
@@ -225,7 +223,7 @@ function LeadCard({
 
             <div className="flex items-center gap-3 text-xs text-jai-text flex-wrap">
               <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-jai-blue/10 text-jai-blue border border-jai-blue/20">Meta Lead Form</span>
-              <span>{timeAgo(lead.created_at)}</span>
+              <span>{leadDateTime(lead.created_at)}</span>
             </div>
 
             {/* Inline contact + interest */}
