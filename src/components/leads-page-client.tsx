@@ -32,6 +32,18 @@ function daysSince(dateStr: string): number {
 function isWithinDays(dateStr: string, days: number): boolean {
   return daysSince(dateStr) <= days;
 }
+function sgtDateKey(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" }); // YYYY-MM-DD
+}
+function dateGroupLabel(key: string): string {
+  const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const yestKey = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  if (key === todayKey) return "Today";
+  if (key === yestKey) return "Yesterday";
+  const d = new Date(key + "T00:00:00+08:00");
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString("en-GB", { timeZone: "Asia/Singapore", weekday: "short", day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
+}
 function isSameMonthSGT(dateStr: string): boolean {
   const now = new Date();
   const d = new Date(dateStr);
@@ -473,6 +485,7 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [detailLead, setDetailLead] = useState<Lead | null>(null);
+  const [openOverride, setOpenOverride] = useState<Record<string, boolean>>({});
   const searchRef = useRef<HTMLInputElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -502,6 +515,28 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
       return true;
     });
   }, [leads, filter, search, activePreset]);
+
+  // Group leads by SGT date (newest day first). Today + Yesterday default-open,
+  // older days collapsed — mirrors Airple's leads view. filtered is already
+  // ordered newest-first, so each group's cards stay newest-first.
+  const groupedLeads = useMemo(() => {
+    const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+    const yestKey = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+    const map = new Map<string, Lead[]>();
+    for (const l of filtered) {
+      const k = sgtDateKey(l.created_at);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(l);
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([key, groupLeads]) => ({
+        key,
+        label: dateGroupLabel(key),
+        defaultOpen: key === todayKey || key === yestKey,
+        leads: groupLeads,
+      }));
+  }, [filtered]);
 
   const counts = useMemo(() => ({
     all: leads.length,
@@ -739,25 +774,47 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-3">
-          {filtered.map((lead, idx) => (
-            <LeadCard
-              key={lead.id}
-              lead={lead}
-              selected={selected.has(lead.id)}
-              focused={idx === focusedIdx}
-              selectMode={selectMode}
-              isNew={newLeadIds.has(lead.id)}
-              onToggleSelect={() => toggleSelected(lead.id)}
-              onFocus={() => setFocusedIdx(idx)}
-              onOpen={() => setDetailLead(lead)}
-              onStatusChange={() => router.refresh()}
-              cardRef={(el) => {
-                if (el) cardRefs.current.set(lead.id, el);
-                else cardRefs.current.delete(lead.id);
-              }}
-            />
-          ))}
+        <div className="space-y-2">
+          {groupedLeads.map((group) => {
+            const open = openOverride[group.key] ?? group.defaultOpen;
+            return (
+              <div key={group.key}>
+                <button
+                  onClick={() => setOpenOverride((p) => ({ ...p, [group.key]: !open }))}
+                  className="w-full flex items-center gap-2 px-1 py-2 text-sm font-medium text-jai-text hover:text-white"
+                >
+                  <svg className={`w-3.5 h-3.5 transition-transform ${open ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  <span>{group.label}</span>
+                  <span className="text-jai-text/50 text-xs">({group.leads.length})</span>
+                </button>
+                {open && (
+                  <div className="grid grid-cols-1 gap-3 mt-1">
+                    {group.leads.map((lead) => {
+                      const idx = filtered.indexOf(lead);
+                      return (
+                        <LeadCard
+                          key={lead.id}
+                          lead={lead}
+                          selected={selected.has(lead.id)}
+                          focused={idx === focusedIdx}
+                          selectMode={selectMode}
+                          isNew={newLeadIds.has(lead.id)}
+                          onToggleSelect={() => toggleSelected(lead.id)}
+                          onFocus={() => setFocusedIdx(idx)}
+                          onOpen={() => setDetailLead(lead)}
+                          onStatusChange={() => router.refresh()}
+                          cardRef={(el) => {
+                            if (el) cardRefs.current.set(lead.id, el);
+                            else cardRefs.current.delete(lead.id);
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
