@@ -14,7 +14,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { LeadStatus } from "@/app/actions/leads";
 
-const API_VERSION = process.env.META_API_VERSION || "v22.0";
+const API_VERSION = process.env.META_API_VERSION || "v25.0";
 
 // JMT lead status → CAPI event_name. Only these statuses fire a conversion event.
 // "new" is the lead Meta already knows about (it created it), so no event.
@@ -50,6 +50,8 @@ export async function sendConversionLeadEvent(opts: {
         event_name: opts.eventName,
         event_time: eventTime,
         action_source: "system_generated",
+        // Required by Meta's CRM / Conversion Leads spec.
+        custom_data: { event_source: "crm", lead_event_source: "JMT Lead OS" },
         user_data: { lead_id: opts.metaLeadId },
       },
     ],
