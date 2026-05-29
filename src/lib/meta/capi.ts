@@ -16,11 +16,12 @@ import type { LeadStatus } from "@/app/actions/leads";
 
 const API_VERSION = process.env.META_API_VERSION || "v25.0";
 
-// JMT lead status → CAPI event_name. Only these statuses fire a conversion event.
-// "new" is the lead Meta already knows about (it created it), so no event.
+// JMT lead status → CAPI event_name (matches Airple/Lead OS funnel stages).
+// "new" = the lead Meta already knows about; "contacted" is an internal touch —
+// neither fires a conversion event. scheduled/won/lost feed Conversion Leads.
 export const STATUS_EVENT_MAP: Partial<Record<LeadStatus, string>> = {
-  contacted: "qualified",
-  converted: "closed_won",
+  scheduled: "qualified",
+  won: "closed_won",
   lost: "lost",
 };
 

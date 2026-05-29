@@ -132,7 +132,12 @@ export async function GET(req: NextRequest) {
     const phone = get("phone") || get("phone_number") || get("contact_no") || get("contact") || get("mobile") || "";
     const email = get("email") || "";
     const interest = get("interest") || get("what") || get("training") || get("goals") || "";
-    const source = "instagram";
+    const source = "meta_lead_form";
+    // Capture every field the lead submitted, keyed by the form's field name.
+    const form_fields: Record<string, string> = {};
+    for (const f of lead.field_data) {
+      form_fields[f.name] = f.values?.[0] || "";
+    }
 
     const { error: insertErr } = await supabase.from("leads").insert({
       name,
@@ -140,6 +145,7 @@ export async function GET(req: NextRequest) {
       email,
       interest,
       source,
+      form_fields,
       meta_lead_id: lead.id,
       status: "new",
       assigned_to: JEREMY_USER_ID,

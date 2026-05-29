@@ -10,20 +10,20 @@ import { createClient } from "@/lib/supabase/client";
 const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string; bg: string; border: string; strip: string }> = {
   new: { label: "New", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", strip: "bg-blue-400" },
   contacted: { label: "Contacted", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20", strip: "bg-amber-400" },
-  converted: { label: "Converted", color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", strip: "bg-green-400" },
+  scheduled: { label: "Scheduled", color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20", strip: "bg-purple-400" },
+  won: { label: "Won", color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", strip: "bg-green-400" },
   lost: { label: "Lost", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20", strip: "bg-red-400" },
 };
 
-const STATUSES: LeadStatus[] = ["new", "contacted", "converted", "lost"];
+const STATUSES: LeadStatus[] = ["new", "contacted", "scheduled", "won", "lost"];
 
 type Preset = { id: string; label: string; match: (l: Lead) => boolean };
 
 const PRESETS: Preset[] = [
   { id: "all", label: "All", match: () => true },
-  { id: "new-ig-7d", label: "New IG · 7d", match: (l) => l.status === "new" && l.source === "instagram" && isWithinDays(l.created_at, 7) },
-  { id: "new-fb-7d", label: "New FB · 7d", match: (l) => l.status === "new" && l.source === "facebook" && isWithinDays(l.created_at, 7) },
+  { id: "new-7d", label: "New · 7d", match: (l) => l.status === "new" && isWithinDays(l.created_at, 7) },
   { id: "contacted-no-follow-3d", label: "Contacted · stale 3d", match: (l) => l.status === "contacted" && daysSince(l.updated_at || l.created_at) >= 3 },
-  { id: "converted-this-month", label: "Converted · this month", match: (l) => l.status === "converted" && isSameMonthSGT(l.updated_at || l.created_at) },
+  { id: "won-this-month", label: "Won · this month", match: (l) => l.status === "won" && isSameMonthSGT(l.updated_at || l.created_at) },
 ];
 
 function daysSince(dateStr: string): number {
@@ -88,6 +88,7 @@ function LeadCard({
   onToggleSelect,
   onStatusChange,
   onFocus,
+  onOpen,
   cardRef,
 }: {
   lead: Lead;
@@ -98,6 +99,7 @@ function LeadCard({
   onToggleSelect: () => void;
   onStatusChange: () => void;
   onFocus: () => void;
+  onOpen: () => void;
   cardRef?: (el: HTMLDivElement | null) => void;
 }) {
   const [saving, setSaving] = useState(false);
@@ -141,8 +143,8 @@ function LeadCard({
   return (
     <div
       ref={cardRef}
-      onClick={onFocus}
-      className={`relative bg-jai-card border rounded-xl p-4 pl-5 transition-all overflow-hidden ${
+      onClick={() => { onFocus(); onOpen(); }}
+      className={`relative bg-jai-card border rounded-xl p-4 pl-5 transition-all overflow-hidden cursor-pointer ${
         isNew ? "border-green-500/50 ring-1 ring-green-500/30 animate-pulse-once" :
         focused ? "border-jai-blue/40 ring-1 ring-jai-blue/30" : "border-jai-border"
       } ${selected ? "ring-1 ring-jai-blue/60" : ""}`}
@@ -214,7 +216,7 @@ function LeadCard({
             </div>
 
             <div className="flex items-center gap-3 text-xs text-jai-text flex-wrap">
-              {lead.source && <span className="capitalize">{lead.source}</span>}
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-jai-blue/10 text-jai-blue border border-jai-blue/20">Meta Lead Form</span>
               <span>{timeAgo(lead.created_at)}</span>
             </div>
 
@@ -305,6 +307,121 @@ function LeadCard({
   );
 }
 
+function DetailRow({ label, value }: { label: string; value: string | null }) {
+  if (!value) return null;
+  return (
+    <div className="flex gap-3 text-sm">
+      <span className="text-jai-text/60 capitalize min-w-[90px]">{label.replace(/_/g, " ")}</span>
+      <span className="flex-1 break-words">{value}</span>
+    </div>
+  );
+}
+
+function LeadDetailModal({
+  lead,
+  onClose,
+  onChanged,
+}: {
+  lead: Lead;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [notes, setNotes] = useState(lead.notes || "");
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const handleStatus = async (status: LeadStatus) => {
+    if (status === lead.status) return;
+    setSaving(true);
+    try { await updateLeadStatus(lead.id, status); onChanged(); onClose(); }
+    catch (err) { alert(err instanceof Error ? err.message : "Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const handleSaveNotes = async () => {
+    setSaving(true);
+    try { await updateLeadNotes(lead.id, notes); onChanged(); }
+    catch (err) { alert(err instanceof Error ? err.message : "Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const created = new Date(lead.created_at).toLocaleString("en-SG", { timeZone: "Asia/Singapore", dateStyle: "medium", timeStyle: "short" });
+  const formEntries = lead.form_fields ? Object.entries(lead.form_fields).filter(([, v]) => v) : [];
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center sm:p-4">
+      <div onClick={(e) => e.stopPropagation()} className="bg-jai-card border border-jai-border w-full sm:max-w-lg sm:rounded-2xl rounded-t-2xl max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-jai-card border-b border-jai-border px-5 py-4 flex items-start justify-between gap-3 z-10">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold truncate">{lead.name}</h2>
+            <div className="flex items-center gap-2 mt-1 text-xs text-jai-text flex-wrap">
+              <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded bg-jai-blue/10 text-jai-blue border border-jai-blue/20">Meta Lead Form</span>
+              <span>{created}</span>
+            </div>
+          </div>
+          <button onClick={onClose} aria-label="Close" className="text-jai-text hover:text-white p-1 -m-1">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+
+        <div className="p-5 space-y-5">
+          <div className="flex flex-wrap gap-2">
+            {STATUSES.map((s) => {
+              const c = STATUS_CONFIG[s];
+              const active = lead.status === s;
+              return (
+                <button key={s} onClick={() => handleStatus(s)} disabled={saving}
+                  className={`text-xs px-3 py-1.5 rounded-full border disabled:opacity-50 ${active ? `${c.bg} ${c.color} ${c.border}` : "border-jai-border text-jai-text hover:text-white"}`}>
+                  {c.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {lead.phone && (
+              <>
+                <a href={`tel:${lead.phone}`} className="flex-1 min-w-[110px] text-center text-sm px-3 py-2 rounded-lg bg-jai-bg border border-jai-border hover:border-jai-blue/50">Call</a>
+                <a href={waLink(lead.phone, lead.name)} target="_blank" rel="noopener noreferrer" className="flex-1 min-w-[110px] text-center text-sm px-3 py-2 rounded-lg bg-green-500/15 text-green-400 border border-green-500/30 hover:bg-green-500/25">WhatsApp</a>
+              </>
+            )}
+            {lead.email && (
+              <a href={`mailto:${lead.email}`} className="flex-1 min-w-[110px] text-center text-sm px-3 py-2 rounded-lg bg-jai-bg border border-jai-border hover:border-jai-blue/50">Email</a>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <DetailRow label="Phone" value={lead.phone} />
+            <DetailRow label="Email" value={lead.email} />
+            <DetailRow label="Interest" value={lead.interest} />
+            {formEntries.map(([k, v]) => (
+              <DetailRow key={k} label={k} value={v} />
+            ))}
+            {formEntries.length === 0 && (
+              <p className="text-xs text-jai-text/50 italic">Full form fields are captured for new leads from now on.</p>
+            )}
+          </div>
+
+          <div>
+            <label className="text-xs uppercase tracking-wide text-jai-text/60">Notes</label>
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
+              className="mt-1 w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2 text-sm resize-none" placeholder="Add notes..." />
+            <button onClick={handleSaveNotes} disabled={saving}
+              className="mt-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-jai-blue/20 text-jai-blue border border-jai-blue/30 disabled:opacity-50">
+              {saving ? "Saving…" : "Save notes"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function loadSavedPreset(): string {
   if (typeof window === "undefined") return "all";
   return localStorage.getItem("jmt-leads-preset") || "all";
@@ -355,6 +472,7 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
   const [selectMode, setSelectMode] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [detailLead, setDetailLead] = useState<Lead | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -389,7 +507,8 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
     all: leads.length,
     new: leads.filter((l) => l.status === "new").length,
     contacted: leads.filter((l) => l.status === "contacted").length,
-    converted: leads.filter((l) => l.status === "converted").length,
+    scheduled: leads.filter((l) => l.status === "scheduled").length,
+    won: leads.filter((l) => l.status === "won").length,
     lost: leads.filter((l) => l.status === "lost").length,
   }), [leads]);
 
@@ -451,9 +570,14 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
         updateLeadStatus(current.id, "lost").then(() => router.refresh());
         return;
       }
+      if (e.key === "s") {
+        e.preventDefault();
+        updateLeadStatus(current.id, "scheduled").then(() => router.refresh());
+        return;
+      }
       if (e.key === "v") {
         e.preventDefault();
-        updateLeadStatus(current.id, "converted").then(() => router.refresh());
+        updateLeadStatus(current.id, "won").then(() => router.refresh());
         return;
       }
       if (e.key === "w" && current.phone) {
@@ -539,7 +663,7 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
 
       {/* Stats cards */}
       <div className="grid grid-cols-4 gap-2">
-        {(["new", "contacted", "converted", "lost"] as LeadStatus[]).map((s) => {
+        {(["new", "contacted", "scheduled", "won", "lost"] as LeadStatus[]).map((s) => {
           const c = STATUS_CONFIG[s];
           return (
             <button
@@ -626,6 +750,7 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
               isNew={newLeadIds.has(lead.id)}
               onToggleSelect={() => toggleSelected(lead.id)}
               onFocus={() => setFocusedIdx(idx)}
+              onOpen={() => setDetailLead(lead)}
               onStatusChange={() => router.refresh()}
               cardRef={(el) => {
                 if (el) cardRefs.current.set(lead.id, el);
@@ -650,10 +775,10 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
           </button>
           <button
             disabled={bulkBusy}
-            onClick={() => handleBulkStatus("converted")}
+            onClick={() => handleBulkStatus("won")}
             className="text-xs text-green-400 hover:text-green-300 disabled:opacity-50"
           >
-            Converted
+            Won
           </button>
           <button
             disabled={bulkBusy}
@@ -685,7 +810,8 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
             <ul className="text-sm text-jai-text space-y-1.5">
               <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">j</kbd> / <kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">k</kbd> — move focus</li>
               <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">c</kbd> — mark Contacted</li>
-              <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">v</kbd> — mark conVerted</li>
+              <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">s</kbd> — mark Scheduled</li>
+              <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">v</kbd> — mark Won</li>
               <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">x</kbd> — mark lost (X)</li>
               <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">w</kbd> — open WhatsApp</li>
               <li><kbd className="bg-jai-bg border border-jai-border px-1.5 rounded">e</kbd> — email</li>
@@ -696,6 +822,15 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
             <p className="text-xs text-jai-text/60 pt-1">Works on desktop. Mobile = taps.</p>
           </div>
         </div>
+      )}
+
+      {/* Lead detail modal */}
+      {detailLead && (
+        <LeadDetailModal
+          lead={detailLead}
+          onClose={() => setDetailLead(null)}
+          onChanged={() => router.refresh()}
+        />
       )}
     </div>
     </PullToRefresh>

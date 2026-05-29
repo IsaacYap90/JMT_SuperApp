@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/types/database";
 import { sendConversionLeadEvent, STATUS_EVENT_MAP } from "@/lib/meta/capi";
 
-export type LeadStatus = "new" | "contacted" | "converted" | "lost";
+export type LeadStatus = "new" | "contacted" | "scheduled" | "won" | "lost";
 
 export interface Lead {
   id: string;
@@ -16,6 +16,7 @@ export interface Lead {
   source: string;
   meta_form_id: string | null;
   meta_lead_id: string | null;
+  form_fields: Record<string, string> | null;
   status: LeadStatus;
   notes: string | null;
   assigned_to: string | null;
