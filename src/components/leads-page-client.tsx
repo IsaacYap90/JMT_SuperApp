@@ -35,14 +35,9 @@ function isWithinDays(dateStr: string, days: number): boolean {
 function sgtDateKey(iso: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" }); // YYYY-MM-DD
 }
-function dateGroupLabel(key: string): string {
-  const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
-  const yestKey = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
-  if (key === todayKey) return "Today";
-  if (key === yestKey) return "Yesterday";
-  const d = new Date(key + "T00:00:00+08:00");
-  const sameYear = d.getFullYear() === new Date().getFullYear();
-  return d.toLocaleDateString("en-GB", { timeZone: "Asia/Singapore", weekday: "short", day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }) });
+function monthLabel(monthKey: string): string {
+  const d = new Date(monthKey + "-01T00:00:00+08:00");
+  return d.toLocaleDateString("en-US", { timeZone: "Asia/Singapore", month: "long", year: "numeric" });
 }
 function isSameMonthSGT(dateStr: string): boolean {
   const now = new Date();
@@ -522,20 +517,19 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
   const groupedLeads = useMemo(() => {
     const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
     const yestKey = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
-    const map = new Map<string, Lead[]>();
+    type Grp = { key: string; label: string; order: string; defaultOpen: boolean; leads: Lead[] };
+    const groups = new Map<string, Grp>();
     for (const l of filtered) {
-      const k = sgtDateKey(l.created_at);
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(l);
+      const day = sgtDateKey(l.created_at);
+      let g: Grp;
+      if (day === todayKey) g = { key: "today", label: "Today", order: "~2", defaultOpen: true, leads: [] };
+      else if (day === yestKey) g = { key: "yesterday", label: "Yesterday", order: "~1", defaultOpen: true, leads: [] };
+      else { const m = day.slice(0, 7); g = { key: m, label: monthLabel(m), order: m, defaultOpen: false, leads: [] }; }
+      if (!groups.has(g.key)) groups.set(g.key, g);
+      groups.get(g.key)!.leads.push(l);
     }
-    return Array.from(map.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([key, groupLeads]) => ({
-        key,
-        label: dateGroupLabel(key),
-        defaultOpen: key === todayKey || key === yestKey,
-        leads: groupLeads,
-      }));
+    // Today, Yesterday, then months newest-first.
+    return Array.from(groups.values()).sort((a, b) => b.order.localeCompare(a.order));
   }, [filtered]);
 
   const counts = useMemo(() => ({
