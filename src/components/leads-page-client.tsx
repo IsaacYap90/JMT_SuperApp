@@ -517,19 +517,19 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
   const groupedLeads = useMemo(() => {
     const todayKey = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
     const yestKey = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
-    type Grp = { key: string; label: string; order: string; defaultOpen: boolean; leads: Lead[] };
+    type Grp = { key: string; label: string; rank: number; defaultOpen: boolean; leads: Lead[] };
     const groups = new Map<string, Grp>();
     for (const l of filtered) {
       const day = sgtDateKey(l.created_at);
       let g: Grp;
-      if (day === todayKey) g = { key: "today", label: "Today", order: "~2", defaultOpen: true, leads: [] };
-      else if (day === yestKey) g = { key: "yesterday", label: "Yesterday", order: "~1", defaultOpen: true, leads: [] };
-      else { const m = day.slice(0, 7); g = { key: m, label: monthLabel(m), order: m, defaultOpen: false, leads: [] }; }
+      if (day === todayKey) g = { key: "today", label: "Today", rank: 1e12, defaultOpen: true, leads: [] };
+      else if (day === yestKey) g = { key: "yesterday", label: "Yesterday", rank: 1e12 - 1, defaultOpen: true, leads: [] };
+      else { const m = day.slice(0, 7); g = { key: m, label: monthLabel(m), rank: Number(m.replace("-", "")), defaultOpen: false, leads: [] }; }
       if (!groups.has(g.key)) groups.set(g.key, g);
       groups.get(g.key)!.leads.push(l);
     }
-    // Today, Yesterday, then months newest-first.
-    return Array.from(groups.values()).sort((a, b) => b.order.localeCompare(a.order));
+    // Today, Yesterday, then months newest-first (numeric rank — higher = newer).
+    return Array.from(groups.values()).sort((a, b) => b.rank - a.rank);
   }, [filtered]);
 
   const counts = useMemo(() => ({
