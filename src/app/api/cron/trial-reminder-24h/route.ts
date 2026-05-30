@@ -20,6 +20,21 @@ function fmtTime(hhmm: string): string {
   return `${h}:${mStr}${suffix}`;
 }
 
+// Tap-to-WhatsApp link with a prefilled trial reminder, so the coach/admin
+// can one-tap message the trial-booker from their own WhatsApp.
+function waReminderLink(
+  name: string,
+  phone: string,
+  className: string,
+  prettyDate: string,
+  startTime: string
+): string {
+  const digits = phone.replace(/\D/g, "");
+  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const msg = `Hi ${first}! Reminder — your Jai Muay Thai trial: ${className}, ${prettyDate} ${fmtTime(startTime)}. See you then! Let us know if you can't make it.`;
+  return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;
+}
+
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
@@ -44,6 +59,11 @@ export async function GET(req: NextRequest) {
   const m = tomorrow.getMonth() + 1;
   const d = tomorrow.getDate();
   const ymd = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const prettyDate = tomorrow.toLocaleDateString("en-SG", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  });
 
   const nowMinutes = sg.getHours() * 60 + sg.getMinutes();
 
@@ -118,6 +138,9 @@ export async function GET(req: NextRequest) {
     for (const { trial, cls } of items) {
       lines.push(
         `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
+      );
+      lines.push(
+        `  Tap to remind: ${waReminderLink(trial.name, trial.phone, cls.name, prettyDate, cls.start_time)}`
       );
     }
 
