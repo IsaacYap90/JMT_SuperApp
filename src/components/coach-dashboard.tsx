@@ -199,20 +199,29 @@ export function CoachDashboard({
       {/* Today's Schedule — HERO */}
       <section>
         <h2 className="text-sm font-semibold text-jai-text uppercase tracking-wider mb-3">Today</h2>
-        {todayHoliday ? (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
+        {todayHoliday && (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center mb-2">
             <p className="font-medium text-red-400">Gym Closed</p>
             <p className="text-red-400/70 text-sm">{todayHoliday.name}</p>
+            {todayItems.some((i) => i.type === "pt") && (
+              <p className="text-jai-text text-xs mt-2">PT still on — see below.</p>
+            )}
           </div>
-        ) : todayItems.length === 0 ? (
-          <div className="bg-jai-card border border-jai-border rounded-xl p-8 text-center space-y-1">
-            <p className="text-2xl">🏖️</p>
-            <p className="text-jai-text text-sm font-medium">Rest day</p>
-            <p className="text-jai-text/60 text-xs">No sessions on your plate today.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {todayItems.map((item, idx) => {
+        )}
+        {(() => {
+          const list = todayHoliday ? todayItems.filter((i) => i.type === "pt") : todayItems;
+          if (list.length === 0) {
+            return todayHoliday ? null : (
+              <div className="bg-jai-card border border-jai-border rounded-xl p-8 text-center space-y-1">
+                <p className="text-2xl">🏖️</p>
+                <p className="text-jai-text text-sm font-medium">Rest day</p>
+                <p className="text-jai-text/60 text-xs">No sessions on your plate today.</p>
+              </div>
+            );
+          }
+          return (
+            <div className="space-y-2">
+              {list.map((item, idx) => {
               const isNext = idx === nextIdx;
 
               if (item.type === "class") {
@@ -276,9 +285,10 @@ export function CoachDashboard({
                   </div>
                 );
               }
-            })}
-          </div>
-        )}
+              })}
+            </div>
+          );
+        })()}
       </section>
 
       {/* Tomorrow — collapsible peek */}
@@ -317,17 +327,6 @@ function TomorrowSection({ classes, ptSessions }: { classes: Class[]; ptSessions
     timeZone: "Asia/Singapore",
   });
 
-  if (tomorrowHoliday) {
-    return (
-      <section>
-        <h2 className="text-sm font-semibold text-jai-text uppercase tracking-wider mb-3">Tomorrow</h2>
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
-          <p className="font-medium text-red-400">Gym Closed — {tomorrowHoliday.name}</p>
-        </div>
-      </section>
-    );
-  }
-
   // Build sorted items for tomorrow
   type TItem = { type: "class"; sortKey: string; data: Class } | { type: "pt"; sortKey: string; data: PtSession };
   const tItems: TItem[] = [];
@@ -341,17 +340,25 @@ function TomorrowSection({ classes, ptSessions }: { classes: Class[]; ptSessions
   });
   tItems.sort((a, b) => a.sortKey.localeCompare(b.sortKey));
 
-  const totalSessions = tItems.length;
-  const firstTime = tItems.length > 0 ? tItems[0].sortKey.slice(0, 5) : null;
+  // On a public holiday, classes don't run — but private PT still does.
+  const visibleTItems = tomorrowHoliday ? tItems.filter((i) => i.type === "pt") : tItems;
+  const totalSessions = visibleTItems.length;
+  const firstTime = visibleTItems.length > 0 ? visibleTItems[0].sortKey.slice(0, 5) : null;
 
   if (totalSessions === 0) {
     return (
       <section>
         <h2 className="text-sm font-semibold text-jai-text uppercase tracking-wider mb-3">Tomorrow</h2>
-        <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center space-y-1">
-          <p className="text-xl">🌤️</p>
-          <p className="text-jai-text text-sm font-medium">Nothing booked for tomorrow</p>
-        </div>
+        {tomorrowHoliday ? (
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-center">
+            <p className="font-medium text-red-400">Gym Closed — {tomorrowHoliday.name}</p>
+          </div>
+        ) : (
+          <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center space-y-1">
+            <p className="text-xl">🌤️</p>
+            <p className="text-jai-text text-sm font-medium">Nothing booked for tomorrow</p>
+          </div>
+        )}
       </section>
     );
   }
@@ -379,7 +386,12 @@ function TomorrowSection({ classes, ptSessions }: { classes: Class[]; ptSessions
       {expanded && (
         <div className="space-y-2">
           <p className="text-xs text-jai-text capitalize mb-1">{tomorrowLabel}</p>
-          {tItems.map((item) => {
+          {tomorrowHoliday && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3 text-center">
+              <p className="text-red-400 text-xs font-medium">Gym Closed — {tomorrowHoliday.name} · PT still on</p>
+            </div>
+          )}
+          {visibleTItems.map((item) => {
             if (item.type === "class") {
               const cls = item.data as Class;
               const color = classColor(cls.name);
