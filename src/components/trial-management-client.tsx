@@ -47,6 +47,10 @@ interface Booking {
   created_at: string;
   notes?: string | null;
   source?: string | null;
+  calendly_details?: {
+    email?: string | null;
+    questions_and_answers?: { question: string; answer: string }[];
+  } | null;
   class: { name: string; start_time: string; end_time: string } | null;
 }
 
@@ -407,10 +411,31 @@ export function TrialManagementClient({
                 <p className="text-jai-text text-xs mt-1 tabular-nums">
                   +65{b.phone.replace(/\D/g, "")}
                 </p>
-                {b.notes && (
+                {b.notes && !b.calendly_details && (
                   <p className="text-jai-text text-xs mt-1 italic">
                     📝 {b.notes}
                   </p>
+                )}
+                {b.calendly_details && (
+                  <div className="mt-2 border-t border-jai-border pt-2 space-y-1">
+                    {b.calendly_details.email && (
+                      <p className="text-xs">
+                        <span className="text-jai-text/60">Email:</span>{" "}
+                        <a
+                          href={`mailto:${b.calendly_details.email}`}
+                          className="text-jai-blue break-all"
+                        >
+                          {b.calendly_details.email}
+                        </a>
+                      </p>
+                    )}
+                    {(b.calendly_details.questions_and_answers || []).map((qa, i) => (
+                      <p key={i} className="text-xs leading-snug">
+                        <span className="text-jai-text/60">{qa.question}</span>{" "}
+                        <span className="text-jai-text">— {qa.answer}</span>
+                      </p>
+                    ))}
+                  </div>
                 )}
               </div>
               <a
