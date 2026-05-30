@@ -338,21 +338,32 @@ export function CoachSchedule({
         })}
       </p>
 
-      {/* Public Holiday check */}
-      {holiday ? (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 text-center">
+      {/* Public Holiday — gym closed for classes, but private PT sessions still run */}
+      {holiday && (
+        <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-6 text-center mb-2">
           <p className="font-medium text-red-400">Gym Closed</p>
           <p className="text-red-400/70 text-sm">{holiday.name}</p>
+          {items.some((i) => i.type === "pt") && (
+            <p className="text-jai-text text-xs mt-2">
+              Your PT session{items.filter((i) => i.type === "pt").length > 1 ? "s" : ""} still on — see below.
+            </p>
+          )}
         </div>
-      ) : items.length === 0 ? (
-        <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center">
-          <p className="text-jai-text">
-            {filter === "pt" ? "No PT sessions on this day." : "No classes or PT sessions on this day."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {items.map((item) => {
+      )}
+      {(() => {
+        const list = holiday ? items.filter((i) => i.type === "pt") : items;
+        if (list.length === 0) {
+          return holiday ? null : (
+            <div className="bg-jai-card border border-jai-border rounded-xl p-6 text-center">
+              <p className="text-jai-text">
+                {filter === "pt" ? "No PT sessions on this day." : "No classes or PT sessions on this day."}
+              </p>
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-2">
+            {list.map((item) => {
             if (item.type === "pt" && item.ptSession) {
               return <PtCard key={item.id} s={item.ptSession} isPast={item.isPast} />;
             }
@@ -377,9 +388,10 @@ export function CoachSchedule({
                 </div>
               </div>
             );
-          })}
-        </div>
-      )}
+            })}
+          </div>
+        );
+      })()}
     </div>
   );
 }
