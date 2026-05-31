@@ -861,7 +861,6 @@ export function PtPageClient({
                     type="date"
                     value={sessDate}
                     onChange={(e) => setSessDate(e.target.value)}
-                    min={new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" })}
                     required
                     className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
                   />
@@ -1462,7 +1461,6 @@ export function PtPageClient({
                     type="date"
                     value={quickDate}
                     onChange={(e) => setQuickDate(e.target.value)}
-                    min={new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" })}
                     required
                     className="w-full bg-jai-bg border border-jai-border rounded-lg px-3 py-2.5 text-sm min-h-[44px]"
                   />
