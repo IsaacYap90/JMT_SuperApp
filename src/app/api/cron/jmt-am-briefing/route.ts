@@ -109,26 +109,48 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, sent: 0, reason: "no staff" });
   }
 
-  // Short-circuit on SG public holidays — no class/PT/trial briefing,
-  // just a friendly note so coaches don't expect a schedule.
+  // On SG public holidays the gym is closed for group classes — but private
+  // 1-on-1 PT still runs. Send the holiday note, and append each coach's own
+  // PT sessions for today (gym-closed != PT-cancelled).
   const ph = isPublicHoliday(ymd);
   if (ph) {
     const prettyDateUtcSafe = new Date(`${ymd}T00:00:00+08:00`).toLocaleDateString(
       "en-SG",
       { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Singapore" }
     );
+    const { data: phPt } = await supabase
+      .from("pt_sessions")
+      .select("id, scheduled_at, coach_id, member:users!pt_sessions_member_id_fkey(full_name)")
+      .gte("scheduled_at", startUtc)
+      .lte("scheduled_at", endUtc)
+      .neq("status", "cancelled")
+      .order("scheduled_at");
     let phSent = 0;
     let phSkipped = 0;
     for (const u of staff) {
       const greeting = `Good morning ${u.full_name?.split(" ")[0] || ""}`.trim() + "!";
-      const message = [
+      const myPt = (phPt || []).filter((p) => p.coach_id === u.id);
+      const lines = [
         "📅 Today's schedule",
         greeting,
         prettyDateUtcSafe,
         "",
-        `Public holiday — ${ph.name}. No classes today. Enjoy 🌴`,
-      ].join("\n");
-      const ok = await sendTelegramPlainToUser(u.id, message);
+        `Public holiday — ${ph.name}. No classes today. 🌴`,
+      ];
+      if (myPt.length > 0) {
+        lines.push("");
+        lines.push("Your PT still on:");
+        for (const p of myPt) {
+          const t = new Date(p.scheduled_at).toLocaleTimeString("en-SG", {
+            hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore",
+          });
+          const who = Array.isArray(p.member) ? p.member[0]?.full_name : (p.member as { full_name?: string } | null)?.full_name;
+          lines.push(`• ${t} — PT with ${who || "client"}`);
+        }
+      } else {
+        lines.push("Enjoy 🌴");
+      }
+      const ok = await sendTelegramPlainToUser(u.id, lines.join("\n"));
       if (ok) phSent++;
       else phSkipped++;
     }
