@@ -118,12 +118,16 @@ function waPtReminderLink(s: {
   const digits = raw.startsWith("65") ? raw : "65" + raw;
   const dt = new Date(s.scheduled_at);
   const dateStr = dt.toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Singapore" });
-  const timeStr = dt.toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
+  const timeStr = dt
+    .toLocaleTimeString("en-SG", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" })
+    .replace(/\s/g, "")
+    .toLowerCase()
+    .replace(":00", "");
   const client = (s.member?.full_name || "").trim();
   const guardian = (s.package?.guardian_name || "").trim();
   const msg = guardian
-    ? `Hi ${guardian.split(/\s+/)[0]}! Reminder of ${client}'s PT session at Jai Muay Thai on ${dateStr}, ${timeStr}. See you then! Let us know if you need to reschedule.`
-    : `Hi ${client.split(/\s+/)[0] || "there"}! Reminder of your PT session at Jai Muay Thai on ${dateStr}, ${timeStr}. See you then! Let us know if you need to reschedule.`;
+    ? `Hi ${guardian.split(/\s+/)[0]}! Just a gentle reminder for ${client}'s PT session at Jai Muay Thai scheduled for ${dateStr} at ${timeStr}. See you then! 😊`
+    : `Hi ${client.split(/\s+/)[0] || "there"}! Just a gentle reminder for your PT session at Jai Muay Thai scheduled for ${dateStr} at ${timeStr}. See you then! 😊`;
   return `https://wa.me/${digits}?text=${encodeURIComponent(msg)}`;
 }
 
