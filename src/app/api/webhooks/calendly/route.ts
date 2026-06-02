@@ -221,6 +221,15 @@ export async function POST(req: NextRequest) {
       .filter((a) => a && a.trim().length > 0)
       .join(" • ") || null;
 
+  // Full structured submission (email + every Q&A) for the Trials tab.
+  const calendlyDetails = {
+    email: invitee.email ?? null,
+    questions_and_answers: (invitee.questions_and_answers || []).map((qa) => ({
+      question: qa.question,
+      answer: qa.answer,
+    })),
+  };
+
   // Idempotent upsert by calendly_event_uri (unique index)
   const timeSlot = formatTimeSlot(cls.start_time, cls.end_time);
   const { data: existing } = await supabase
@@ -244,6 +253,7 @@ export async function POST(req: NextRequest) {
         source: "calendly",
         calendly_event_uri: eventUri,
         notes,
+        calendly_details: calendlyDetails,
       },
       { onConflict: "calendly_event_uri" }
     );
