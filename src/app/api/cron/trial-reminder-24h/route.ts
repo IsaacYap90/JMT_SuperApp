@@ -25,13 +25,12 @@ function fmtTime(hhmm: string): string {
 function waReminderLink(
   name: string,
   phone: string,
-  className: string,
   prettyDate: string,
   startTime: string
 ): string {
   const digits = phone.replace(/\D/g, "");
   const first = (name || "").trim().split(/\s+/)[0] || "there";
-  const msg = `Hi ${first}! Reminder — your Jai Muay Thai trial: ${className}, ${prettyDate} ${fmtTime(startTime)}. See you then! Let us know if you can't make it.`;
+  const msg = `Hi ${first}! Just a gentle reminder for your free trial at Jai Muay Thai, scheduled for tomorrow - ${prettyDate} at ${fmtTime(startTime)}. See you then! 😊\n\nDo let us know if you're unable to make it! Thanks 🙏🏽`;
   return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;
 }
 
@@ -127,11 +126,25 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // The tap-to-WhatsApp reminder link goes to admins (Jeremy) ONLY — they're the
+  // ones who message the trial-booker. Coaches receive the heads-up alone, no link.
+  const recipientIds = Array.from(recipientTrials.keys());
+  const adminIds = new Set<string>();
+  if (recipientIds.length > 0) {
+    const { data: adminRows } = await supabase
+      .from("users")
+      .select("id")
+      .in("id", recipientIds)
+      .in("role", ["admin", "master_admin"]);
+    for (const u of adminRows || []) adminIds.add(u.id);
+  }
+
   let sent = 0;
   let skipped = 0;
   const deliveredTrialIds = new Set<string>();
 
   for (const [userId, items] of Array.from(recipientTrials)) {
+    const isAdmin = adminIds.has(userId);
     const lines: string[] = [];
     lines.push("📅 Trial tomorrow — 24h heads up");
     lines.push("");
@@ -139,9 +152,11 @@ export async function GET(req: NextRequest) {
       lines.push(
         `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
       );
-      lines.push(
-        `  Tap to remind: ${waReminderLink(trial.name, trial.phone, cls.name, prettyDate, cls.start_time)}`
-      );
+      if (isAdmin) {
+        lines.push(
+          `  Tap to remind: ${waReminderLink(trial.name, trial.phone, prettyDate, cls.start_time)}`
+        );
+      }
     }
 
     const message = lines.join("\n").trim();
