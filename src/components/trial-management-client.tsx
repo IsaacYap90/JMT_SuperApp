@@ -6,6 +6,15 @@ import { updateTrialBookingStatus, adminCreateTrialBooking } from "@/app/actions
 import { PullToRefresh } from "./pull-to-refresh";
 import { Fab } from "./ui/button";
 
+// "today - " / "tomorrow - " / "" prefix based on how far the booking date is (SG time).
+function relDayPrefix(bookingDate: string): string {
+  const todaySG = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const days = Math.round((Date.parse(bookingDate + "T00:00:00Z") - Date.parse(todaySG + "T00:00:00Z")) / 86400000);
+  if (days === 0) return "today - ";
+  if (days === 1) return "tomorrow - ";
+  return "";
+}
+
 // Tap-to-WhatsApp reminder for a trial-booker, prefilled with their session
 // details. Sent from Jeremy's own WhatsApp.
 function waTrialReminderLink(b: {
@@ -22,8 +31,8 @@ function waTrialReminderLink(b: {
     day: "numeric",
     month: "short",
   });
-  const className = b.class?.name || "your session";
-  const msg = `Hi ${first}! Reminder — your Jai Muay Thai trial: ${className}, ${prettyDate} ${b.time_slot}. See you then! Let us know if you can't make it.`;
+  const when = relDayPrefix(b.booking_date) + prettyDate;
+  const msg = `Hi ${first}! Just a gentle reminder for your free trial at Jai Muay Thai, scheduled for ${when} at ${b.time_slot}. See you then! 😊\n\nDo let us know if you're unable to make it! Thanks 🙏🏽`;
   return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;
 }
 
