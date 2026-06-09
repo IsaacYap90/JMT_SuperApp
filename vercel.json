@@ -23,6 +23,14 @@
     {
       "path": "/api/cron/meta-lead-sync",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/lead-pipeline-watchdog",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/lead-pipeline-watchdog?report=1",
+      "schedule": "0 1 * * 1"
     }
   ]
 }
