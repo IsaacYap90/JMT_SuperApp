@@ -114,6 +114,7 @@ function getDates(anchorDate: string): { date: Date; dayName: string; label: str
 type ScheduleItem = {
   id: string;
   type: "class" | "pt";
+  isCorporate?: boolean;
   name: string;
   startTime: string;
   endTime: string;
@@ -172,7 +173,7 @@ export function CoachSchedule({
   const dayClasses = filter === "pt"
     ? []
     : classes
-        .filter((c) => c.day_of_week === dayOfWeek)
+        .filter((c) => (c.event_date ? c.event_date === selectedDateStr : c.day_of_week === dayOfWeek))
         .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   // Get PT sessions for selected date
@@ -199,6 +200,7 @@ export function CoachSchedule({
     ...dayClasses.map((c) => ({
       id: c.id,
       type: "class" as const,
+      isCorporate: c.class_kind === "corporate",
       name: c.name,
       startTime: c.start_time.slice(0, 5),
       endTime: c.end_time.slice(0, 5),
@@ -382,8 +384,8 @@ export function CoachSchedule({
                       <p className="text-jai-text/60 text-xs mt-0.5">{item.subtitle}</p>
                     )}
                   </div>
-                  <span className="text-[10px] px-2.5 py-1 rounded-full border ml-3 bg-jai-blue/10 text-jai-blue border-jai-blue/20">
-                    Class
+                  <span className={`text-[10px] px-2.5 py-1 rounded-full border ml-3 ${item.isCorporate ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-jai-blue/10 text-jai-blue border-jai-blue/20"}`}>
+                    {item.isCorporate ? "Corporate" : "Class"}
                   </span>
                 </div>
               </div>

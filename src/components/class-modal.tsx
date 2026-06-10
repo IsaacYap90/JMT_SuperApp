@@ -60,6 +60,8 @@ export function ClassModal({
     day_of_week: cls?.day_of_week || ("monday" as DayOfWeek),
     start_time: cls?.start_time?.slice(0, 5) || "18:00",
     end_time: cls?.end_time?.slice(0, 5) || "19:00",
+    is_one_off: !!cls?.event_date,
+    event_date: cls?.event_date || "",
     selectedCoachIds: getInitialCoachIds(),
   });
 
@@ -96,9 +98,19 @@ export function ClassModal({
     const leadCoachId = form.selectedCoachIds[0] || null;
     const assistantCoachId = form.selectedCoachIds[1] || null;
 
+    if (form.is_one_off && !form.event_date) {
+      setError("Pick a date for the one-off class.");
+      setLoading(false);
+      return;
+    }
+
     const classData = {
       name: form.name,
-      day_of_week: form.day_of_week,
+      // One-off: day_of_week stays NULL so recurring-timetable consumers
+      // (booking pages, trials, calendly) never pick it up.
+      day_of_week: form.is_one_off ? null : form.day_of_week,
+      event_date: form.is_one_off ? form.event_date : null,
+      class_kind: form.is_one_off ? "corporate" : "regular",
       start_time: form.start_time,
       end_time: form.end_time,
       lead_coach_id: leadCoachId,
@@ -173,19 +185,26 @@ export function ClassModal({
 
       // Notify coaches about changes
       const previousCoachIds = getInitialCoachIds();
-      const dayLabel = form.day_of_week.charAt(0).toUpperCase() + form.day_of_week.slice(1);
       const formatTime24 = (t: string) => {
         const [h, m] = t.split(":").map(Number);
         return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
       };
-      // Find next occurrence of this day to show the date
-      const dayIndex = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].indexOf(form.day_of_week);
-      const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
-      const todayDow = now.getDay();
-      const daysAhead = (dayIndex - todayDow + 7) % 7 || 7;
-      const nextDate = new Date(now);
-      nextDate.setDate(now.getDate() + daysAhead);
-      const dateLabel = `${dayLabel}, ${nextDate.getDate()} ${nextDate.toLocaleDateString("en-GB", { month: "long", timeZone: "Asia/Singapore" })}`;
+      let dateLabel: string;
+      if (form.is_one_off) {
+        // One-off class: the actual event date.
+        const d = new Date(`${form.event_date}T00:00:00+08:00`);
+        dateLabel = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", timeZone: "Asia/Singapore" });
+      } else {
+        const dayLabel = form.day_of_week.charAt(0).toUpperCase() + form.day_of_week.slice(1);
+        // Find next occurrence of this day to show the date
+        const dayIndex = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].indexOf(form.day_of_week);
+        const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
+        const todayDow = now.getDay();
+        const daysAhead = (dayIndex - todayDow + 7) % 7 || 7;
+        const nextDate = new Date(now);
+        nextDate.setDate(now.getDate() + daysAhead);
+        dateLabel = `${dayLabel}, ${nextDate.getDate()} ${nextDate.toLocaleDateString("en-GB", { month: "long", timeZone: "Asia/Singapore" })}`;
+      }
       const timeLabel = formatTime24(form.start_time);
 
       for (const coachId of form.selectedCoachIds) {
@@ -215,7 +234,7 @@ export function ClassModal({
       }
 
       // If editing and class details changed, notify all remaining assigned coaches
-      if (cls && (cls.name !== form.name || cls.start_time?.slice(0, 5) !== form.start_time || cls.end_time?.slice(0, 5) !== form.end_time || cls.day_of_week !== form.day_of_week)) {
+      if (cls && (cls.name !== form.name || cls.start_time?.slice(0, 5) !== form.start_time || cls.end_time?.slice(0, 5) !== form.end_time || cls.day_of_week !== (form.is_one_off ? null : form.day_of_week) || (cls.event_date || "") !== (form.is_one_off ? form.event_date : ""))) {
         for (const coachId of form.selectedCoachIds) {
           if (previousCoachIds.includes(coachId)) {
             createNotification(
@@ -268,20 +287,54 @@ export function ClassModal({
             />
           </div>
 
-          <div>
-            <label className="block text-sm text-jai-text mb-1">Day</label>
-            <select
-              value={form.day_of_week}
-              onChange={(e) => setForm({ ...form, day_of_week: e.target.value as DayOfWeek })}
-              className="w-full px-3 py-3 md:py-2 bg-jai-bg border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue text-base"
+          {/* Weekly recurring vs one-off (corporate) */}
+          <div className="flex rounded-lg border border-jai-border overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, is_one_off: false })}
+              className={`flex-1 px-3 py-2.5 text-sm transition-colors ${!form.is_one_off ? "bg-jai-blue text-white" : "bg-jai-bg text-jai-text hover:text-white"}`}
             >
-              {DAYS.map((day) => (
-                <option key={day} value={day}>
-                  {day.charAt(0).toUpperCase() + day.slice(1)}
-                </option>
-              ))}
-            </select>
+              Weekly class
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, is_one_off: true })}
+              className={`flex-1 px-3 py-2.5 text-sm transition-colors ${form.is_one_off ? "bg-jai-blue text-white" : "bg-jai-bg text-jai-text hover:text-white"}`}
+            >
+              One-off / corporate
+            </button>
           </div>
+
+          {form.is_one_off ? (
+            <div>
+              <label className="block text-sm text-jai-text mb-1">Date</label>
+              <input
+                type="date"
+                value={form.event_date}
+                onChange={(e) => setForm({ ...form, event_date: e.target.value })}
+                className="w-full px-3 py-3 md:py-2 bg-jai-bg border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue text-base"
+                required
+              />
+              <p className="text-xs text-jai-text mt-1 opacity-70">
+                Happens once on this date. Won&apos;t appear in the weekly timetable or trial booking.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-sm text-jai-text mb-1">Day</label>
+              <select
+                value={form.day_of_week}
+                onChange={(e) => setForm({ ...form, day_of_week: e.target.value as DayOfWeek })}
+                className="w-full px-3 py-3 md:py-2 bg-jai-bg border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue text-base"
+              >
+                {DAYS.map((day) => (
+                  <option key={day} value={day}>
+                    {day.charAt(0).toUpperCase() + day.slice(1)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

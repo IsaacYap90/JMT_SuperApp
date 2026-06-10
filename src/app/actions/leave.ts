@@ -22,20 +22,20 @@ async function findAffectedClasses(
   // Find all recurring classes the coach is assigned to (lead or assistant or via class_coaches)
   const { data: leadClasses } = await admin
     .from("classes")
-    .select("id, name, day_of_week, start_time")
+    .select("id, name, day_of_week, start_time, event_date")
     .eq("lead_coach_id", coachId)
     .eq("is_active", true);
   const { data: asstClasses } = await admin
     .from("classes")
-    .select("id, name, day_of_week, start_time")
+    .select("id, name, day_of_week, start_time, event_date")
     .eq("assistant_coach_id", coachId)
     .eq("is_active", true);
   const { data: ccRows } = await admin
     .from("class_coaches")
-    .select("class:classes(id, name, day_of_week, start_time, is_active)")
+    .select("class:classes(id, name, day_of_week, start_time, event_date, is_active)")
     .eq("coach_id", coachId);
 
-  type ClsRow = { id: string; name: string; day_of_week: string; start_time: string };
+  type ClsRow = { id: string; name: string; day_of_week: string | null; start_time: string; event_date: string | null };
   const seen = new Set<string>();
   const all: ClsRow[] = [];
   const push = (c: ClsRow | null) => {
@@ -58,7 +58,9 @@ async function findAffectedClasses(
   for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
     const dow = DAY_NAMES[d.getDay()];
     for (const c of all) {
-      if (c.day_of_week !== dow) continue;
+      // One-off events conflict only on their exact date; recurring by day-of-week.
+      const dYmd = d.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+      if (c.event_date ? c.event_date !== dYmd : c.day_of_week !== dow) continue;
       // Half-day = off before 6:30pm; skip classes that start at 18:30 or later
       if (isHalfDay && c.start_time >= "18:30") continue;
       const dateLabel = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Singapore" });

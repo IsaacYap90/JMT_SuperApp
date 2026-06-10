@@ -95,8 +95,8 @@ export default async function HomePage() {
       ]);
 
     const allClasses = (classesRes.data || []) as unknown as Class[];
-    const todayClasses = allClasses.filter((c) => c.day_of_week === today);
-    const tomorrowClasses = allClasses.filter((c) => c.day_of_week === tomorrowDay);
+    const todayClasses = allClasses.filter((c) => (c.event_date ? c.event_date === todayDate : c.day_of_week === today));
+    const tomorrowClasses = allClasses.filter((c) => (c.event_date ? c.event_date === tomorrowDate : c.day_of_week === tomorrowDay));
     const rawTodayPt = (ptSessionsRes.data || []) as unknown as PtSession[];
     const rawTomorrowPt = (tomorrowPtRes.data || []) as unknown as PtSession[];
     const combinedUpcoming = [...rawTodayPt, ...rawTomorrowPt];
@@ -204,7 +204,7 @@ export default async function HomePage() {
       classCoachClassIds.has(c.id)
   );
 
-  const todayClasses = myClasses.filter((c) => c.day_of_week === today);
+  const todayClasses = myClasses.filter((c) => (c.event_date ? c.event_date === todayDate : c.day_of_week === today));
   const rawTodayPt = (todayPtRes.data || []) as unknown as PtSession[];
   const weekPtData = (weekPtRes.data || []) as { id: string; duration_minutes: number; status: string }[];
   const weekPtCount = weekPtData.length;
@@ -223,7 +223,7 @@ export default async function HomePage() {
     .toLowerCase();
   const dayAfterTomorrowDate = new Date(Date.now() + 2 * 86400000).toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
   const dayAfterTomorrowStartSGT = `${dayAfterTomorrowDate}T00:00:00+08:00`;
-  const tomorrowClasses = myClasses.filter((c) => c.day_of_week === tomorrow);
+  const tomorrowClasses = myClasses.filter((c) => (c.event_date ? c.event_date === tomorrowDate : c.day_of_week === tomorrow));
 
   const { data: tomorrowPtData } = await supabase
     .from("pt_sessions")

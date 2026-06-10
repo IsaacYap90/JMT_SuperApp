@@ -37,7 +37,11 @@ export interface Class {
   id: string;
   name: string;
   description: string | null;
-  day_of_week: DayOfWeek;
+  // null for one-off events (event_date set instead)
+  day_of_week: DayOfWeek | null;
+  // set = one-off class occurring once on this date (YYYY-MM-DD); null = weekly recurring
+  event_date: string | null;
+  class_kind: "regular" | "corporate";
   start_time: string;
   end_time: string;
   capacity: number;
