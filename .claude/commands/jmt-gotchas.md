@@ -182,6 +182,19 @@ Expect `200 {"ok":true,"processed":N}`. If that works, your endpoint is fine —
 
 ---
 
+---
+
+## 11. DB notification triggers NULL out on `||` concat with nullable columns
+
+**Symptom:** Inserting a `class_coaches` row fails with `23502 null value in column "message" of relation "notifications"` even though your insert never touched notifications.
+
+**Root cause:** The `on_class_coach_assigned` trigger builds the notification message with `'... on ' || INITCAP(class_day) || ...`. SQL `||` returns NULL if ANY operand is NULL — so a class with `day_of_week NULL` (one-off corporate classes, added 2026-06-10) nulled the entire message string.
+
+**Fix pattern:** in trigger functions, wrap nullable columns in COALESCE with a sensible fallback. For classes: `COALESCE(INITCAP(day_of_week), to_char(event_date, 'FMDay, DD Mon YYYY'))`. Fixed in migration `20260610120000_one_off_classes.sql`.
+
+**When this applies:** any DB trigger or function that string-concats columns that are (or later become) nullable. When making an existing column nullable, grep trigger functions for `||` references to it: `select proname, prosrc from pg_proc where prosrc ilike '%<column>%';`
+
+
 ## How to use this skill
 - Editing leave or PT code → re-read sections 1, 2, 5, 7
 - Editing classes / class assignments → re-read section 3
@@ -189,4 +202,4 @@ Expect `200 {"ok":true,"processed":N}`. If that works, your endpoint is fine —
 - Adding any new Telegram alert with dynamic user content → re-read section 6
 - Adding any status-mutation server action → re-read section 7
 - Any Meta Lead Ads / webhook / Graph API work → re-read sections 8, 9, 10
-- When you fix a new class-of-bug worth remembering, append it as section 11, 12, etc. Keep each section to: Symptom → Root cause → Fix pattern → When it applies.
+- When you fix a new class-of-bug worth remembering, append it as section 12, 13, etc. Keep each section to: Symptom → Root cause → Fix pattern → When it applies.
