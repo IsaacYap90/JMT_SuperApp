@@ -32,9 +32,18 @@ const coachLinks = [
 // Isaac-only link
 const earningLink = { href: "/earning", label: "Earning", icon: "dollar" };
 
+// Jeremy-only (master_admin) — embedded WhatsApp inbox
+const waInboxLink = { href: "/wa-inbox", label: "WA INBOX", icon: "chat" };
+
 function IconComponent({ icon, className }: { icon: string; className?: string }) {
   const cn = className || "w-5 h-5";
   switch (icon) {
+    case "chat":
+      return (
+        <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4-.84L3 21l1.4-3.5A7.94 7.94 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+        </svg>
+      );
     case "grid":
       return (
         <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -112,7 +121,10 @@ export function Sidebar({ profile }: { profile: User }) {
   const admin = isAdmin(profile.role);
 
   // Bottom nav links — same on all screen sizes
-  const mainLinks = admin ? adminMainLinks : coachLinks;
+  // WhatsApp Inbox is master_admin (Jeremy) only.
+  const mainLinks = admin
+    ? (profile.role === "master_admin" ? [...adminMainLinks, waInboxLink] : adminMainLinks)
+    : coachLinks;
 
   const profileLink = { href: "/profile", label: "Profile", icon: "profile" };
   const profileLinks = admin
