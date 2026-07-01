@@ -165,13 +165,13 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 2. Today's recurring classes (this day_of_week, active) with all coach links
+  // 2. Today's classes: recurring (this day_of_week) + one-off events dated today.
   const { data: classes } = await supabase
     .from("classes")
     .select(
       "id, name, start_time, end_time, lead_coach_id, assistant_coach_id, class_coaches(coach_id)"
     )
-    .eq("day_of_week", dayOfWeek)
+    .or(`day_of_week.eq.${dayOfWeek},event_date.eq.${ymd}`)
     .eq("is_active", true)
     .order("start_time");
 

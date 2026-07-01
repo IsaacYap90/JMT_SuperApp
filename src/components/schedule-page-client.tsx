@@ -184,9 +184,9 @@ export function SchedulePageClient({
   const dayOfWeek = selected.dayName;
   const selectedDateStr = `${selected.date.getFullYear()}-${String(selected.date.getMonth() + 1).padStart(2, "0")}-${String(selected.date.getDate()).padStart(2, "0")}`;
 
-  // Classes for selected day
+  // Classes for selected day: weekly recurring by day-of-week, one-off events by exact date.
   const dayClasses = classes
-    .filter((c) => c.day_of_week === dayOfWeek)
+    .filter((c) => (c.event_date ? c.event_date === selectedDateStr : c.day_of_week === dayOfWeek))
     .sort((a, b) => a.start_time.localeCompare(b.start_time));
 
   // PT sessions for selected date
@@ -384,8 +384,8 @@ export function SchedulePageClient({
                       )}
                     </div>
                     <div className="flex items-center gap-2 ml-3">
-                      <span className="text-[10px] px-2.5 py-1 rounded-full border bg-jai-blue/10 text-jai-blue border-jai-blue/20">
-                        Class
+                      <span className={`text-[10px] px-2.5 py-1 rounded-full border ${cls.class_kind === "corporate" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-jai-blue/10 text-jai-blue border-jai-blue/20"}`}>
+                        {cls.class_kind === "corporate" ? "Corporate" : "Class"}
                       </span>
                       {isAdmin && (
                         <svg className="w-4 h-4 text-jai-text" fill="none" stroke="currentColor" viewBox="0 0 24 24">

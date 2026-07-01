@@ -52,7 +52,7 @@ export async function buildCommandIndex(profile: User): Promise<CommandItem[]> {
         .limit(60),
       db
         .from("classes")
-        .select("id, name, day_of_week, start_time")
+        .select("id, name, day_of_week, start_time, event_date")
         .eq("is_active", true)
         .order("start_time")
         .limit(60),
@@ -85,12 +85,12 @@ export async function buildCommandIndex(profile: User): Promise<CommandItem[]> {
         href: `/pt?member=${m.id}`,
       });
     }
-    for (const cl of (classesRes.data || []) as { id: string; name: string; day_of_week: string; start_time: string }[]) {
+    for (const cl of (classesRes.data || []) as { id: string; name: string; day_of_week: string | null; start_time: string; event_date: string | null }[]) {
       items.push({
         id: `class-${cl.id}`,
         kind: "class",
         label: cl.name,
-        hint: `${cl.day_of_week} · ${(cl.start_time || "").slice(0, 5)}`,
+        hint: `${cl.event_date || cl.day_of_week} · ${(cl.start_time || "").slice(0, 5)}`,
         href: `/schedule#class-${cl.id}`,
       });
     }
@@ -98,16 +98,16 @@ export async function buildCommandIndex(profile: User): Promise<CommandItem[]> {
     const supabase = createClient();
     const classesRes = await supabase
       .from("classes")
-      .select("id, name, day_of_week, start_time, lead_coach_id, assistant_coach_id")
+      .select("id, name, day_of_week, start_time, event_date, lead_coach_id, assistant_coach_id")
       .eq("is_active", true)
       .order("start_time")
       .limit(60);
-    for (const cl of (classesRes.data || []) as { id: string; name: string; day_of_week: string; start_time: string }[]) {
+    for (const cl of (classesRes.data || []) as { id: string; name: string; day_of_week: string | null; start_time: string; event_date: string | null }[]) {
       items.push({
         id: `class-${cl.id}`,
         kind: "class",
         label: cl.name,
-        hint: `${cl.day_of_week} · ${(cl.start_time || "").slice(0, 5)}`,
+        hint: `${cl.event_date || cl.day_of_week} · ${(cl.start_time || "").slice(0, 5)}`,
         href: `/schedule#class-${cl.id}`,
       });
     }

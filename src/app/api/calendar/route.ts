@@ -208,6 +208,32 @@ export async function GET(req: NextRequest) {
 
   // One VEVENT per class with RRULE (infinite weekly recurrence) + EXDATE (holidays + future leaves).
   for (const cls of myClasses) {
+    // One-off classes (corporate events): single dated VEVENT, no RRULE.
+    if (cls.event_date) {
+      if (!cls.start_time || !cls.end_time) continue;
+      const [ey, em, ed] = parseYmd(cls.event_date);
+      const [sH, sM] = cls.start_time.split(":").map(Number);
+      const [eH, eM] = cls.end_time.split(":").map(Number);
+      const evCoaches = [
+        cls.lead_coach?.full_name,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(cls.class_coaches?.filter((cc: any) => !cc.is_lead && cc.coach).map((cc: any) => cc.coach.full_name) || []),
+      ]
+        .filter(Boolean)
+        .join(", ");
+      const kindLabel = cls.class_kind === "corporate" ? "Corporate class" : "One-off class";
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:class-${cls.id}@jaimuaythai`,
+        `DTSTART;TZID=Asia/Singapore:${toLocalIcs(ey, em, ed, sH, sM)}`,
+        `DTEND;TZID=Asia/Singapore:${toLocalIcs(ey, em, ed, eH, eM)}`,
+        `SUMMARY:${escapeIcs(cls.name)}`,
+        `DESCRIPTION:${escapeIcs(`${kindLabel} · ${evCoaches}`)}`,
+        "CATEGORIES:Class",
+        "END:VEVENT"
+      );
+      continue;
+    }
     if (!DAY_TO_BYDAY[cls.day_of_week]) continue;
     if (!cls.created_at) continue;
     if (!cls.start_time || !cls.end_time) continue;
