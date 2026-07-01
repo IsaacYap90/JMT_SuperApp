@@ -41,3 +41,6 @@ logs/
 # expo / mobile app workspace
 .expo/
 jai-muaythai-app/
+
+# Supabase CLI local state (not for git)
+supabase/.temp/
