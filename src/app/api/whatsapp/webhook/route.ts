@@ -10,6 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { generateReply } from "@/lib/wa/jai-reply";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
+import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { createClient as createSbClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -82,7 +84,7 @@ export async function POST(req: NextRequest) {
     if (lead?.ai_paused) return NextResponse.json({ ok: true });
 
     const history = [...(prior || []), { role: "user" as const, message: text }];
-    const { messageText, quickReplies, escalation } = await generateReply(history, isNewContact);
+    const { messageText, quickReplies, escalation } = await generateReply(history, isNewContact, contactName);
 
     await sb.from("conversations").insert({
       contact_number: from,
@@ -97,8 +99,36 @@ export async function POST(req: NextRequest) {
       await sendText(from, messageText);
     }
 
-    // TODO(phase 2): notify Coach Jeremy on Telegram when `escalation` is set.
-    if (escalation) console.log("[jai-webhook] escalation:", escalation, "from", from);
+    // Escalation → ping the gym's master_admin(s) (Jeremy) on Telegram so a
+    // PT lead / freeze / complaint / corporate enquiry doesn't fall through.
+    if (escalation) {
+      try {
+        const pub = createSbClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        const { data: admins } = await pub.from("users").select("id").eq("role", "master_admin");
+        const labels: Record<string, string> = {
+          PT_LEAD: "PT lead 🥊",
+          CORPORATE: "Corporate / group enquiry",
+          COMPLAINT: "Complaint / issue ⚠️",
+          TRIAL_BOOKED: "Trial booked ✅",
+          GENERAL_ESCALATION: "Needs your attention",
+        };
+        const label = labels[escalation.escalation] || escalation.escalation;
+        const alert =
+          `🔔 JAI bot — ${label}\n` +
+          `Customer: ${contactName || "Unknown"} (+${from})\n` +
+          (escalation.intent ? `Intent: ${escalation.intent}\n` : "") +
+          `Last message: "${text}"\n\n` +
+          `Reply in the WA INBOX (JMT OS).`;
+        for (const a of admins || []) {
+          await sendTelegramPlainToUser(a.id, alert, "jai-escalation");
+        }
+      } catch (e) {
+        console.error("[jai-webhook] escalation notify failed", e);
+      }
+    }
 
     return NextResponse.json({ ok: true });
   } catch (err) {

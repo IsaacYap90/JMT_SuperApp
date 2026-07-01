@@ -139,11 +139,16 @@ type HistoryMsg = { role: "user" | "assistant"; message: string };
 // Call DeepSeek (OpenAI-compatible) and return the parsed reply.
 export async function generateReply(
   history: HistoryMsg[],
-  isNewContact: boolean
+  isNewContact: boolean,
+  customerName?: string | null
 ): Promise<ParsedReply> {
   let systemPrompt = SYSTEM_PROMPT;
+  const firstName = (customerName || "").trim().split(/\s+/)[0];
+  if (firstName) {
+    systemPrompt += `\n\nThe customer's WhatsApp name is "${customerName}". Address them by their first name ("${firstName}") naturally — especially in the greeting (e.g. "Hey ${firstName}!"). Don't overuse it or repeat it every message.`;
+  }
   if (isNewContact) {
-    systemPrompt += "\n\nThis is a NEW contact messaging for the first time. Use the greeting flow.";
+    systemPrompt += "\n\nThis is a NEW contact messaging for the first time. Use the greeting flow" + (firstName ? `, greeting ${firstName} by name.` : ".");
   }
 
   const messages = [
