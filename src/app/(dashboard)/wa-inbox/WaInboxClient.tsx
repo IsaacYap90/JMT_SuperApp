@@ -54,6 +54,7 @@ export default function WaInboxClient() {
   const [search, setSearch] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const threadContainerRef = useRef<HTMLDivElement>(null);
 
   const fetchMessages = useCallback(async () => {
     try {
@@ -72,9 +73,19 @@ export default function WaInboxClient() {
     return () => clearInterval(t);
   }, [fetchMessages]);
 
+  // Jump to the latest message when a conversation is opened.
   useEffect(() => {
-    if (selected && threadEndRef.current) threadEndRef.current.scrollIntoView({ behavior: "smooth" });
-  }, [selected, conversations]);
+    if (selected && threadEndRef.current) threadEndRef.current.scrollIntoView();
+  }, [selected]);
+
+  // On new messages (2s poll), only follow to the bottom if the user is already
+  // near it — so scrolling up to read history isn't yanked back down.
+  useEffect(() => {
+    const el = threadContainerRef.current;
+    if (!el || !threadEndRef.current) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+    if (nearBottom) threadEndRef.current.scrollIntoView();
+  }, [conversations]);
 
   const active = conversations.find((c) => c.phone === selected);
   const showThreadOnly = !!active;
@@ -150,7 +161,7 @@ export default function WaInboxClient() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-2">
+            <div ref={threadContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-2">
               {(() => {
                 const els: React.ReactNode[] = [];
                 let prevDay = "";
