@@ -1,5 +1,8 @@
 // JAI bot reply logic — ported from the standalone jai-bot into JMT OS.
-// Uses DeepSeek (OpenAI-compatible) over plain fetch (no extra dependency).
+// Uses Claude Haiku 4.5 via the Anthropic SDK (reads ANTHROPIC_API_KEY).
+import Anthropic from "@anthropic-ai/sdk";
+
+const anthropic = new Anthropic();
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
 
@@ -146,30 +149,20 @@ export async function generateReply(
     systemPrompt += "\n\nThis is a NEW contact messaging for the first time. Use the greeting flow.";
   }
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    ...history.map((m) => ({ role: m.role, content: m.message })),
-  ];
-
   try {
-    const res = await fetch("https://api.deepseek.com/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model: "deepseek-chat", max_tokens: 500, messages }),
-      cache: "no-store",
+    const msg = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 500,
+      system: systemPrompt,
+      messages: history.map((m) => ({ role: m.role, content: m.message })),
     });
-    if (!res.ok) {
-      console.error("[jai-reply] DeepSeek error", res.status, await res.text().catch(() => ""));
-      return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [] };
-    }
-    const data = await res.json();
-    const text: string = data?.choices?.[0]?.message?.content ?? "";
+    const text = msg.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join("");
     return parseResponse(text);
   } catch (err) {
-    console.error("[jai-reply] error", err);
+    console.error("[jai-reply] Anthropic error", err);
     return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [] };
   }
 }
