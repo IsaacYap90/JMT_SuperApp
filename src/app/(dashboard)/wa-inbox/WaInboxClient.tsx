@@ -7,7 +7,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 
 type Role = "user" | "assistant";
-type Msg = { id: string; role: Role; body: string; ts: string };
+type Msg = { id: string; role: Role; body: string; via?: string | null; ts: string };
 type Conv = {
   phone: string;
   name: string | null;
@@ -179,6 +179,11 @@ export default function WaInboxClient() {
                   els.push(
                     <div key={m.id} className={`flex ${isOut ? "justify-end" : "justify-start"}`}>
                       <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap ${isOut ? "bg-jai-blue text-white rounded-br-sm" : "bg-jai-card text-gray-100 rounded-bl-sm"}`}>
+                        {isOut && (
+                          <div className={`text-[11px] font-bold mb-0.5 ${m.via === "human" ? "text-amber-200" : "text-white/90"}`}>
+                            {m.via === "human" ? "Coach Jeremy" : "Jai"}
+                          </div>
+                        )}
                         <div>{m.body}</div>
                         <div className={`text-[10px] mt-1 ${isOut ? "text-white/70" : "text-gray-400"}`}>{fmtTime(m.ts)}</div>
                       </div>

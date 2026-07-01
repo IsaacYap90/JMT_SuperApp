@@ -78,25 +78,38 @@ export async function POST(req: NextRequest) {
     // Jeremy has taken over this chat from the inbox → stay quiet (still logged above).
     const { data: lead } = await sb
       .from("leads")
-      .select("ai_paused")
+      .select("ai_paused, is_member")
       .eq("contact_number", from)
       .maybeSingle();
     if (lead?.ai_paused) return NextResponse.json({ ok: true });
 
     const history = [...(prior || []), { role: "user" as const, message: text }];
-    const { messageText, quickReplies, escalation } = await generateReply(history, isNewContact, contactName);
+    const { messageText, quickReplies, escalation, member } = await generateReply(
+      history,
+      isNewContact,
+      contactName,
+      lead?.is_member ?? false
+    );
+
+    // Learned member detection — once the bot recognises an existing member, remember it.
+    if (member && !lead?.is_member) {
+      await sb.from("leads").update({ is_member: true }).eq("contact_number", from);
+    }
 
     await sb.from("conversations").insert({
       contact_number: from,
       contact_name: contactName,
       role: "assistant",
       message: messageText,
+      via: "bot",
     });
 
+    // Label the outbound so the customer sees who's replying (ConnectLah-style).
+    const outbound = `*Jai*\n${messageText}`;
     if (quickReplies.length > 0) {
-      await sendQuickReplies(from, messageText, quickReplies);
+      await sendQuickReplies(from, outbound, quickReplies);
     } else {
-      await sendText(from, messageText);
+      await sendText(from, outbound);
     }
 
     // Escalation → ping the gym's master_admin(s) (Jeremy) on Telegram so a

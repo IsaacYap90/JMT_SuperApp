@@ -47,7 +47,8 @@ export async function POST(req: NextRequest) {
   if (!phone) return NextResponse.json({ error: "phone required" }, { status: 400 });
   if (!body) return NextResponse.json({ error: "body required" }, { status: 400 });
 
-  const sent = await deliver(phone, body);
+  // Label the outbound so the customer sees it's the real coach, not the bot.
+  const sent = await deliver(phone, `*Coach Jeremy*\n${body}`);
   if (!sent.ok) {
     console.error("[wa-inbox send] deliver failed", sent.status, sent.detail);
     return NextResponse.json({ error: "WhatsApp send failed", detail: sent.detail }, { status: 502 });
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await createJaiClient()
     .from("conversations")
-    .insert({ contact_number: phone, role: "assistant", message: body });
+    .insert({ contact_number: phone, role: "assistant", message: body, via: "human" });
   if (error) console.error("[wa-inbox send] log insert failed", error);
 
   return NextResponse.json({ ok: true });

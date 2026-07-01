@@ -93,6 +93,8 @@ When you need to escalate, include a JSON block:
 {"escalation": "TYPE", "intent": "intent_value", "source": "source_value"}
 Types: PT_LEAD, CORPORATE, COMPLAINT, TRIAL_BOOKED, GENERAL_ESCALATION
 
+If the person is clearly an EXISTING MEMBER — they talk about their CURRENT membership (freeze, renewal, billing, their plan, "I renewed already", "my class", attendance, being away next week) rather than enquiring like a brand-new prospect — add this exact tag on its own line: [MEMBER]
+
 For quick reply buttons:
 [QUICK_REPLIES: "Option 1", "Option 2", "Option 3"]`;
 
@@ -102,6 +104,7 @@ export type ParsedReply = {
   messageText: string;
   escalation: Escalation | null;
   quickReplies: string[];
+  member: boolean;
 };
 
 // Pull the optional escalation JSON block + quick-reply directive out of the raw
@@ -110,6 +113,14 @@ export function parseResponse(rawText: string): ParsedReply {
   let messageText = rawText;
   let escalation: Escalation | null = null;
   let quickReplies: string[] = [];
+
+  // Existing-member signal — the model emits a bare [MEMBER] tag when the person
+  // is clearly an existing member (talks about their current membership).
+  let member = false;
+  if (/\[MEMBER\]/i.test(messageText)) {
+    member = true;
+    messageText = messageText.replace(/\[MEMBER\]/gi, "").trim();
+  }
 
   const jsonMatch = rawText.match(/\{[\s\S]*?"escalation"\s*:\s*"[^"]+?"[\s\S]*?\}/);
   if (jsonMatch) {
@@ -132,7 +143,7 @@ export function parseResponse(rawText: string): ParsedReply {
   }
 
   messageText = messageText.replace(/\n{3,}/g, "\n\n").trim();
-  return { messageText, escalation, quickReplies };
+  return { messageText, escalation, quickReplies, member };
 }
 
 type HistoryMsg = { role: "user" | "assistant"; message: string };
@@ -141,14 +152,18 @@ type HistoryMsg = { role: "user" | "assistant"; message: string };
 export async function generateReply(
   history: HistoryMsg[],
   isNewContact: boolean,
-  customerName?: string | null
+  customerName?: string | null,
+  isMember?: boolean
 ): Promise<ParsedReply> {
   let systemPrompt = SYSTEM_PROMPT;
   const firstName = (customerName || "").trim().split(/\s+/)[0];
   if (firstName) {
     systemPrompt += `\n\nThe customer's WhatsApp name is "${customerName}". Address them by their first name ("${firstName}") naturally — especially in the greeting (e.g. "Hey ${firstName}!"). Don't overuse it or repeat it every message.`;
   }
-  if (isNewContact) {
+  if (isMember) {
+    systemPrompt += `\n\nThis contact is a KNOWN EXISTING MEMBER${firstName ? ` (${firstName})` : ""}. Greet them warmly as a member — do NOT pitch the free trial or quote new-joiner prices. For membership admin (renewal, freeze, billing, plan changes) gather brief details and hand to Coach Jeremy.`;
+  }
+  if (isNewContact && !isMember) {
     systemPrompt += "\n\nThis is a NEW contact messaging for the first time. Use the greeting flow" + (firstName ? `, greeting ${firstName} by name.` : ".");
   }
 
@@ -169,13 +184,13 @@ export async function generateReply(
     });
     if (!res.ok) {
       console.error("[jai-reply] DeepSeek error", res.status, await res.text().catch(() => ""));
-      return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [] };
+      return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [], member: false };
     }
     const data = await res.json();
     const text: string = data?.choices?.[0]?.message?.content ?? "";
     return parseResponse(text);
   } catch (err) {
     console.error("[jai-reply] error", err);
-    return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [] };
+    return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [], member: false };
   }
 }
