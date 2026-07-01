@@ -15,6 +15,7 @@ type Row = {
   contact_name: string | null;
   role: "user" | "assistant";
   message: string;
+  via: string | null;
   created_at: string;
 };
 
@@ -26,7 +27,7 @@ export async function GET() {
   const supabase = createJaiClient();
   const { data, error } = await supabase
     .from("conversations")
-    .select("id, contact_number, contact_name, role, message, created_at")
+    .select("id, contact_number, contact_name, role, message, via, created_at")
     .order("created_at", { ascending: false })
     .limit(1000);
 
@@ -63,7 +64,7 @@ export async function GET() {
       last_body: last.message,
       last_role: last.role,
       paused: !!lead?.ai_paused,
-      messages: sorted.map((m) => ({ id: m.id, role: m.role, body: m.message, ts: m.created_at })),
+      messages: sorted.map((m) => ({ id: m.id, role: m.role, body: m.message, via: m.via, ts: m.created_at })),
     };
   });
 
