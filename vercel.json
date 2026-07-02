@@ -21,6 +21,10 @@
       "schedule": "*/30 * * * *"
     },
     {
+      "path": "/api/cron/lead-followup",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/cron/meta-lead-sync",
       "schedule": "*/30 * * * *"
     },
