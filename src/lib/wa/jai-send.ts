@@ -65,6 +65,25 @@ export async function sendTemplate(to: string, name: string, bodyParams: string[
   });
 }
 
+// Retry wrapper for must-deliver sends (trial reminders): most failures are
+// transient Meta/network blips, so try up to `tries` times with a short
+// backoff before giving up and letting the caller escalate to a human.
+export async function sendTemplateWithRetry(
+  to: string,
+  name: string,
+  bodyParams: string[],
+  tries = 3,
+  lang = "en"
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    if (await sendTemplate(to, name, bodyParams, lang)) return true;
+    if (attempt < tries) {
+      await new Promise((r) => setTimeout(r, attempt * 1500)); // 1.5s, 3s
+    }
+  }
+  return false;
+}
+
 export async function markRead(messageId: string) {
   return waFetch("/messages", {
     messaging_product: "whatsapp",

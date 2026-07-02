@@ -9,7 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
-import { sendTemplate } from "@/lib/wa/jai-send";
+import { sendTemplateWithRetry } from "@/lib/wa/jai-send";
 import { createJaiClient } from "@/lib/supabase/jai";
 
 // SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
     // Emails stored in the phone field (Calendly fallback) = no phone.
     if (!waWindow || !trial.phone || trial.phone.includes("@")) continue;
     const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
-    const ok = await sendTemplate(waTo(trial.phone), "trial_reminder_1h", [
+    const ok = await sendTemplateWithRetry(waTo(trial.phone), "trial_reminder_1h", [
       first,
       fmtTime(cls.start_time),
     ]);
