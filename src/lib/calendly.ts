@@ -162,7 +162,9 @@ export async function cancelCalendlyEvent(
   reason: string
 ): Promise<boolean> {
   try {
-    const uuid = eventUri.split("/").filter(Boolean).pop();
+    // trial_bookings stores the INVITEE uri (…/scheduled_events/<event>/invitees/<invitee>)
+    // — extract the EVENT uuid, not whatever segment comes last.
+    const uuid = eventUri.match(/scheduled_events\/([^/]+)/)?.[1];
     if (!uuid) return false;
     await calendlyFetch(`/scheduled_events/${uuid}/cancellation`, {
       method: "POST",
