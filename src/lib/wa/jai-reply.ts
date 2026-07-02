@@ -1,4 +1,4 @@
-// JAI bot reply logic — ported from the standalone jai-bot into JMT OS.
+// JAI (JMT AI assistant) reply logic — ported from the standalone jai-bot into JMT OS.
 // Uses DeepSeek (OpenAI-compatible) over plain fetch (no extra dependency).
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
