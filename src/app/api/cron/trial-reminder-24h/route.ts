@@ -8,11 +8,28 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { resolveTrialRecipients } from "@/lib/trial-recipients";
 import { sendTemplate } from "@/lib/wa/jai-send";
+import { createJaiClient } from "@/lib/supabase/jai";
 
 // SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
 function waTo(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.startsWith("65") ? digits : `65${digits}`;
+}
+
+// The trial_reminder_24h template body, rendered — logged to jai.conversations
+// so the reminder shows up in the WA INBOX thread like any other bot message.
+function reminder24hText(first: string, prettyDate: string, time: string): string {
+  return (
+    `Hi ${first}! Reminder — your free trial at Jai Muay Thai is tomorrow, ${prettyDate} at ${time} 🥊\n\n` +
+    `What to prepare:\n` +
+    `- Wear a t-shirt and shorts\n` +
+    `- Bring your water bottle and a towel\n` +
+    `- Arrive 10 mins earlier if possible\n\n` +
+    `📍 Where to find us: Link@AMK, 3 Ang Mo Kio Street 62, #03-17, S569139\n` +
+    `https://maps.app.goo.gl/NExDxhC3KehaLiVK8\n\n` +
+    `Once you arrive at Link@AMK, head to the lift lobby and take the lift up to level 3. When you step out, you'll see us directly opposite, on your right.\n\n` +
+    `If you can't make it, just let us know. See you tomorrow! 🙏🏽`
+  );
 }
 
 export const dynamic = "force-dynamic";
@@ -164,6 +181,7 @@ export async function GET(req: NextRequest) {
   // Telegram ping to coaches/admins stays as the heads-up; if a WA send
   // fails, the admin line falls back to the old one-tap wa.me link.
   const waSent = new Map<string, boolean>();
+  const jai = createJaiClient();
   for (const { trial, cls } of upcomingTrials) {
     if (!trial.phone) {
       waSent.set(trial.id, false);
@@ -176,6 +194,16 @@ export async function GET(req: NextRequest) {
       fmtTime(cls.start_time),
     ]);
     waSent.set(trial.id, ok);
+    if (ok) {
+      // Mirror the send into the WA INBOX thread so Jeremy can see it there.
+      await jai.from("conversations").insert({
+        contact_number: waTo(trial.phone),
+        contact_name: trial.name,
+        role: "assistant",
+        message: reminder24hText(first, prettyDate, fmtTime(cls.start_time)),
+        via: "bot",
+      });
+    }
   }
 
   let sent = 0;
@@ -184,20 +212,23 @@ export async function GET(req: NextRequest) {
 
   for (const [userId, items] of Array.from(recipientTrials)) {
     const isAdmin = adminIds.has(userId);
+    // Short, casual ping (Isaac 2026-07-02: no full reminder text, just
+    // "trial reminder for sarah tmr at 630pm class is sent Boss").
     const lines: string[] = [];
-    lines.push("📅 Trial tomorrow — 24h heads up");
-    lines.push("");
     for (const { trial, cls } of items) {
-      lines.push(
-        `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
-      );
+      const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
       if (waSent.get(trial.id)) {
-        lines.push(`  ✅ Reminder auto-sent to them on WhatsApp`);
+        lines.push(`✅ Boss, trial reminder sent to ${first} — ${cls.name} tomorrow ${fmtTime(cls.start_time)}`);
       } else if (isAdmin) {
         lines.push(
-          `  ⚠️ Auto-send failed — tap to remind: ${waReminderLink(trial.name, trial.phone, prettyDate, cls.start_time)}`
+          `⚠️ Reminder to ${trial.name} (${trial.phone}) didn't send — tap to remind: ${waReminderLink(trial.name, trial.phone, prettyDate, cls.start_time)}`
         );
+      } else {
+        lines.push(`📅 Trial tomorrow ${fmtTime(cls.start_time)} ${cls.name} — ${trial.name}`);
       }
+    }
+    if (items.some(({ trial }) => waSent.get(trial.id))) {
+      lines.push("Full message is in the WA INBOX tab (JMT OS).");
     }
 
     const message = lines.join("\n").trim();

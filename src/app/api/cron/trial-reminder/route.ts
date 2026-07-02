@@ -10,11 +10,24 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { sendTemplate } from "@/lib/wa/jai-send";
+import { createJaiClient } from "@/lib/supabase/jai";
 
 // SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
 function waTo(phone: string): string {
   const digits = phone.replace(/\D/g, "");
   return digits.startsWith("65") ? digits : `65${digits}`;
+}
+
+// The trial_reminder_1h template body, rendered — logged to jai.conversations
+// so the reminder shows up in the WA INBOX thread like any other bot message.
+function reminder1hText(first: string, time: string): string {
+  return (
+    `Hi ${first}! Your trial at Jai Muay Thai is in about an hour — ${time} 🥊\n\n` +
+    `Quick check: t-shirt and shorts, water bottle and a towel, and come 10 mins early if you can.\n\n` +
+    `📍 Link@AMK, 3 Ang Mo Kio Street 62, #03-17, S569139\n` +
+    `https://maps.app.goo.gl/NExDxhC3KehaLiVK8\n\n` +
+    `Head to the lift lobby, take the lift to level 3 — we're directly opposite, on your right. See you soon!`
+  );
 }
 
 export const dynamic = "force-dynamic";
@@ -170,6 +183,7 @@ export async function GET(req: NextRequest) {
   // Auto-send the approved trial_reminder_1h template to each booker, only
   // inside the once-only waWindow (approved 2026-07-02).
   const waSent = new Map<string, boolean>();
+  const jai = createJaiClient();
   for (const { trial, cls, waWindow } of upcomingTrials) {
     if (!waWindow || !trial.phone) continue;
     const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
@@ -178,6 +192,16 @@ export async function GET(req: NextRequest) {
       fmtTime(cls.start_time),
     ]);
     waSent.set(trial.id, ok);
+    if (ok) {
+      // Mirror the send into the WA INBOX thread so Jeremy can see it there.
+      await jai.from("conversations").insert({
+        contact_number: waTo(trial.phone),
+        contact_name: trial.name,
+        role: "assistant",
+        message: reminder1hText(first, fmtTime(cls.start_time)),
+        via: "bot",
+      });
+    }
   }
 
   let sent = 0;
@@ -185,21 +209,25 @@ export async function GET(req: NextRequest) {
 
   for (const [userId, items] of Array.from(recipientTrials)) {
     const isAdmin = adminIds.has(userId);
+    // Short, casual ping (Isaac 2026-07-02) — and only in the send window;
+    // the earlier 60–90 min pass stays silent so nobody gets double-pinged.
+    const windowItems = items.filter(({ waWindow }) => waWindow);
+    if (windowItems.length === 0) continue;
+
     const lines: string[] = [];
-    lines.push("⏰ Trial reminder — coming up soon!");
-    lines.push("");
-    for (const { trial, cls, waWindow } of items) {
-      lines.push(
-        `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
-      );
+    for (const { trial, cls } of windowItems) {
+      const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
       if (waSent.get(trial.id)) {
-        lines.push(`  ✅ Reminder auto-sent to them on WhatsApp`);
-      } else if (waWindow && isAdmin && trial.phone) {
+        lines.push(`✅ Boss, 1-hour reminder sent to ${first} — ${cls.name} at ${fmtTime(cls.start_time)}`);
+      } else if (isAdmin && trial.phone) {
         // Auto-send failed — fall back to the one-tap manual reminder.
-        lines.push(`  ⚠️ Auto-send failed — tap to remind: ${waReminder1hLink(trial.name, trial.phone, cls.start_time)}`);
-      } else if (!waWindow) {
-        lines.push(`  🤖 Their WhatsApp reminder goes out automatically closer to start`);
+        lines.push(`⚠️ 1-hour reminder to ${trial.name} (${trial.phone}) didn't send — tap to remind: ${waReminder1hLink(trial.name, trial.phone, cls.start_time)}`);
+      } else {
+        lines.push(`⏰ Trial in ~1h: ${fmtTime(cls.start_time)} ${cls.name} — ${trial.name}`);
       }
+    }
+    if (windowItems.some(({ trial }) => waSent.get(trial.id))) {
+      lines.push("Full message is in the WA INBOX tab (JMT OS).");
     }
 
     const message = lines.join("\n").trim();
