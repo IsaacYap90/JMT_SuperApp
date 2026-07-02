@@ -40,10 +40,18 @@ function todaySgtYmd(): string {
 function prettyDate(ymd: string): string {
   const today = todaySgtYmd();
   if (ymd === today) return "today";
+  // Format the calendar date itself — pin the timezone, or Vercel's UTC
+  // clock renders SGT dates one day early (live bug 2026-07-02).
   const d = new Date(`${ymd}T00:00:00+08:00`);
-  const label = d.toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short" });
-  const tomorrow = new Date(new Date(`${today}T00:00:00+08:00`).getTime() + 86400e3);
-  const tYmd = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, "0")}-${String(tomorrow.getDate()).padStart(2, "0")}`;
+  const label = d.toLocaleDateString("en-SG", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    timeZone: "Asia/Singapore",
+  });
+  const [y, m, dd] = today.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, dd) + 86400e3);
+  const tYmd = `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}-${String(t.getUTCDate()).padStart(2, "0")}`;
   return ymd === tYmd ? `tomorrow (${label})` : label;
 }
 
