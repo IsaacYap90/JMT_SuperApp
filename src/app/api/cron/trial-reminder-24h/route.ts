@@ -39,8 +39,9 @@ function waReminderLink(
     `- Arrive 10 mins earlier if possible\n` +
     `\n` +
     `📍 Where to find us: Link@AMK, 3 Ang Mo Kio Street 62, #03-17, S569139\n` +
-    `https://maps.google.com/?q=JAI+Muay+Thai+Link+AMK+Singapore\n` +
-    `Once you arrive at Link@AMK, take the lift at the left lobby up to level 3. When you step out of the lift lobby, you'll see us directly opposite, on your right.\n` +
+    `https://maps.app.goo.gl/NExDxhC3KehaLiVK8\n` +
+    `\n` +
+    `Once you arrive at Link@AMK, head to the lift lobby and take the lift up to level 3. When you step out, you'll see us directly opposite, on your right.\n` +
     `\n` +
     `If you can't make it, just let us know. See you tomorrow! 🙏🏽`;
   return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;

@@ -126,15 +126,53 @@ export async function POST(req: NextRequest) {
           CORPORATE: "Corporate / group enquiry",
           COMPLAINT: "Complaint / issue ⚠️",
           TRIAL_BOOKED: "Trial booked ✅",
+          TRIAL_CANCEL: "Trial cancelled / reschedule ↩️",
           GENERAL_ESCALATION: "Needs your attention",
         };
+
+        // Trial cancellation: release the booking so reminders stop and the
+        // slot stops showing as expected. Only auto-cancel on an unambiguous
+        // single match (same phone tail, future date, still "booked") —
+        // anything else is left for Jeremy to resolve from the alert.
+        let cancelNote = "";
+        if (escalation.escalation === "TRIAL_CANCEL") {
+          try {
+            const tail = from.replace(/\D/g, "").slice(-8);
+            const today = new Date(
+              new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" })
+            );
+            const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+            const { data: open } = await pub
+              .from("trial_bookings")
+              .select("id, name, phone, booking_date, time_slot")
+              .eq("status", "booked")
+              .gte("booking_date", ymd);
+            const matches = (open || []).filter(
+              (t) => (t.phone || "").replace(/\D/g, "").slice(-8) === tail
+            );
+            if (matches.length === 1) {
+              await pub
+                .from("trial_bookings")
+                .update({ status: "cancelled" })
+                .eq("id", matches[0].id);
+              cancelNote = `Booking ${matches[0].booking_date} ${matches[0].time_slot || ""} marked CANCELLED in JMT OS.\n`;
+            } else {
+              cancelNote = `Could not auto-match a booking (${matches.length} candidates) — please update Trial Management manually.\n`;
+            }
+          } catch (e) {
+            console.error("[jai-webhook] trial cancel update failed", e);
+            cancelNote = "Booking update failed — please update Trial Management manually.\n";
+          }
+        }
+
         const label = labels[escalation.escalation] || escalation.escalation;
         const alert =
           `🔔 JAI bot — ${label}\n` +
           `Customer: ${contactName || "Unknown"} (+${from})\n` +
           (escalation.intent ? `Intent: ${escalation.intent}\n` : "") +
-          `Last message: "${text}"\n\n` +
-          `Reply in the WA INBOX (JMT OS).`;
+          `Last message: "${text}"\n` +
+          cancelNote +
+          `\nReply in the WA INBOX (JMT OS).`;
         for (const a of admins || []) {
           await sendTelegramPlainToUser(a.id, alert, "jai-escalation");
         }
