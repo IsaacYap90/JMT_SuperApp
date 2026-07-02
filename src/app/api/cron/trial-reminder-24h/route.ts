@@ -7,14 +7,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { resolveTrialRecipients } from "@/lib/trial-recipients";
-import { sendTemplateWithRetry } from "@/lib/wa/jai-send";
+import { sendTemplateWithRetry, waTo } from "@/lib/wa/jai-send";
 import { createJaiClient } from "@/lib/supabase/jai";
-
-// SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
-function waTo(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return digits.startsWith("65") ? digits : `65${digits}`;
-}
 
 // The trial_reminder_24h template body, rendered — logged to jai.conversations
 // so the reminder shows up in the WA INBOX thread like any other bot message.
@@ -34,6 +28,7 @@ function reminder24hText(first: string, prettyDate: string, time: string): strin
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function fmtTime(hhmm: string): string {
   const [hStr, mStr] = hhmm.split(":");
@@ -44,31 +39,11 @@ function fmtTime(hhmm: string): string {
   return `${h}:${mStr}${suffix}`;
 }
 
-// Tap-to-WhatsApp link with a prefilled trial reminder, so the coach/admin
-// can one-tap message the trial-booker from their own WhatsApp.
-function waReminderLink(
-  name: string,
-  phone: string,
-  prettyDate: string,
-  startTime: string
-): string {
-  const digits = phone.replace(/\D/g, "");
+// Tap-to-WhatsApp fallback link — same text the auto-send delivers, so the
+// manual path and the WA INBOX mirror can never drift apart.
+function waReminderLink(name: string, phone: string, prettyDate: string, startTime: string): string {
   const first = (name || "").trim().split(/\s+/)[0] || "there";
-  const msg =
-    `Hi ${first}! Reminder — your free trial at Jai Muay Thai is tomorrow, ${prettyDate} at ${fmtTime(startTime)} 🥊\n` +
-    `\n` +
-    `What to prepare:\n` +
-    `- Wear a t-shirt and shorts\n` +
-    `- Bring your water bottle and a towel\n` +
-    `- Arrive 10 mins earlier if possible\n` +
-    `\n` +
-    `📍 Where to find us: Link@AMK, 3 Ang Mo Kio Street 62, #03-17, S569139\n` +
-    `https://maps.app.goo.gl/NExDxhC3KehaLiVK8\n` +
-    `\n` +
-    `Once you arrive at Link@AMK, head to the lift lobby and take the lift up to level 3. When you step out, you'll see us directly opposite, on your right.\n` +
-    `\n` +
-    `If you can't make it, just let us know. See you tomorrow! 🙏🏽`;
-  return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;
+  return `https://wa.me/${waTo(phone)}?text=${encodeURIComponent(reminder24hText(first, prettyDate, fmtTime(startTime)))}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -182,7 +157,12 @@ export async function GET(req: NextRequest) {
   // fails, the admin line falls back to the old one-tap wa.me link.
   const waSent = new Map<string, boolean>();
   const jai = createJaiClient();
+  const waEnvOk = !!(process.env.WA_PHONE_NUMBER_ID && process.env.WA_ACCESS_TOKEN);
   for (const { trial, cls } of upcomingTrials) {
+    if (!waEnvOk) {
+      waSent.set(trial.id, false);
+      continue;
+    }
     // Calendly falls back to storing the EMAIL in the phone field when no
     // phone was given — treat those as no-phone (Jeremy handles manually).
     if (!trial.phone || trial.phone.includes("@")) {
@@ -198,13 +178,18 @@ export async function GET(req: NextRequest) {
     waSent.set(trial.id, ok);
     if (ok) {
       // Mirror the send into the WA INBOX thread so Jeremy can see it there.
-      await jai.from("conversations").insert({
-        contact_number: waTo(trial.phone),
-        contact_name: trial.name,
-        role: "assistant",
-        message: reminder24hText(first, prettyDate, fmtTime(cls.start_time)),
-        via: "bot",
-      });
+      // Never let a mirror failure abort the remaining sends or the marking.
+      try {
+        await jai.from("conversations").insert({
+          contact_number: waTo(trial.phone),
+          contact_name: trial.name,
+          role: "assistant",
+          message: reminder24hText(first, prettyDate, fmtTime(cls.start_time)),
+          via: "bot",
+        });
+      } catch (e) {
+        console.error("[trial-reminder-24h] WA INBOX mirror failed", e);
+      }
     }
   }
 
@@ -242,15 +227,17 @@ export async function GET(req: NextRequest) {
     const ok = await sendTelegramPlainToUser(userId, message);
     if (ok) {
       sent++;
+      // Per-recipient marking (same guarantee as before the auto-send change):
+      // a trial is covered when a Telegram that CONTAINED it was delivered.
+      for (const { trial } of items) deliveredTrialIds.add(trial.id);
     } else {
       skipped++;
     }
   }
 
-  // A trial counts as reminded if the customer got the WhatsApp, or at least
-  // one Telegram heads-up landed (backstop cron picks up the rest).
+  // The customer WhatsApp itself also counts as a delivered reminder.
   for (const { trial } of upcomingTrials) {
-    if (waSent.get(trial.id) || sent > 0) deliveredTrialIds.add(trial.id);
+    if (waSent.get(trial.id)) deliveredTrialIds.add(trial.id);
   }
 
   // Mark trials whose 24h reminder reached at least one recipient, so the

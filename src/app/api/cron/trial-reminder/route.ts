@@ -1,22 +1,18 @@
-// Trial reminder — fires 1 hour before a trial class.
+// Trial reminder — fires ~1 hour before a trial class.
 // Runs every 30 minutes via Vercel Cron.
-// Uses a time-window approach: alerts for trials whose class starts
-// between 30 and 90 minutes from now, so each trial gets exactly one
-// reminder per 30-minute cron cycle.
+// Window: class starts 30–90 minutes from now. Idempotency: the
+// reminder_1h_sent_at column (per the repo cron rule: interval < window-size
+// requires a _sent_at filter, or duplicates fire) — a trial is processed
+// exactly once, jitter- and retry-proof.
 //
-// Recipients: coaches assigned to the class + all admins (Jeremy).
+// Recipients: customer gets the trial_reminder_1h WhatsApp template;
+// coaches assigned to the class + all admins (Jeremy) get a short Telegram.
 
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
-import { sendTemplateWithRetry } from "@/lib/wa/jai-send";
+import { sendTemplateWithRetry, waTo } from "@/lib/wa/jai-send";
 import { createJaiClient } from "@/lib/supabase/jai";
-
-// SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
-function waTo(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  return digits.startsWith("65") ? digits : `65${digits}`;
-}
 
 // The trial_reminder_1h template body, rendered — logged to jai.conversations
 // so the reminder shows up in the WA INBOX thread like any other bot message.
@@ -32,6 +28,7 @@ function reminder1hText(first: string, time: string): string {
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 60;
 
 function fmtTime(hhmm: string): string {
   const [hStr, mStr] = hhmm.split(":");
@@ -42,22 +39,11 @@ function fmtTime(hhmm: string): string {
   return `${h}:${mStr}${suffix}`;
 }
 
-// Tap-to-WhatsApp link with a prefilled ~1-hour reminder, so the admin can
-// one-tap message the trial-booker from their own WhatsApp (same pattern as
-// the 24h cron; Jeremy asked for a customer-facing 1h reminder 2026-07-02).
+// Tap-to-WhatsApp fallback link — same text the auto-send delivers, so the
+// manual path and the WA INBOX mirror can never drift apart.
 function waReminder1hLink(name: string, phone: string, startTime: string): string {
-  const digits = phone.replace(/\D/g, "");
   const first = (name || "").trim().split(/\s+/)[0] || "there";
-  const msg =
-    `Hi ${first}! Your trial at Jai Muay Thai is in about an hour — ${fmtTime(startTime)} 🥊\n` +
-    `\n` +
-    `Quick check: t-shirt and shorts, water bottle and a towel, and come 10 mins early if you can.\n` +
-    `\n` +
-    `📍 Link@AMK, 3 Ang Mo Kio Street 62, #03-17, S569139\n` +
-    `https://maps.app.goo.gl/NExDxhC3KehaLiVK8\n` +
-    `\n` +
-    `Head to the lift lobby, take the lift to level 3 — we're directly opposite, on your right. See you soon!`;
-  return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;
+  return `https://wa.me/${waTo(phone)}?text=${encodeURIComponent(reminder1hText(first, fmtTime(startTime)))}`;
 }
 
 export async function GET(req: NextRequest) {
@@ -94,7 +80,8 @@ export async function GET(req: NextRequest) {
     .from("trial_bookings")
     .select("id, name, phone, class_id, booking_date, time_slot, status, calendly_details")
     .eq("booking_date", ymd)
-    .eq("status", "booked");
+    .eq("status", "booked")
+    .is("reminder_1h_sent_at", null);
 
   if (!trials || trials.length === 0) {
     return NextResponse.json({ ok: true, sent: 0, reason: "no trials today" });
@@ -124,11 +111,10 @@ export async function GET(req: NextRequest) {
     classMap.set(c.id, c);
   }
 
-  // Filter trials whose class starts between 30 and 90 minutes from now.
-  // waWindow: the [30, 60) half only — with the 30-min cron cadence a trial
-  // passes through it exactly once, so the customer WhatsApp can't double-send
-  // (the Telegram heads-up may repeat across the full window; that's fine).
-  const upcomingTrials: { trial: (typeof trials)[0]; cls: ClsRow; waWindow: boolean }[] = [];
+  // Trials whose class starts 30–90 minutes from now. The
+  // reminder_1h_sent_at filter above makes this once-only regardless of
+  // cron jitter, double-fires, or skipped runs.
+  const upcomingTrials: { trial: (typeof trials)[0]; cls: ClsRow }[] = [];
   for (const t of trials) {
     const cls = classMap.get(t.class_id);
     if (!cls) continue;
@@ -136,7 +122,7 @@ export async function GET(req: NextRequest) {
     const classMinutes = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
     const diff = classMinutes - nowMinutes;
     if (diff >= 30 && diff < 90) {
-      upcomingTrials.push({ trial: t, cls, waWindow: diff < 60 });
+      upcomingTrials.push({ trial: t, cls });
     }
   }
 
@@ -160,7 +146,7 @@ export async function GET(req: NextRequest) {
   // Group trials by recipient
   const recipientTrials = new Map<
     string,
-    { trial: (typeof trials)[0]; cls: ClsRow; waWindow: boolean }[]
+    { trial: (typeof trials)[0]; cls: ClsRow }[]
   >();
 
   for (const item of upcomingTrials) {
@@ -180,13 +166,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Auto-send the approved trial_reminder_1h template to each booker, only
-  // inside the once-only waWindow (approved 2026-07-02).
+  // Auto-send the approved trial_reminder_1h template to each booker
+  // (approved 2026-07-02).
   const waSent = new Map<string, boolean>();
   const jai = createJaiClient();
-  for (const { trial, cls, waWindow } of upcomingTrials) {
+  const waEnvOk = !!(process.env.WA_PHONE_NUMBER_ID && process.env.WA_ACCESS_TOKEN);
+  for (const { trial, cls } of upcomingTrials) {
     // Emails stored in the phone field (Calendly fallback) = no phone.
-    if (!waWindow || !trial.phone || trial.phone.includes("@")) continue;
+    if (!waEnvOk || !trial.phone || trial.phone.includes("@")) continue;
     const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
     const ok = await sendTemplateWithRetry(waTo(trial.phone), "trial_reminder_1h", [
       first,
@@ -195,28 +182,30 @@ export async function GET(req: NextRequest) {
     waSent.set(trial.id, ok);
     if (ok) {
       // Mirror the send into the WA INBOX thread so Jeremy can see it there.
-      await jai.from("conversations").insert({
-        contact_number: waTo(trial.phone),
-        contact_name: trial.name,
-        role: "assistant",
-        message: reminder1hText(first, fmtTime(cls.start_time)),
-        via: "bot",
-      });
+      // Never let a mirror failure abort the remaining sends or the marking.
+      try {
+        await jai.from("conversations").insert({
+          contact_number: waTo(trial.phone),
+          contact_name: trial.name,
+          role: "assistant",
+          message: reminder1hText(first, fmtTime(cls.start_time)),
+          via: "bot",
+        });
+      } catch (e) {
+        console.error("[trial-reminder-1h] WA INBOX mirror failed", e);
+      }
     }
   }
 
   let sent = 0;
   let skipped = 0;
 
+  const deliveredTrialIds = new Set<string>();
   for (const [userId, items] of Array.from(recipientTrials)) {
     const isAdmin = adminIds.has(userId);
-    // Short, casual ping (Isaac 2026-07-02) — and only in the send window;
-    // the earlier 60–90 min pass stays silent so nobody gets double-pinged.
-    const windowItems = items.filter(({ waWindow }) => waWindow);
-    if (windowItems.length === 0) continue;
-
+    // Short, casual ping (Isaac 2026-07-02).
     const lines: string[] = [];
-    for (const { trial, cls } of windowItems) {
+    for (const { trial, cls } of items) {
       const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
       const email = (trial.calendly_details as { email?: string } | null)?.email;
       if (waSent.get(trial.id)) {
@@ -232,14 +221,33 @@ export async function GET(req: NextRequest) {
         lines.push(`⏰ Trial in ~1h: ${fmtTime(cls.start_time)} ${cls.name} — ${trial.name}`);
       }
     }
-    if (windowItems.some(({ trial }) => waSent.get(trial.id))) {
+    if (items.some(({ trial }) => waSent.get(trial.id))) {
       lines.push("Full message is in the WA INBOX tab (JMT OS).");
     }
 
     const message = lines.join("\n").trim();
     const ok = await sendTelegramPlainToUser(userId, message);
-    if (ok) sent++;
-    else skipped++;
+    if (ok) {
+      sent++;
+      // Per-recipient marking: a trial is covered when a Telegram that
+      // contained it was delivered (admins get the manual-remind lines).
+      for (const { trial } of items) deliveredTrialIds.add(trial.id);
+    } else {
+      skipped++;
+    }
+  }
+
+  // Customer WhatsApp also counts as delivered.
+  for (const { trial } of upcomingTrials) {
+    if (waSent.get(trial.id)) deliveredTrialIds.add(trial.id);
+  }
+
+  // Stamp processed trials so no future run re-sends (cron idempotency rule).
+  if (deliveredTrialIds.size > 0) {
+    await supabase
+      .from("trial_bookings")
+      .update({ reminder_1h_sent_at: new Date().toISOString() })
+      .in("id", Array.from(deliveredTrialIds));
   }
 
   return NextResponse.json({

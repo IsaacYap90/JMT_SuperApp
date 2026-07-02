@@ -48,6 +48,13 @@ export async function sendQuickReplies(to: string, bodyText: string, buttons: st
   });
 }
 
+// SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
+// Single source of truth — the reminder crons import this.
+export function waTo(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("65") ? digits : `65${digits}`;
+}
+
 // Pre-approved template send — business-initiated messages outside the 24h
 // customer-service window (e.g. trial reminders). bodyParams fill {{1}}..{{N}}.
 export async function sendTemplate(to: string, name: string, bodyParams: string[], lang = "en") {

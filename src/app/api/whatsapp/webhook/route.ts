@@ -105,9 +105,13 @@ export async function POST(req: NextRequest) {
     });
 
     // Label the outbound so the customer sees who's replying (ConnectLah-style).
+    // WA interactive (button) messages cap the body at 1024 chars and can fail
+    // for other reasons — never let the buttons cost the customer the message:
+    // long bodies go as plain text, and a failed interactive send falls back.
     const outbound = `*Jai*\n${messageText}`;
-    if (quickReplies.length > 0) {
-      await sendQuickReplies(from, outbound, quickReplies);
+    if (quickReplies.length > 0 && outbound.length <= 1000) {
+      const ok = await sendQuickReplies(from, outbound, quickReplies);
+      if (!ok) await sendText(from, outbound);
     } else {
       await sendText(from, outbound);
     }
