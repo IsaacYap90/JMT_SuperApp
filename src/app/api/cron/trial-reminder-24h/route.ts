@@ -105,7 +105,7 @@ export async function GET(req: NextRequest) {
 
   const { data: trials } = await supabase
     .from("trial_bookings")
-    .select("id, name, phone, class_id, booking_date, time_slot, status")
+    .select("id, name, phone, class_id, booking_date, time_slot, status, calendly_details")
     .eq("booking_date", ymd)
     .eq("status", "booked")
     .is("reminder_24h_sent_at", null);
@@ -183,7 +183,9 @@ export async function GET(req: NextRequest) {
   const waSent = new Map<string, boolean>();
   const jai = createJaiClient();
   for (const { trial, cls } of upcomingTrials) {
-    if (!trial.phone) {
+    // Calendly falls back to storing the EMAIL in the phone field when no
+    // phone was given — treat those as no-phone (Jeremy handles manually).
+    if (!trial.phone || trial.phone.includes("@")) {
       waSent.set(trial.id, false);
       continue;
     }
@@ -217,9 +219,14 @@ export async function GET(req: NextRequest) {
     const lines: string[] = [];
     for (const { trial, cls } of items) {
       const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
+      const email = (trial.calendly_details as { email?: string } | null)?.email;
       if (waSent.get(trial.id)) {
         lines.push(`✅ Boss, trial reminder sent to ${first} — ${cls.name} tomorrow ${fmtTime(cls.start_time)}`);
-      } else if (isAdmin) {
+      } else if ((!trial.phone || trial.phone.includes("@")) && isAdmin) {
+        lines.push(
+          `📧 Boss, ${trial.name} booked without a phone number (${email || (trial.phone?.includes("@") ? trial.phone : "no email either")}) — ${cls.name} tomorrow ${fmtTime(cls.start_time)}. Please remind them manually.`
+        );
+      } else if (isAdmin && trial.phone) {
         lines.push(
           `⚠️ Reminder to ${trial.name} (${trial.phone}) didn't send — tap to remind: ${waReminderLink(trial.name, trial.phone, prettyDate, cls.start_time)}`
         );

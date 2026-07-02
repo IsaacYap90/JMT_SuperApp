@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
   // Today's booked trials
   const { data: trials } = await supabase
     .from("trial_bookings")
-    .select("id, name, phone, class_id, booking_date, time_slot, status")
+    .select("id, name, phone, class_id, booking_date, time_slot, status, calendly_details")
     .eq("booking_date", ymd)
     .eq("status", "booked");
 
@@ -185,7 +185,8 @@ export async function GET(req: NextRequest) {
   const waSent = new Map<string, boolean>();
   const jai = createJaiClient();
   for (const { trial, cls, waWindow } of upcomingTrials) {
-    if (!waWindow || !trial.phone) continue;
+    // Emails stored in the phone field (Calendly fallback) = no phone.
+    if (!waWindow || !trial.phone || trial.phone.includes("@")) continue;
     const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
     const ok = await sendTemplate(waTo(trial.phone), "trial_reminder_1h", [
       first,
@@ -217,8 +218,13 @@ export async function GET(req: NextRequest) {
     const lines: string[] = [];
     for (const { trial, cls } of windowItems) {
       const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
+      const email = (trial.calendly_details as { email?: string } | null)?.email;
       if (waSent.get(trial.id)) {
         lines.push(`✅ Boss, 1-hour reminder sent to ${first} — ${cls.name} at ${fmtTime(cls.start_time)}`);
+      } else if ((!trial.phone || trial.phone.includes("@")) && isAdmin) {
+        lines.push(
+          `📧 Boss, ${trial.name} has no phone number (${email || (trial.phone?.includes("@") ? trial.phone : "no email either")}) — trial at ${fmtTime(cls.start_time)}. Please remind them manually.`
+        );
       } else if (isAdmin && trial.phone) {
         // Auto-send failed — fall back to the one-tap manual reminder.
         lines.push(`⚠️ 1-hour reminder to ${trial.name} (${trial.phone}) didn't send — tap to remind: ${waReminder1hLink(trial.name, trial.phone, cls.start_time)}`);
