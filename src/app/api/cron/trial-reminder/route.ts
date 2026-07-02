@@ -22,6 +22,24 @@ function fmtTime(hhmm: string): string {
   return `${h}:${mStr}${suffix}`;
 }
 
+// Tap-to-WhatsApp link with a prefilled ~1-hour reminder, so the admin can
+// one-tap message the trial-booker from their own WhatsApp (same pattern as
+// the 24h cron; Jeremy asked for a customer-facing 1h reminder 2026-07-02).
+function waReminder1hLink(name: string, phone: string, startTime: string): string {
+  const digits = phone.replace(/\D/g, "");
+  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const msg =
+    `Hi ${first}! Your trial at Jai Muay Thai is in about an hour — ${fmtTime(startTime)} 🥊\n` +
+    `\n` +
+    `Quick check: t-shirt and shorts, water bottle and a towel, and come 10 mins early if you can.\n` +
+    `\n` +
+    `📍 Link@AMK, 3 Ang Mo Kio Street 62, #03-17, S569139\n` +
+    `https://maps.app.goo.gl/NExDxhC3KehaLiVK8\n` +
+    `\n` +
+    `Head to the lift lobby, take the lift to level 3 — we're directly opposite, on your right. See you soon!`;
+  return `https://wa.me/65${digits}?text=${encodeURIComponent(msg)}`;
+}
+
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
@@ -143,6 +161,7 @@ export async function GET(req: NextRequest) {
   let skipped = 0;
 
   for (const [userId, items] of Array.from(recipientTrials)) {
+    const isAdmin = adminIds.has(userId);
     const lines: string[] = [];
     lines.push("⏰ Trial reminder — coming up soon!");
     lines.push("");
@@ -150,6 +169,10 @@ export async function GET(req: NextRequest) {
       lines.push(
         `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
       );
+      // Admins (Jeremy) get a one-tap prefilled WhatsApp reminder to the customer.
+      if (isAdmin && trial.phone) {
+        lines.push(`  ↳ Tap to remind them: ${waReminder1hLink(trial.name, trial.phone, cls.start_time)}`);
+      }
     }
 
     const message = lines.join("\n").trim();
