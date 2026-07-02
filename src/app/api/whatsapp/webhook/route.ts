@@ -85,6 +85,14 @@ export async function POST(req: NextRequest) {
         { onConflict: "contact_number", ignoreDuplicates: true }
       );
 
+    // They replied — disarm the silent-lead follow-up funnel (re-arms if the
+    // bot sends another booking link below).
+    await sb
+      .from("leads")
+      .update({ booking_link_sent_at: null, followup1_sent_at: null, followup2_sent_at: null })
+      .eq("contact_number", from)
+      .not("booking_link_sent_at", "is", null);
+
     markRead(messageId).catch(() => {});
 
     // Jeremy has taken over this chat from the inbox → stay quiet (still logged above).
@@ -211,6 +219,19 @@ export async function POST(req: NextRequest) {
       if (!ok) await sendText(from, outbound);
     } else {
       await sendText(from, outbound);
+    }
+
+    // Bot just sent a booking link → arm the silent-lead follow-up funnel
+    // (lead-followup cron nudges at +1h and +20h if they stay quiet).
+    if (/calendly\.com\//i.test(messageText)) {
+      await sb
+        .from("leads")
+        .update({
+          booking_link_sent_at: new Date().toISOString(),
+          followup1_sent_at: null,
+          followup2_sent_at: null,
+        })
+        .eq("contact_number", from);
     }
 
     // Escalation → ping the gym's master_admin(s) (Jeremy) on Telegram so a
