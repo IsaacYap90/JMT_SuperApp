@@ -12,9 +12,20 @@ import { generateReply } from "@/lib/wa/jai-reply";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
+import {
+  BOOKING_HINT_MARKER,
+  confirmationText,
+  findBookingsByHint,
+  findBookingsByPhone,
+  fmtTime,
+  notFoundQuestion,
+  stillNotFoundText,
+} from "@/lib/wa/trial-verify";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Done-verification can wait ~8s for Calendly's webhook to land before re-checking.
+export const maxDuration = 30;
 
 const VERIFY_TOKEN = () => (process.env.WA_VERIFY_TOKEN || "jai_muay_thai_verify").trim();
 
@@ -83,6 +94,91 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
     if (lead?.ai_paused) return NextResponse.json({ ok: true });
 
+    // ── Hardcoded "Done" booking verification (bypasses the AI entirely) ──
+    // Triggered by the Done quick-reply tap (or typed "done"), or by the
+    // customer's answer to our "different name or phone number?" question.
+    const isDoneTap = text.trim().toLowerCase() === "done";
+    const lastAssistant =
+      [...(prior || [])].reverse().find((m) => m.role === "assistant")?.message || "";
+    const awaitingHint = lastAssistant.includes(BOOKING_HINT_MARKER);
+
+    if (isDoneTap || awaitingHint) {
+      const pub = createSbClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!
+      );
+
+      const reply = async (out: string) => {
+        await sb.from("conversations").insert({
+          contact_number: from,
+          contact_name: contactName,
+          role: "assistant",
+          message: out,
+          via: "bot",
+        });
+        await sendText(from, `*Jai*\n${out}`);
+      };
+
+      const pingAdmins = async (note: string) => {
+        try {
+          const { data: admins } = await pub
+            .from("users")
+            .select("id")
+            .eq("role", "master_admin");
+          for (const a of admins || []) {
+            await sendTelegramPlainToUser(a.id, note, "jai-trial-verify");
+          }
+        } catch (e) {
+          console.error("[jai-webhook] trial-verify admin ping failed", e);
+        }
+      };
+
+      if (isDoneTap) {
+        let bookings = await findBookingsByPhone(pub, from);
+        if (bookings.length === 0) {
+          // Calendly's webhook can lag behind a fast tapper — wait, re-check
+          // once before bothering the customer.
+          await new Promise((r) => setTimeout(r, 8000));
+          bookings = await findBookingsByPhone(pub, from);
+        }
+        if (bookings.length > 0) {
+          await reply(confirmationText(bookings));
+          const b = bookings[0];
+          await pingAdmins(
+            `✅ Boss, new trial verified & booked: ${b.name} — ${b.className}, ${b.booking_date} ${fmtTime(b.startTime)} (confirmed via bot)`
+          );
+        } else {
+          await reply(notFoundQuestion());
+        }
+        return NextResponse.json({ ok: true });
+      }
+
+      // awaitingHint: their answer = the name or number they booked with.
+      // But don't hijack unrelated messages — if it reads like a question or
+      // a long sentence with no phone number, let the AI handle it normally.
+      const looksLikeHint =
+        text.replace(/\D/g, "").length >= 7 ||
+        (!text.includes("?") && text.trim().split(/\s+/).length <= 6);
+      if (!looksLikeHint) {
+        // fall through to the normal AI flow below
+      } else {
+      const bookings = await findBookingsByHint(pub, text);
+      if (bookings.length > 0) {
+        await reply(confirmationText(bookings));
+        const b = bookings[0];
+        await pingAdmins(
+          `✅ Boss, new trial verified & booked (under "${text.trim()}"): ${b.name} — ${b.className}, ${b.booking_date} ${fmtTime(b.startTime)} (confirmed via bot, WA +${from})`
+        );
+      } else {
+        await reply(stillNotFoundText());
+        await pingAdmins(
+          `⚠️ Boss, ${contactName || "a customer"} (+${from}) tapped Done but I can't find their booking — they said they booked with "${text.trim()}". Please check Trial Management / Calendly and confirm with them.`
+        );
+      }
+      return NextResponse.json({ ok: true });
+      }
+    }
+
     const history = [...(prior || []), { role: "user" as const, message: text }];
     const { messageText, quickReplies, escalation, member } = await generateReply(
       history,
@@ -105,9 +201,13 @@ export async function POST(req: NextRequest) {
     });
 
     // Label the outbound so the customer sees who's replying (ConnectLah-style).
+    // WA interactive (button) messages cap the body at 1024 chars and can fail
+    // for other reasons — never let the buttons cost the customer the message:
+    // long bodies go as plain text, and a failed interactive send falls back.
     const outbound = `*Jai*\n${messageText}`;
-    if (quickReplies.length > 0) {
-      await sendQuickReplies(from, outbound, quickReplies);
+    if (quickReplies.length > 0 && outbound.length <= 1000) {
+      const ok = await sendQuickReplies(from, outbound, quickReplies);
+      if (!ok) await sendText(from, outbound);
     } else {
       await sendText(from, outbound);
     }

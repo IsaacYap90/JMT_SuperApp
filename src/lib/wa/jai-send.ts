@@ -48,6 +48,49 @@ export async function sendQuickReplies(to: string, bodyText: string, buttons: st
   });
 }
 
+// SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
+// Single source of truth — the reminder crons import this.
+export function waTo(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("65") ? digits : `65${digits}`;
+}
+
+// Pre-approved template send — business-initiated messages outside the 24h
+// customer-service window (e.g. trial reminders). bodyParams fill {{1}}..{{N}}.
+export async function sendTemplate(to: string, name: string, bodyParams: string[], lang = "en") {
+  return waFetch("/messages", {
+    messaging_product: "whatsapp",
+    to,
+    type: "template",
+    template: {
+      name,
+      language: { code: lang },
+      components: [
+        { type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) },
+      ],
+    },
+  });
+}
+
+// Retry wrapper for must-deliver sends (trial reminders): most failures are
+// transient Meta/network blips, so try up to `tries` times with a short
+// backoff before giving up and letting the caller escalate to a human.
+export async function sendTemplateWithRetry(
+  to: string,
+  name: string,
+  bodyParams: string[],
+  tries = 3,
+  lang = "en"
+): Promise<boolean> {
+  for (let attempt = 1; attempt <= tries; attempt++) {
+    if (await sendTemplate(to, name, bodyParams, lang)) return true;
+    if (attempt < tries) {
+      await new Promise((r) => setTimeout(r, attempt * 1500)); // 1.5s, 3s
+    }
+  }
+  return false;
+}
+
 export async function markRead(messageId: string) {
   return waFetch("/messages", {
     messaging_product: "whatsapp",
