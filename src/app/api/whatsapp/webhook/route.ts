@@ -12,6 +12,7 @@ import { generateReply } from "@/lib/wa/jai-reply";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
+import { cancelCalendlyEvent } from "@/lib/calendly";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -244,7 +245,7 @@ export async function POST(req: NextRequest) {
             const ymd = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
             const { data: open } = await pub
               .from("trial_bookings")
-              .select("id, name, phone, booking_date, time_slot")
+              .select("id, name, phone, booking_date, time_slot, calendly_event_uri")
               .eq("status", "booked")
               .gte("booking_date", ymd);
             const matches = (open || []).filter(
@@ -256,6 +257,16 @@ export async function POST(req: NextRequest) {
                 .update({ status: "cancelled" })
                 .eq("id", matches[0].id);
               cancelNote = `Booking ${matches[0].booking_date} ${matches[0].time_slot || ""} marked CANCELLED in JMT OS.\n`;
+              // Free the slot on Calendly too, so someone else can book it.
+              if (matches[0].calendly_event_uri) {
+                const freed = await cancelCalendlyEvent(
+                  matches[0].calendly_event_uri,
+                  "Cancelled by the customer via WhatsApp (JAI bot)"
+                );
+                cancelNote += freed
+                  ? "Calendly slot freed ✅\n"
+                  : "⚠️ Couldn't cancel on Calendly — please free the slot manually.\n";
+              }
             } else {
               cancelNote = `Could not auto-match a booking (${matches.length} candidates) — please update Trial Management manually.\n`;
             }
