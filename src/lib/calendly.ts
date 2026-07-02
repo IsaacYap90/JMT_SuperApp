@@ -153,3 +153,24 @@ export function toSgDayAndTime(isoUtc: string): {
 export function formatTimeSlot(startTime: string, endTime: string): string {
   return `${startTime.slice(0, 5)} - ${endTime.slice(0, 5)}`;
 }
+
+// Cancel a scheduled Calendly event so the slot opens back up (e.g. when a
+// customer cancels their trial via the WhatsApp bot). eventUri is the full
+// API URI stored on trial_bookings.calendly_event_uri.
+export async function cancelCalendlyEvent(
+  eventUri: string,
+  reason: string
+): Promise<boolean> {
+  try {
+    const uuid = eventUri.split("/").filter(Boolean).pop();
+    if (!uuid) return false;
+    await calendlyFetch(`/scheduled_events/${uuid}/cancellation`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+    return true;
+  } catch (e) {
+    console.error("[calendly] cancel failed", e);
+    return false;
+  }
+}
