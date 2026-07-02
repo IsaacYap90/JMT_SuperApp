@@ -48,6 +48,23 @@ export async function sendQuickReplies(to: string, bodyText: string, buttons: st
   });
 }
 
+// Pre-approved template send — business-initiated messages outside the 24h
+// customer-service window (e.g. trial reminders). bodyParams fill {{1}}..{{N}}.
+export async function sendTemplate(to: string, name: string, bodyParams: string[], lang = "en") {
+  return waFetch("/messages", {
+    messaging_product: "whatsapp",
+    to,
+    type: "template",
+    template: {
+      name,
+      language: { code: lang },
+      components: [
+        { type: "body", parameters: bodyParams.map((text) => ({ type: "text", text })) },
+      ],
+    },
+  });
+}
+
 export async function markRead(messageId: string) {
   return waFetch("/messages", {
     messaging_product: "whatsapp",

@@ -7,6 +7,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { resolveTrialRecipients } from "@/lib/trial-recipients";
+import { sendTemplate } from "@/lib/wa/jai-send";
+
+// SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
+function waTo(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("65") ? digits : `65${digits}`;
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -152,6 +159,25 @@ export async function GET(req: NextRequest) {
     for (const u of adminRows || []) adminIds.add(u.id);
   }
 
+  // Auto-send the approved trial_reminder_24h template straight to each
+  // trial-booker (business-initiated; template approved 2026-07-02). The
+  // Telegram ping to coaches/admins stays as the heads-up; if a WA send
+  // fails, the admin line falls back to the old one-tap wa.me link.
+  const waSent = new Map<string, boolean>();
+  for (const { trial, cls } of upcomingTrials) {
+    if (!trial.phone) {
+      waSent.set(trial.id, false);
+      continue;
+    }
+    const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
+    const ok = await sendTemplate(waTo(trial.phone), "trial_reminder_24h", [
+      first,
+      prettyDate,
+      fmtTime(cls.start_time),
+    ]);
+    waSent.set(trial.id, ok);
+  }
+
   let sent = 0;
   let skipped = 0;
   const deliveredTrialIds = new Set<string>();
@@ -165,9 +191,11 @@ export async function GET(req: NextRequest) {
       lines.push(
         `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
       );
-      if (isAdmin) {
+      if (waSent.get(trial.id)) {
+        lines.push(`  ✅ Reminder auto-sent to them on WhatsApp`);
+      } else if (isAdmin) {
         lines.push(
-          `  Tap to remind: ${waReminderLink(trial.name, trial.phone, prettyDate, cls.start_time)}`
+          `  ⚠️ Auto-send failed — tap to remind: ${waReminderLink(trial.name, trial.phone, prettyDate, cls.start_time)}`
         );
       }
     }
@@ -176,10 +204,15 @@ export async function GET(req: NextRequest) {
     const ok = await sendTelegramPlainToUser(userId, message);
     if (ok) {
       sent++;
-      for (const { trial } of items) deliveredTrialIds.add(trial.id);
     } else {
       skipped++;
     }
+  }
+
+  // A trial counts as reminded if the customer got the WhatsApp, or at least
+  // one Telegram heads-up landed (backstop cron picks up the rest).
+  for (const { trial } of upcomingTrials) {
+    if (waSent.get(trial.id) || sent > 0) deliveredTrialIds.add(trial.id);
   }
 
   // Mark trials whose 24h reminder reached at least one recipient, so the

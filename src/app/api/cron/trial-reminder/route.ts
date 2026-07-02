@@ -9,6 +9,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { sendTemplate } from "@/lib/wa/jai-send";
+
+// SG mobile in any stored format ("+65 9123 4567" / "9123 4567") → "6591234567".
+function waTo(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.startsWith("65") ? digits : `65${digits}`;
+}
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -104,8 +111,11 @@ export async function GET(req: NextRequest) {
     classMap.set(c.id, c);
   }
 
-  // Filter trials whose class starts between 30 and 90 minutes from now
-  const upcomingTrials: { trial: (typeof trials)[0]; cls: ClsRow }[] = [];
+  // Filter trials whose class starts between 30 and 90 minutes from now.
+  // waWindow: the [30, 60) half only — with the 30-min cron cadence a trial
+  // passes through it exactly once, so the customer WhatsApp can't double-send
+  // (the Telegram heads-up may repeat across the full window; that's fine).
+  const upcomingTrials: { trial: (typeof trials)[0]; cls: ClsRow; waWindow: boolean }[] = [];
   for (const t of trials) {
     const cls = classMap.get(t.class_id);
     if (!cls) continue;
@@ -113,7 +123,7 @@ export async function GET(req: NextRequest) {
     const classMinutes = parseInt(hStr, 10) * 60 + parseInt(mStr, 10);
     const diff = classMinutes - nowMinutes;
     if (diff >= 30 && diff < 90) {
-      upcomingTrials.push({ trial: t, cls });
+      upcomingTrials.push({ trial: t, cls, waWindow: diff < 60 });
     }
   }
 
@@ -137,7 +147,7 @@ export async function GET(req: NextRequest) {
   // Group trials by recipient
   const recipientTrials = new Map<
     string,
-    { trial: (typeof trials)[0]; cls: ClsRow }[]
+    { trial: (typeof trials)[0]; cls: ClsRow; waWindow: boolean }[]
   >();
 
   for (const item of upcomingTrials) {
@@ -157,6 +167,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Auto-send the approved trial_reminder_1h template to each booker, only
+  // inside the once-only waWindow (approved 2026-07-02).
+  const waSent = new Map<string, boolean>();
+  for (const { trial, cls, waWindow } of upcomingTrials) {
+    if (!waWindow || !trial.phone) continue;
+    const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
+    const ok = await sendTemplate(waTo(trial.phone), "trial_reminder_1h", [
+      first,
+      fmtTime(cls.start_time),
+    ]);
+    waSent.set(trial.id, ok);
+  }
+
   let sent = 0;
   let skipped = 0;
 
@@ -165,13 +188,17 @@ export async function GET(req: NextRequest) {
     const lines: string[] = [];
     lines.push("⏰ Trial reminder — coming up soon!");
     lines.push("");
-    for (const { trial, cls } of items) {
+    for (const { trial, cls, waWindow } of items) {
       lines.push(
         `• ${fmtTime(cls.start_time)}–${fmtTime(cls.end_time)} ${cls.name} — ${trial.name} (${trial.phone})`
       );
-      // Admins (Jeremy) get a one-tap prefilled WhatsApp reminder to the customer.
-      if (isAdmin && trial.phone) {
-        lines.push(`  ↳ Tap to remind them: ${waReminder1hLink(trial.name, trial.phone, cls.start_time)}`);
+      if (waSent.get(trial.id)) {
+        lines.push(`  ✅ Reminder auto-sent to them on WhatsApp`);
+      } else if (waWindow && isAdmin && trial.phone) {
+        // Auto-send failed — fall back to the one-tap manual reminder.
+        lines.push(`  ⚠️ Auto-send failed — tap to remind: ${waReminder1hLink(trial.name, trial.phone, cls.start_time)}`);
+      } else if (!waWindow) {
+        lines.push(`  🤖 Their WhatsApp reminder goes out automatically closer to start`);
       }
     }
 

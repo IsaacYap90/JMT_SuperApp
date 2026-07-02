@@ -149,6 +149,15 @@ export function parseResponse(rawText: string): ParsedReply {
     messageText = messageText.replace(qrMatch[0], "").trim();
   }
 
+  // Deterministic guards — the model is told to do both of these but skips
+  // them often enough that customers noticed (2026-07-02 live test):
+  // 1. Markdown **bold** renders as literal stars on WhatsApp; fold to *bold*.
+  messageText = messageText.replace(/\*\*(.+?)\*\*/g, "*$1*");
+  // 2. Every booking-link message must carry the tappable Done button.
+  if (quickReplies.length === 0 && /calendly\.com\//i.test(messageText)) {
+    quickReplies = ["Done"];
+  }
+
   messageText = messageText.replace(/\n{3,}/g, "\n\n").trim();
   return { messageText, escalation, quickReplies, member };
 }
