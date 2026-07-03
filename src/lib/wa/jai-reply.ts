@@ -175,12 +175,18 @@ type HistoryMsg = { role: "user" | "assistant"; message: string };
 // "★ ·.° 🎏 huiqing ·.° ★ ·✨". Naively taking the first whitespace token gives
 // "★". Pull the first token that's an actual name (≥2 letters), stripping
 // leading/trailing decoration, so JAI greets them by their real name.
+// Letter ranges cover latin + accented + CJK + kana + hangul (no \p{L}/u flag,
+// which the project's TS target rejects).
+const NAME_LETTERS = "A-Za-z\\u00C0-\\u024F\\u4E00-\\u9FFF\\u3040-\\u30FF\\uAC00-\\uD7AF";
 function firstNameFrom(name?: string | null): string {
   if (!name) return "";
+  const edge = new RegExp(`^[^${NAME_LETTERS}]+|[^${NAME_LETTERS}]+$`, "g");
+  const letter = new RegExp(`[${NAME_LETTERS}]`, "g");
   for (const token of name.trim().split(/\s+/)) {
-    const cleaned = token.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
-    const letters = (cleaned.match(/\p{L}/gu) || []).length;
-    if (letters >= 2) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    const cleaned = token.replace(edge, "");
+    if ((cleaned.match(letter) || []).length >= 2) {
+      return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+    }
   }
   return "";
 }
