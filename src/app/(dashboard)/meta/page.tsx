@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { User } from "@/lib/types/database";
-import ActivityClient from "./ActivityClient";
+import MetaClient from "./MetaClient";
 
-// JAI activity log — master_admin (Jeremy) only.
-export default async function ActivityPage() {
+// JAI Meta assistant — FB/IG comment inbox + activity. master_admin (Jeremy) only.
+export default async function MetaPage() {
   const supabase = createClient();
   const {
     data: { user },
@@ -21,5 +21,5 @@ export default async function ActivityPage() {
 
   if (profile.role !== "master_admin") redirect("/");
 
-  return <ActivityClient />;
+  return <MetaClient />;
 }
