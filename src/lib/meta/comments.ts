@@ -12,7 +12,7 @@ const IG_ID = () => process.env.META_IG_ID || "";
 // relevant comments (unanswered leads) rather than years of history.
 const POST_LIMIT = 15;
 const COMMENT_LIMIT = 50;
-const MAX_AGE_DAYS = 45;
+const MAX_AGE_DAYS = 3; // only today + the last 3 days of comments
 
 export type IngestedComment = {
   platform: "facebook" | "instagram";

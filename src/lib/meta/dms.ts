@@ -12,6 +12,7 @@ const PAGE_ID = () => process.env.META_PAGE_ID || "";
 
 const CONVO_LIMIT = 25;
 const MSG_LIMIT = 6;
+const MAX_AGE_DAYS = 3; // only today + the last 3 days of DMs
 
 export type IngestedDM = {
   platform: "facebook" | "instagram";
@@ -51,6 +52,9 @@ async function fetchConversations(platform: "messenger" | "instagram"): Promise<
     // Graph returns messages newest-first. If the page sent the latest, it's handled.
     const latest = msgs[0];
     if (!latest?.from?.id || latest.from.id === PAGE_ID()) continue;
+    // Only surface recent threads — today + the last 3 days.
+    const latestAt = latest.created_time || convo.updated_time || null;
+    if (latestAt && Date.now() - new Date(latestAt).getTime() > MAX_AGE_DAYS * 864e5) continue;
     const participant = (convo?.participants?.data || []).find(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (p: any) => p.id !== PAGE_ID()
