@@ -9,7 +9,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { generateReply } from "@/lib/wa/jai-reply";
-import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
+import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead, downloadMedia } from "@/lib/wa/jai-send";
+import { describeImage } from "@/lib/wa/vision";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { cancelCalendlyEvent } from "@/lib/calendly";
@@ -55,10 +56,44 @@ export async function POST(req: NextRequest) {
     if (isStatusUpdate(body)) return NextResponse.json({ ok: true });
 
     const msg = extractMessage(body);
-    if (!msg || !msg.text) return NextResponse.json({ ok: true });
+    if (!msg) return NextResponse.json({ ok: true });
 
-    const { from, contactName, messageId, text } = msg;
+    const { from, contactName, messageId } = msg;
+    let text = msg.text;
     const sb = createJaiClient();
+
+    // Photo: download it, have JAI "see" it (Gemini — the DeepSeek reply model
+    // can't read images), and fold a description into the message so the normal
+    // reply flow responds. The description + JAI's reply show up in the WA INBOX.
+    // Text-only members are unaffected.
+    if (!text && msg.imageId) {
+      markRead(messageId).catch(() => {});
+      const media = await downloadMedia(msg.imageId);
+      const desc = media ? await describeImage(media.base64, media.mimeType, msg.imageCaption) : null;
+      if (desc) {
+        text = `[The member sent a photo]${msg.imageCaption ? ` with caption "${msg.imageCaption}"` : ""}. The photo shows: ${desc}`;
+      } else {
+        // Couldn't read it — ask them to type instead of going silent.
+        const fallback =
+          "Thanks for the photo! I couldn't open it properly on my end \u{1F64F} could you type what you need in a message?";
+        await sb.from("conversations").insert({
+          contact_number: from,
+          contact_name: contactName,
+          role: "user",
+          message: "[member sent a photo — couldn't read it]",
+        });
+        await sb.from("conversations").insert({
+          contact_number: from,
+          contact_name: contactName,
+          role: "assistant",
+          message: fallback,
+          via: "bot",
+        });
+        await sendText(from, fallback);
+        return NextResponse.json({ ok: true });
+      }
+    }
+    if (!text) return NextResponse.json({ ok: true });
 
     // History BEFORE this message → tells us if it's a brand-new contact.
     const { data: prior } = await sb

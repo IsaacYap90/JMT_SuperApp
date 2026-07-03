@@ -91,6 +91,26 @@ export async function sendTemplateWithRetry(
   return false;
 }
 
+// Download an inbound photo (WhatsApp Cloud API: media id → media URL → bytes).
+export async function downloadMedia(
+  mediaId: string,
+): Promise<{ base64: string; mimeType: string } | null> {
+  const auth = { Authorization: `Bearer ${process.env.WA_ACCESS_TOKEN}` };
+  try {
+    const metaRes = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, { headers: auth });
+    if (!metaRes.ok) return null;
+    const meta = (await metaRes.json()) as { url?: string; mime_type?: string };
+    if (!meta.url) return null;
+    const binRes = await fetch(meta.url, { headers: auth });
+    if (!binRes.ok) return null;
+    const base64 = Buffer.from(await binRes.arrayBuffer()).toString("base64");
+    return { base64, mimeType: meta.mime_type || "image/jpeg" };
+  } catch (err) {
+    console.error("[jai-send] downloadMedia error", err);
+    return null;
+  }
+}
+
 export async function markRead(messageId: string) {
   return waFetch("/messages", {
     messaging_product: "whatsapp",
@@ -107,6 +127,8 @@ export type InboundMessage = {
   contactName: string | null;
   type: string;
   text: string | null;
+  imageId?: string | null;
+  imageCaption?: string | null;
 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -131,6 +153,9 @@ export function extractMessage(body: any): InboundMessage | null {
       result.text = msg.interactive.button_reply.title;
     } else if (msg.type === "button") {
       result.text = msg.button.text;
+    } else if (msg.type === "image") {
+      result.imageId = msg.image?.id || null;
+      result.imageCaption = msg.image?.caption || null;
     }
     return result;
   } catch (err) {
