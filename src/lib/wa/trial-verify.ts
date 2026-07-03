@@ -9,6 +9,7 @@
 //      name/number, and verify their answer on the next turn;
 //   4. still nothing → escalate to Jeremy with full context.
 import { SupabaseClient } from "@supabase/supabase-js";
+import { firstNameFrom } from "./jai-reply";
 
 export type VerifiedBooking = {
   id: string;
@@ -136,7 +137,7 @@ export async function findBookingsByHint(
 
 export function confirmationText(bookings: VerifiedBooking[]): string {
   const b = bookings[0];
-  const first = (b.name || "").trim().split(/\s+/)[0] || b.name;
+  const first = firstNameFrom(b.name) || b.name;
   const when = `${prettyDate(b.booking_date)} at ${fmtTime(b.startTime)}`;
   let msg =
     `Confirmed ✅ Trial for ${first} — ${b.className}, ${when}.\n\n` +

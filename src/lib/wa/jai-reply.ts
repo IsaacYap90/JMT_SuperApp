@@ -178,7 +178,7 @@ type HistoryMsg = { role: "user" | "assistant"; message: string };
 // Letter ranges cover latin + accented + CJK + kana + hangul (no \p{L}/u flag,
 // which the project's TS target rejects).
 const NAME_LETTERS = "A-Za-z\\u00C0-\\u024F\\u4E00-\\u9FFF\\u3040-\\u30FF\\uAC00-\\uD7AF";
-function firstNameFrom(name?: string | null): string {
+export function firstNameFrom(name?: string | null): string {
   if (!name) return "";
   const edge = new RegExp(`^[^${NAME_LETTERS}]+|[^${NAME_LETTERS}]+$`, "g");
   const letter = new RegExp(`[${NAME_LETTERS}]`, "g");

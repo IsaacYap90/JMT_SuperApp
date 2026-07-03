@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { firstNameFrom } from "@/lib/wa/jai-reply";
 import { resolveTrialRecipients } from "@/lib/trial-recipients";
 import { sendTemplateWithRetry, waTo } from "@/lib/wa/jai-send";
 import { createJaiClient } from "@/lib/supabase/jai";
@@ -42,7 +43,7 @@ function fmtTime(hhmm: string): string {
 // Tap-to-WhatsApp fallback link — same text the auto-send delivers, so the
 // manual path and the WA INBOX mirror can never drift apart.
 function waReminderLink(name: string, phone: string, prettyDate: string, startTime: string): string {
-  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const first = firstNameFrom(name) || "there";
   return `https://wa.me/${waTo(phone)}?text=${encodeURIComponent(reminder24hText(first, prettyDate, fmtTime(startTime)))}`;
 }
 
@@ -169,7 +170,7 @@ export async function GET(req: NextRequest) {
       waSent.set(trial.id, false);
       continue;
     }
-    const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
+    const first = firstNameFrom(trial.name) || "there";
     const ok = await sendTemplateWithRetry(waTo(trial.phone), "trial_reminder_24h", [
       first,
       prettyDate,
@@ -203,7 +204,7 @@ export async function GET(req: NextRequest) {
     // "trial reminder for sarah tmr at 630pm class is sent Boss").
     const lines: string[] = [];
     for (const { trial, cls } of items) {
-      const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
+      const first = firstNameFrom(trial.name) || trial.name;
       const email = (trial.calendly_details as { email?: string } | null)?.email;
       if (waSent.get(trial.id)) {
         lines.push(`✅ Boss, trial reminder sent to ${first} — ${cls.name} tomorrow ${fmtTime(cls.start_time)}`);

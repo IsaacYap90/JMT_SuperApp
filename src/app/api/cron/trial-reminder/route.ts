@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { firstNameFrom } from "@/lib/wa/jai-reply";
 import { sendTemplateWithRetry, waTo } from "@/lib/wa/jai-send";
 import { createJaiClient } from "@/lib/supabase/jai";
 
@@ -42,7 +43,7 @@ function fmtTime(hhmm: string): string {
 // Tap-to-WhatsApp fallback link — same text the auto-send delivers, so the
 // manual path and the WA INBOX mirror can never drift apart.
 function waReminder1hLink(name: string, phone: string, startTime: string): string {
-  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const first = firstNameFrom(name) || "there";
   return `https://wa.me/${waTo(phone)}?text=${encodeURIComponent(reminder1hText(first, fmtTime(startTime)))}`;
 }
 
@@ -174,7 +175,7 @@ export async function GET(req: NextRequest) {
   for (const { trial, cls } of upcomingTrials) {
     // Emails stored in the phone field (Calendly fallback) = no phone.
     if (!waEnvOk || !trial.phone || trial.phone.includes("@")) continue;
-    const first = (trial.name || "").trim().split(/\s+/)[0] || "there";
+    const first = firstNameFrom(trial.name) || "there";
     const ok = await sendTemplateWithRetry(waTo(trial.phone), "trial_reminder_1h", [
       first,
       fmtTime(cls.start_time),
@@ -206,7 +207,7 @@ export async function GET(req: NextRequest) {
     // Short, casual ping (Isaac 2026-07-02).
     const lines: string[] = [];
     for (const { trial, cls } of items) {
-      const first = (trial.name || "").trim().split(/\s+/)[0] || trial.name;
+      const first = firstNameFrom(trial.name) || trial.name;
       const email = (trial.calendly_details as { email?: string } | null)?.email;
       if (waSent.get(trial.id)) {
         lines.push(`✅ Boss, 1-hour reminder sent to ${first} — ${cls.name} at ${fmtTime(cls.start_time)}`);

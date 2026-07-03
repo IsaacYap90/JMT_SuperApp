@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { firstNameFrom } from "@/lib/wa/jai-reply";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -23,7 +24,7 @@ function formatPhone(phone: string): string {
 
 function waLink(phone: string, name?: string): string {
   const digits = formatPhone(phone).replace(/\+/g, "");
-  const first = (name || "").trim().split(/\s+/)[0] || "there";
+  const first = firstNameFrom(name) || "there";
   const sgHour = (new Date().getUTCHours() + 8) % 24;
   const greeting = sgHour < 12 ? "Good morning" : sgHour < 18 ? "Good afternoon" : "Good evening";
   const msg = `${greeting} ${first}! Thanks for getting in touch via our Facebook/Instagram!\n\nWe'd love to help you get started in learning the art of Muay Thai.\n\nWould you like to schedule a session for yourself?\n\nThank you :)\n\nJeremy Jude\nJai Muay Thai\n\nFind out more about our sessions here too: https://jaimuaythai.com/adults/`;

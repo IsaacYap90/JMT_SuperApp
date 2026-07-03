@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { createJaiClient } from "@/lib/supabase/jai";
+import { firstNameFrom } from "@/lib/wa/jai-reply";
 import { sendQuickReplies } from "@/lib/wa/jai-send";
 import { findBookingsByPhone } from "@/lib/wa/trial-verify";
 
@@ -106,7 +107,7 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const first = (lead.contact_name || "").trim().split(/\s+/)[0] || "";
+    const first = firstNameFrom(lead.contact_name);
 
     if (!lead.followup1_sent_at) {
       if (now - armedAt < 1 * HOUR) continue; // not due yet
