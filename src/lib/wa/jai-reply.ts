@@ -25,11 +25,11 @@ Offer quick replies: "Schedule", "Pricing", "Book a trial", "Location".
 - Nearest MRT: Ang Mo Kio. Don't invent parking/transport details you're unsure of — if asked and unsure, keep it simple or check with Jeremy.
 
 ## CLASSES & AGES
-- Muay Thai – All Levels (14+): beginners start here; technique + a great workout.
-- Muay Thai – Advanced (14+): for those with a solid foundation.
-- Sparring (14+): once the coach clears you.
+- Muay Thai – All Levels: beginners start here; technique + a great workout.
+- Muay Thai – Advanced: for those with a solid foundation.
+- Sparring: once the coach clears you.
 - Pre-Teen (11–14) and Kids (6–10): small classes, capped at 8.
-Ages: Kids 6–10 · Pre-Teen 11–14 · Teens & Adults 14+.
+Ages: Kids 6–10 · Pre-Teen 11–14 · Teens & Adults. NEVER mention a minimum age like "14+" for the adult / All-Levels / Advanced / Sparring classes — do not write "14+" anywhere in a reply.
 
 ## BEGINNERS
 Total beginners join any All-Levels class — coaches scale it to you. After ~3–6 months (depends on the person) the instructor assesses your level and clears you for Advanced + Sparring.
@@ -56,7 +56,7 @@ PT runs outside group-class hours and is handled directly by Coach Jeremy. If th
 
 ## FREE TRIAL — BOOKING FLOW
 Everyone gets a FREE trial. To book, send the Calendly link that matches their age group, then ask them to tap "Done" once they've picked a slot:
-- Adults (14+): https://calendly.com/jaimuaythaisg/muay-thai-trial-class
+- Adults: https://calendly.com/jaimuaythaisg/muay-thai-trial-class
 - Kids (6–10): https://calendly.com/jaimuaythaisg/kids-muay-thai-trial-class
 - Pre-Teen (11–14): https://calendly.com/jaimuaythaisg/kids-pre-teen-muay-thai-trial-class
 Say: "Here's the link to book your free trial — just pick a time that works: [link]. Reply "Done" once you've booked and I'll confirm everything 👍". ALWAYS end that message with [QUICK_REPLIES: "Done"] so they get a tappable Done button; the wording still says reply "Done" in case the button doesn't show on their device. After they book, we confirm + send reminders automatically. After the trial, the coach helps them pick a membership in person at the gym (no online payment).
@@ -171,6 +171,20 @@ export function parseResponse(rawText: string): ParsedReply {
 
 type HistoryMsg = { role: "user" | "assistant"; message: string };
 
+// WhatsApp display names are often dressed up with emojis/symbols, e.g.
+// "★ ·.° 🎏 huiqing ·.° ★ ·✨". Naively taking the first whitespace token gives
+// "★". Pull the first token that's an actual name (≥2 letters), stripping
+// leading/trailing decoration, so JAI greets them by their real name.
+function firstNameFrom(name?: string | null): string {
+  if (!name) return "";
+  for (const token of name.trim().split(/\s+/)) {
+    const cleaned = token.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, "");
+    const letters = (cleaned.match(/\p{L}/gu) || []).length;
+    if (letters >= 2) return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  return "";
+}
+
 // Call DeepSeek (OpenAI-compatible) and return the parsed reply.
 export async function generateReply(
   history: HistoryMsg[],
@@ -179,9 +193,9 @@ export async function generateReply(
   isMember?: boolean
 ): Promise<ParsedReply> {
   let systemPrompt = SYSTEM_PROMPT;
-  const firstName = (customerName || "").trim().split(/\s+/)[0];
+  const firstName = firstNameFrom(customerName);
   if (firstName) {
-    systemPrompt += `\n\nThe customer's WhatsApp name is "${customerName}". Address them by their first name ("${firstName}") naturally — especially in the greeting (e.g. "Hey ${firstName}!"). Don't overuse it or repeat it every message.`;
+    systemPrompt += `\n\nThe customer's first name is "${firstName}". Address them by it naturally — especially in the greeting (e.g. "Hey ${firstName}!"). Don't overuse it or repeat it every message. Never greet them using an emoji or symbol as if it were their name.`;
   }
   if (isMember) {
     systemPrompt += `\n\nThis contact is a KNOWN EXISTING MEMBER${firstName ? ` (${firstName})` : ""}. Greet them warmly as a member — do NOT pitch the free trial or quote new-joiner prices. For membership admin (renewal, freeze, billing, plan changes) gather brief details and hand to Coach Jeremy.`;
