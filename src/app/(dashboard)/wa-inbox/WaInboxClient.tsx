@@ -73,6 +73,14 @@ export default function WaInboxClient() {
     return () => clearInterval(t);
   }, [fetchMessages]);
 
+  // Deep-link support: /wa-inbox?contact=<number> auto-opens that thread (e.g. from
+  // the Activity feed's verify links). Read once on mount; the thread renders as soon
+  // as the matching conversation arrives from the poll.
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("contact");
+    if (c) setSelected(c);
+  }, []);
+
   // Jump to the latest message when a conversation is opened.
   useEffect(() => {
     if (selected && threadEndRef.current) threadEndRef.current.scrollIntoView();
