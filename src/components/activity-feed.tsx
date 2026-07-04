@@ -1,8 +1,9 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { createJaiClient } from "@/lib/supabase/jai";
 
 type FeedItem = {
   id: string;
-  kind: "lead" | "leave" | "pt" | "trial";
+  kind: "lead" | "leave" | "pt" | "trial" | "jai";
   label: string;
   detail: string;
   at: string;
@@ -22,9 +23,11 @@ function timeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export async function ActivityFeed({ limit = 6 }: { limit?: number }) {
+export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: number; includeJai?: boolean }) {
   const db = createAdminClient();
-  const sinceIso = new Date(Date.now() - 48 * 3600_000).toISOString();
+  // Genuinely "today" — since SGT midnight, so day-old items don't linger.
+  const todayDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+  const sinceIso = new Date(`${todayDate}T00:00:00+08:00`).toISOString();
 
   const [leadsRes, leavesRes, ptRes, trialsRes] = await Promise.all([
     db
@@ -116,6 +119,38 @@ export async function ActivityFeed({ limit = 6 }: { limit?: number }) {
     });
   }
 
+  // What JAI did today (master_admin view only — links go into WA INBOX):
+  // one entry per contact, latest bot reply wins, so a chatty thread is one row.
+  if (includeJai) {
+    try {
+      const jai = createJaiClient();
+      const { data: botMsgs } = await jai
+        .from("conversations")
+        .select("id, contact_number, contact_name, created_at")
+        .eq("role", "assistant")
+        .eq("via", "bot")
+        .gte("created_at", sinceIso)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      const seen = new Set<string>();
+      for (const m of botMsgs || []) {
+        if (seen.has(m.contact_number)) continue;
+        seen.add(m.contact_number);
+        items.push({
+          id: `jai-${m.id}`,
+          kind: "jai",
+          label: "JAI replied",
+          detail: m.contact_name || `+${m.contact_number}`,
+          at: m.created_at,
+          dotClass: "bg-jai-blue",
+          href: `/wa-inbox?contact=${m.contact_number}`,
+        });
+      }
+    } catch {
+      // jai schema unreachable → feed still renders the public-schema items
+    }
+  }
+
   items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
   const top = items.slice(0, limit);
 
@@ -123,7 +158,7 @@ export async function ActivityFeed({ limit = 6 }: { limit?: number }) {
     return (
       <div className="bg-jai-card border border-jai-border rounded-xl p-4">
         <h3 className="text-sm font-semibold mb-1">Today so far</h3>
-        <p className="text-xs text-jai-text/70">Nothing yet — it&apos;s quiet.</p>
+        <p className="text-xs text-white/80">Nothing yet — it&apos;s quiet.</p>
       </div>
     );
   }
@@ -138,11 +173,11 @@ export async function ActivityFeed({ limit = 6 }: { limit?: number }) {
               <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${it.dotClass}`} aria-hidden />
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-white group-hover:underline">
-                  <span className="text-jai-text/90">{it.label}</span>
-                  <span className="text-jai-text/50"> · </span>
+                  <span className="text-white/90">{it.label}</span>
+                  <span className="text-white/70"> · </span>
                   <span className="truncate">{it.detail}</span>
                 </p>
-                <p className="text-[10px] text-jai-text/50">{timeAgo(it.at)}</p>
+                <p className="text-[10px] text-white/70">{timeAgo(it.at)}</p>
               </div>
             </a>
           </li>

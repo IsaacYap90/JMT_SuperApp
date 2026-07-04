@@ -5,6 +5,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { markThreadRead, unreadPhones } from "@/lib/wa-unread";
 
 type Role = "user" | "assistant";
 type Msg = { id: string; role: Role; body: string; via?: string | null; ts: string };
@@ -86,6 +87,20 @@ export default function WaInboxClient() {
     if (selected && threadEndRef.current) threadEndRef.current.scrollIntoView();
   }, [selected]);
 
+  // Mark the open thread read (per-device) so the Marketing tab badge and the
+  // list dots clear — covers both opening a thread and new messages arriving
+  // while it's open.
+  const [readVersion, setReadVersion] = useState(0);
+  useEffect(() => {
+    if (!selected) return;
+    const c = conversations.find((x) => x.phone === selected);
+    if (!c) return;
+    markThreadRead(c.phone, c.last_ts);
+    setReadVersion((v) => v + 1);
+  }, [selected, conversations]);
+  const unread = unreadPhones(conversations);
+  void readVersion; // state exists to re-render after markThreadRead
+
   // On new messages (2s poll), only follow to the bottom if the user is already
   // near it — so scrolling up to read history isn't yanked back down.
   useEffect(() => {
@@ -125,8 +140,11 @@ export default function WaInboxClient() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex justify-between items-baseline gap-2">
-                      <p className="text-sm font-medium text-white truncate">{c.name || `+${c.phone}`}</p>
-                      <span className="text-[10px] text-gray-500 whitespace-nowrap shrink-0">{fmtTime(c.last_ts)}</span>
+                      <p className={`text-sm truncate ${unread.has(c.phone) && !isActive ? "font-bold text-white" : "font-medium text-white"}`}>{c.name || `+${c.phone}`}</p>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        {unread.has(c.phone) && !isActive && <span className="w-2 h-2 rounded-full bg-jai-blue" />}
+                        <span className="text-[10px] text-gray-500 whitespace-nowrap">{fmtTime(c.last_ts)}</span>
+                      </span>
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {c.paused && <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 shrink-0">Jeremy</span>}

@@ -80,6 +80,7 @@ export function AdminDashboard({
   coaches,
   todayTrials = [],
   activityFeed,
+  followUp,
 }: {
   todayClasses: Class[];
   todayPtSessions: PtSession[];
@@ -92,6 +93,7 @@ export function AdminDashboard({
   coaches: User[];
   todayTrials?: TrialRow[];
   activityFeed?: ReactNode;
+  followUp?: ReactNode;
 }) {
   void today; // passed by page but date is computed inline
   const todayHoliday = getTodayHoliday();
@@ -249,6 +251,9 @@ export function AdminDashboard({
         </div>
       </div>
 
+      {/* Follow up — what's waiting on you, highest priority first */}
+      {followUp}
+
       {/* "Next up" glance strip */}
       <NextUpStrip items={timelineItems} disabled={!!todayHoliday} />
 
@@ -258,8 +263,9 @@ export function AdminDashboard({
       {/* Today so far — activity feed */}
       {activityFeed}
 
-      {/* Pending leave alert */}
-      {pendingLeaves > 0 && (
+      {/* Pending leave alert — superseded by the Follow up card, but keep a
+          conditional fallback if followUp isn't provided */}
+      {!followUp && pendingLeaves > 0 && (
         <Link
           href="/leave"
           className="flex items-center justify-between bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 hover:bg-amber-500/15 transition-colors"

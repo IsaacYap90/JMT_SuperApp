@@ -1,42 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { User, isAdmin } from "@/lib/types/database";
 import { NotificationBell } from "./notification-bell";
+import { fetchWaUnreadCount } from "@/lib/wa-unread";
 
-// All admin links for bottom nav
+// Admin bottom nav (Jeremy kept the classic tabs — no Marketing hub)
 const adminMainLinks = [
-  { href: "/", label: "Overview", icon: "grid" },
+  { href: "/", label: "Home", icon: "home" },
   { href: "/schedule", label: "Schedule", icon: "calendar" },
   { href: "/pt", label: "PT", icon: "users" },
   { href: "/trial-management", label: "Trials", icon: "clipboard" },
   { href: "/leads", label: "Leads", icon: "megaphone" },
 ];
 
+// Jeremy-only (master_admin) — embedded WhatsApp inbox + JAI Meta assistant
+const waInboxLink = { href: "/wa-inbox", label: "WA INBOX", icon: "chat" };
+const metaLink = { href: "/meta", label: "Meta", icon: "meta" };
+
 const adminProfileLinks = [
   { href: "/profile", label: "Profile", icon: "profile" },
-  { href: "/sunday-prep", label: "Sunday Prep", icon: "send" },
   { href: "/leave", label: "Leave", icon: "leave" },
 ];
 
 const coachLinks = [
-  { href: "/", label: "Overview", icon: "grid" },
+  { href: "/", label: "Home", icon: "home" },
   { href: "/schedule", label: "Schedule", icon: "calendar" },
-  { href: "/leave", label: "Leave", icon: "leave" },
 ];
 
 // Isaac-only link
 const earningLink = { href: "/earning", label: "Earning", icon: "dollar" };
-
-// Jeremy-only (master_admin) — embedded WhatsApp inbox
-const waInboxLink = { href: "/wa-inbox", label: "WA INBOX", icon: "chat" };
-
-// Jeremy-only (master_admin) — JAI Meta assistant (FB/IG comment inbox + activity)
-const metaLink = { href: "/meta", label: "Meta", icon: "meta" };
 
 function IconComponent({ icon, className }: { icon: string; className?: string }) {
   const cn = className || "w-5 h-5";
@@ -69,12 +66,6 @@ function IconComponent({ icon, className }: { icon: string; className?: string }
       return (
         <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-        </svg>
-      );
-    case "send":
-      return (
-        <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
         </svg>
       );
     case "leave":
@@ -115,6 +106,12 @@ function IconComponent({ icon, className }: { icon: string; className?: string }
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
         </svg>
       );
+    case "home":
+      return (
+        <svg className={cn} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+      );
     default:
       return null;
   }
@@ -129,16 +126,51 @@ export function Sidebar({ profile }: { profile: User }) {
   const isIsaac = profile.full_name === "Isaac Yap";
   const admin = isAdmin(profile.role);
 
-  // Bottom nav links — same on all screen sizes
-  // WhatsApp Inbox is master_admin (Jeremy) only.
+  const initials =
+    (profile.full_name || "?")
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase() || "?";
+
+  // Bottom nav links — same on all screen sizes.
+  // WhatsApp Inbox + Meta are master_admin (Jeremy) only.
   const mainLinks = admin
     ? (profile.role === "master_admin" ? [...adminMainLinks, waInboxLink, metaLink] : adminMainLinks)
     : coachLinks;
 
-  const profileLink = { href: "/profile", label: "Profile", icon: "profile" };
+  // Coaches keep Leave in the profile sheet (it left the bottom bar).
+  const coachProfileLinks = [
+    { href: "/profile", label: "Profile", icon: "profile" },
+    { href: "/leave", label: "Leave", icon: "leave" },
+  ];
   const profileLinks = admin
     ? (isIsaac ? [...adminProfileLinks, earningLink] : adminProfileLinks)
-    : (isIsaac ? [profileLink, earningLink] : [profileLink]);
+    : (isIsaac ? [...coachProfileLinks, earningLink] : coachProfileLinks);
+
+  // Unread WA badge on the Marketing tab (Jeremy only — wa-inbox is master_admin).
+  // Re-polls on route change so opening a thread clears the dot promptly.
+  const [waUnread, setWaUnread] = useState(0);
+  useEffect(() => {
+    if (profile.role !== "master_admin") return;
+    let stop = false;
+    const load = async () => {
+      try {
+        const n = await fetchWaUnreadCount();
+        if (!stop) setWaUnread(n);
+      } catch {
+        /* offline — keep last value */
+      }
+    };
+    load();
+    const t = setInterval(load, 30000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [profile.role, pathname]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -165,15 +197,21 @@ export function Sidebar({ profile }: { profile: User }) {
             <span className="text-[9px] text-jai-text/40">by IonicX AI</span>
           </div>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-3">
           <NotificationBell />
-          <span className="text-xs text-jai-text hidden sm:inline ml-2">{profile.full_name}</span>
+          <button
+            onClick={() => setShowProfile(true)}
+            aria-label="Profile"
+            className="w-9 h-9 rounded-full bg-[#2a2a2a] border border-jai-border flex items-center justify-center text-sm font-bold text-white"
+          >
+            {initials}
+          </button>
         </div>
       </header>
 
       {/* Bottom tab bar — all screen sizes */}
       <nav aria-label="Main navigation" className="fixed bottom-0 left-0 right-0 bg-jai-card border-t border-jai-border z-50 pb-safe">
-        <div className="max-w-lg mx-auto grid" style={{ gridTemplateColumns: `repeat(${mainLinks.length + 1}, 1fr)` }}>
+        <div className="max-w-lg mx-auto grid" style={{ gridTemplateColumns: `repeat(${mainLinks.length}, 1fr)` }}>
           {mainLinks.map((link) => {
             const active = pathname === link.href;
             return (
@@ -184,20 +222,18 @@ export function Sidebar({ profile }: { profile: User }) {
                   active ? "text-jai-blue" : "text-jai-text"
                 }`}
               >
-                <IconComponent icon={link.icon} className="w-5 h-5" />
+                <span className="relative">
+                  <IconComponent icon={link.icon} className="w-5 h-5" />
+                  {link.href === "/wa-inbox" && waUnread > 0 && (
+                    <span className="absolute -top-1.5 -right-2.5 bg-red-500 text-white text-[10px] font-bold min-w-[18px] h-[18px] rounded-full px-1 flex items-center justify-center border-2 border-jai-card">
+                      {waUnread > 99 ? "99+" : waUnread}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[10px] font-medium">{link.label}</span>
               </Link>
             );
           })}
-          <button
-            onClick={() => setShowProfile(true)}
-            className={`flex flex-col items-center justify-center gap-1 py-3 min-h-[48px] transition-colors ${
-              showProfile ? "text-jai-blue" : "text-jai-text"
-            }`}
-          >
-            <IconComponent icon="profile" className="w-5 h-5" />
-            <span className="text-[10px] font-medium">More</span>
-          </button>
         </div>
       </nav>
 

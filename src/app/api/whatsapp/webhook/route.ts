@@ -101,6 +101,51 @@ export async function POST(req: NextRequest) {
       .select("ai_paused, is_member")
       .eq("contact_number", from)
       .maybeSingle();
+
+    // Ping the master_admin(s) on Telegram at the start of each conversation
+    // burst (first inbound after 30+ quiet minutes) so WA INBOX messages never
+    // have to be discovered by opening the app. Runs for paused chats too —
+    // those are exactly the ones waiting on Jeremy. Escalations further down
+    // still send their own (more specific) alert.
+    try {
+      const { data: prevIn } = await sb
+        .from("conversations")
+        .select("created_at")
+        .eq("contact_number", from)
+        .eq("role", "user")
+        .order("created_at", { ascending: false })
+        .range(1, 1); // row 0 is the message inserted above
+      const prevTs = prevIn?.[0]?.created_at as string | undefined;
+      const quietMin = prevTs ? (Date.now() - new Date(prevTs).getTime()) / 60000 : Infinity;
+      if (quietMin > 30) {
+        const who = contactName ? `${contactName} (+${from})` : `+${from}`;
+        const preview = text.length > 120 ? text.slice(0, 117) + "..." : text;
+        const status = lead?.ai_paused
+          ? "JAI is off for this chat - it's waiting for you."
+          : isNewContact
+            ? "New enquiry - JAI is replying."
+            : "JAI is replying.";
+        const note =
+          `Boss, WhatsApp from ${who}:\n` +
+          `"${preview}"\n` +
+          `${status}\n` +
+          `https://jmtos.ionicx.ai/wa-inbox?contact=${from}`;
+        const pubNotify = createSbClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        const { data: masters } = await pubNotify
+          .from("users")
+          .select("id")
+          .eq("role", "master_admin");
+        for (const a of masters || []) {
+          await sendTelegramPlainToUser(a.id, note, "jai-wa-inbox");
+        }
+      }
+    } catch (e) {
+      console.error("[jai-webhook] wa-inbox notify failed", e);
+    }
+
     if (lead?.ai_paused) return NextResponse.json({ ok: true });
 
     // ── Hardcoded "Done" booking verification (bypasses the AI entirely) ──

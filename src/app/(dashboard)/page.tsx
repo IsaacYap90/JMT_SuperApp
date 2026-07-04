@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { CoachDashboard } from "@/components/coach-dashboard";
 import { ActivityFeed } from "@/components/activity-feed";
+import { FollowUp } from "@/components/follow-up";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
 
@@ -140,7 +141,8 @@ export default async function HomePage() {
         userName={profile.full_name}
         coaches={(coachesRes.data || []) as unknown as User[]}
         todayTrials={todayTrials}
-        activityFeed={<ActivityFeed />}
+        activityFeed={<ActivityFeed includeJai={profile.role === "master_admin"} />}
+        followUp={<FollowUp />}
       />
     );
   }
