@@ -815,6 +815,7 @@ async function findScheduledSessions(
 type Intent = {
   intent: string;
   person: string | null;
+  coach: string | null;
   target_date: string | null;
   time_hint: string | null;
   new_date: string | null;
@@ -832,12 +833,15 @@ async function classifyIntent(text: string): Promise<Intent> {
     `You are the intent parser for a Muay Thai gym admin assistant on Telegram. The admin writes in English or Chinese. Today in Singapore is ${today} (${dow}).
 Return a JSON object with these fields:
 - "intent": one of:
-  READS: "schedule_today" (today's/a day's class timetable), "pt_today" (PT sessions on a day), "leaves" (who is on leave / pending leave requests), "pt_package" (a member's remaining PT sessions), "leads" (new/recent enquiry leads), "trials_today" (trial bookings), "morning_brief" (overall summary of the day).
-  ACTIONS: "pt_cancel" (cancel a PT session), "pt_reschedule" (move a PT session to a new time), "pt_mark" (mark a PT session completed or no-show), "leave_review" (approve or reject a coach's leave), "class_cancel" (cancel a group class occurrence).
+  READS: "schedule_today" (view the class TIMETABLE for a day — "what classes", "the schedule", "who's teaching"), "pt_today" (view PT sessions on a day), "leaves" (who is on leave / pending leave requests), "pt_package" (a member's remaining PT sessions), "leads" (new/recent enquiry leads), "trials_today" (trial bookings), "morning_brief" (overall summary of the day).
+  ACTIONS: "pt_create" (BOOK/SCHEDULE/SET UP a NEW PT session for a member with a coach — e.g. "schedule PT with Hazel for Isaac tomorrow 10am", "book a PT for John with coach Ali fri 6pm", "add a PT session"), "pt_cancel" (cancel a PT session), "pt_reschedule" (MOVE an existing PT session to a new time), "pt_mark" (mark a PT session completed or no-show), "leave_review" (approve or reject a coach's leave), "class_cancel" (cancel a group class occurrence).
   "help" if they ask what you can do. "unknown" if none fit.
-- "person": the member or coach name mentioned, else null.
-- "target_date": "YYYY-MM-DD" for the day referred to (the existing session/class/leave day), resolving "today"/"tomorrow"/"thursday"/"this fri" to the next matching date on/after today in Singapore; null if none.
-- "time_hint": existing session time as 24h "HH:MM" (e.g. "6pm"->"18:00"), else null.
+- CRITICAL: "schedule" as a VERB ("schedule/book a PT", "schedule PT with X") = pt_create. "schedule" as a NOUN ("the schedule", "today's schedule", "what's the schedule") = schedule_today. If a PT session + a person is being set up for a future time, it's pt_create, NOT schedule_today.
+- "person": for pt_create the MEMBER/client's name (the person receiving the session); otherwise the member or coach name mentioned; else null.
+- "coach": for pt_create, the COACH/trainer's name; else null.
+- pt_create name rule: if a name is marked with the word "coach" (e.g. "coach Ali", "with coach Ali"), THAT is the coach and the OTHER name is the member. If NO "coach" keyword, then in "PT with A for B" treat A (after "with") as the member and B (after "for") as the coach. Never put the same name in both.
+- "target_date": "YYYY-MM-DD" for the day referred to (existing session/class/leave day, OR the NEW PT session's day for pt_create), resolving "today"/"tomorrow"/"thursday"/"this fri" to the next matching date on/after today in Singapore; null if none.
+- "time_hint": the session time as 24h "HH:MM" (e.g. "6pm"->"18:00") — for pt_create this is the new session's time; else null.
 - "new_date": for pt_reschedule, the NEW date "YYYY-MM-DD", else null.
 - "new_time": for pt_reschedule, the NEW time 24h "HH:MM", else null.
 - "mark": for pt_mark, "completed" or "no_show", else null.
@@ -850,6 +854,7 @@ Only extract what is stated. Do not invent names.`,
   return {
     intent: p.intent || "unknown",
     person: p.person || null,
+    coach: p.coach || null,
     target_date: p.target_date || null,
     time_hint: p.time_hint || null,
     new_date: p.new_date || null,
@@ -1085,6 +1090,79 @@ async function replyMorningBrief(token: string, chatId: number, supabase: Supaba
 
 // ── ACTION request handlers (send confirm buttons) ──
 
+// Resolve a person by (fuzzy) name within the given roles. Active, non-merged.
+async function resolveByName(
+  supabase: SupabaseSR,
+  name: string,
+  roles: string[]
+): Promise<{ id: string; full_name: string }[]> {
+  const { data } = await supabase
+    .from("users")
+    .select("id, full_name, role")
+    .in("role", roles)
+    .eq("is_active", true)
+    .is("merged_into_id", null);
+  const n = name.toLowerCase().trim();
+  const first = n.split(/\s+/)[0];
+  return ((data || []) as { id: string; full_name: string }[]).filter((u) => {
+    const f = (u.full_name || "").toLowerCase();
+    return f.includes(n) || f.includes(first);
+  });
+}
+
+async function requestPtCreate(token: string, chatId: number, supabase: SupabaseSR, intent: Intent) {
+  if (!intent.person) {
+    await sendReply(token, chatId, "Who's the PT session for? Try: schedule PT with Hazel for coach Isaac tomorrow 10am");
+    return;
+  }
+  if (!intent.coach) {
+    await sendReply(token, chatId, `Which coach takes ${intent.person}'s PT? Try: schedule PT with ${intent.person} for coach Isaac tomorrow 10am`);
+    return;
+  }
+  if (!intent.target_date || !intent.time_hint) {
+    await sendReply(token, chatId, `What day and time for ${intent.person}'s PT? Try: ...tomorrow 10am`);
+    return;
+  }
+
+  const members = await resolveByName(supabase, intent.person, ["member"]);
+  if (members.length === 0) {
+    await sendReply(token, chatId, `Couldn't find a member called "${intent.person}". Add them in the app first, then I can book their PT.`);
+    return;
+  }
+  if (members.length > 1) {
+    await sendReply(token, chatId, `Multiple members match "${intent.person}" (${members.slice(0, 4).map((m) => m.full_name).join(", ")}). Be more specific.`);
+    return;
+  }
+  const coaches = await resolveByName(supabase, intent.coach, ["coach", "admin", "master_admin"]);
+  if (coaches.length === 0) {
+    await sendReply(token, chatId, `Couldn't find a coach called "${intent.coach}".`);
+    return;
+  }
+  if (coaches.length > 1) {
+    await sendReply(token, chatId, `Multiple coaches match "${intent.coach}" (${coaches.slice(0, 4).map((c) => c.full_name).join(", ")}). Be more specific.`);
+    return;
+  }
+  const member = members[0];
+  const coach = coaches[0];
+  const iso = new Date(`${intent.target_date}T${intent.time_hint}:00+08:00`).toISOString();
+  if (new Date(iso).getTime() < Date.now()) {
+    await sendReply(token, chatId, "That time is in the past. Give a future day/time.");
+    return;
+  }
+  const unixSec = Math.floor(new Date(iso).getTime() / 1000);
+  const cbData = `ptc|${unixSec}|${member.full_name}|${coach.full_name}`;
+  if (Buffer.byteLength(cbData, "utf8") > 64) {
+    await sendReply(token, chatId, "Those names are too long for me to confirm safely — please book this one in the app.");
+    return;
+  }
+  await sendReplyWithKeyboard(
+    token,
+    chatId,
+    `Book this PT session?\n\n${member.full_name} with Coach ${coach.full_name}\n${fmtSgt(iso)}  (60 min)`,
+    [[{ text: "✅ Yes, book it", callback_data: cbData }, { text: "❌ No", callback_data: "ptx:n" }]]
+  );
+}
+
 async function requestReschedule(token: string, chatId: number, supabase: SupabaseSR, intent: Intent) {
   const matches = await findScheduledSessions(supabase, {
     client_name: intent.person,
@@ -1250,6 +1328,7 @@ const HELP_TEXT = `I can help with JMT, just tell me:
 • "today's schedule" / "tomorrow's classes"
 • "today's PT" · "how many sessions has John left"
 • "any leaves" · "leads today" · "trials today" · "morning brief"
+• "schedule PT with John for coach Ali tmrw 10am"
 • "cancel John's PT Thu 6pm"
 • "move John's PT to Fri 7pm"
 • "mark John's PT today no-show"
@@ -1324,6 +1403,9 @@ async function handleAssistantText(token: string, chatId: number, text: string) 
       case "class_cancel":
         await requestClassCancel(token, chatId, supabase, intent);
         break;
+      case "pt_create":
+        await requestPtCreate(token, chatId, supabase, intent);
+        break;
       case "help":
         await sendReply(token, chatId, HELP_TEXT);
         break;
@@ -1337,6 +1419,66 @@ async function handleAssistantText(token: string, chatId: number, text: string) 
 }
 
 // ── ACTION callbacks (apply the confirmed change) ──
+
+async function cbPtCreate(token: string, cbId: string, chatId: number, messageId: number, sender: { full_name: string }, supabase: SupabaseSR, unixSec: number, memberName: string, coachName: string) {
+  if (!Number.isFinite(unixSec) || unixSec <= 0 || unixSec > 4102444800) {
+    await answerCallback(token, cbId, "Bad time.");
+    return;
+  }
+  const pick = (list: { id: string; full_name: string }[], name: string) => {
+    const exact = list.find((u) => (u.full_name || "").toLowerCase() === name.toLowerCase());
+    return exact || list[0] || null;
+  };
+  const member = pick(await resolveByName(supabase, memberName, ["member"]), memberName);
+  const coach = pick(await resolveByName(supabase, coachName, ["coach", "admin", "master_admin"]), coachName);
+  if (!member || !coach) {
+    await answerCallback(token, cbId, "Couldn't match names.");
+    await editMessageText(token, chatId, messageId, "Couldn't find that member or coach anymore — please book it in the app.");
+    return;
+  }
+  const iso = new Date(unixSec * 1000).toISOString();
+
+  // Attach an active package if the member has one with this coach (mirrors createPtSession).
+  const { data: pkg } = await supabase
+    .from("pt_packages")
+    .select("id")
+    .eq("user_id", member.id)
+    .eq("preferred_coach_id", coach.id)
+    .eq("status", "active")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: created, error } = await supabase
+    .from("pt_sessions")
+    .insert({
+      package_id: pkg?.id || null,
+      coach_id: coach.id,
+      member_id: member.id,
+      scheduled_at: iso,
+      duration_minutes: 60,
+      status: "scheduled",
+    })
+    .select("id")
+    .maybeSingle();
+  if (error || !created) {
+    await answerCallback(token, cbId, "Couldn't book it.");
+    await editMessageText(token, chatId, messageId, `Couldn't book the session — ${error?.message || "try again"}.`);
+    return;
+  }
+  try {
+    await createNotification(
+      coach.id,
+      "pt_created",
+      "PT Session Scheduled",
+      `${sender.full_name} booked a PT session with ${member.full_name} on ${fmtSgt(iso)}.`
+    );
+  } catch (err) {
+    console.error("[telegram-webhook] pt-create notify failed:", err);
+  }
+  await answerCallback(token, cbId, "Booked ✅");
+  await editMessageText(token, chatId, messageId, `✅ Booked — ${member.full_name} with Coach ${coach.full_name}, ${fmtSgt(iso)}. Coach notified.`);
+}
 
 async function cbReschedule(token: string, cbId: string, chatId: number, messageId: number, sender: { id: string; full_name: string }, supabase: SupabaseSR, sessionId: string, unixSec: number) {
   // Guard a spoofed/oversized epoch from producing an Invalid Date.
@@ -1576,7 +1718,9 @@ async function handleCallback(token: string, cb: NonNullable<TelegramUpdate["cal
 
   try {
     let m: RegExpMatchArray | null;
-    if ((m = data.match(/^ptr:(.+):(\d+)$/))) {
+    if ((m = data.match(/^ptc\|(\d+)\|(.+?)\|(.+)$/))) {
+      await cbPtCreate(token, cbId, chatId, messageId, sender, supabase, parseInt(m[1], 10), m[2], m[3]);
+    } else if ((m = data.match(/^ptr:(.+):(\d+)$/))) {
       await cbReschedule(token, cbId, chatId, messageId, sender, supabase, m[1], parseInt(m[2], 10));
     } else if ((m = data.match(/^ptm:([cn]):(.+)$/))) {
       await cbMark(token, cbId, chatId, messageId, sender, supabase, m[1], m[2]);
