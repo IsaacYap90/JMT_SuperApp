@@ -9,6 +9,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,10 +26,7 @@ async function tg(text: string) {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const auth = req.headers.get("authorization") || "";
-  const ok = auth === `Bearer ${secret}` || req.nextUrl.searchParams.get("key") === secret;
-  if (!ok && process.env.NODE_ENV === "production") {
+  if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const report = req.nextUrl.searchParams.get("report") === "1";

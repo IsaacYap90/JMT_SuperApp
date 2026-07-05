@@ -1,7 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
+import { createClient } from "@/lib/supabase/server";
+
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // ~5MB
 
 export async function POST(req: NextRequest) {
+  // Auth: the earnings surface is owner-only (see /earning page — gated to
+  // "Isaac Yap", who is a coach, not master_admin — so mirror that gate here
+  // rather than isMasterAdmin()). Stops anonymous callers burning OpenAI spend.
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const { data: profile } = await supabase
+    .from("users")
+    .select("full_name")
+    .eq("id", user.id)
+    .single();
+  if ((profile as { full_name?: string } | null)?.full_name !== "Isaac Yap") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
@@ -11,6 +33,12 @@ export async function POST(req: NextRequest) {
   const file = formData.get("file") as File | null;
   if (!file) {
     return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+  }
+  if (!file.type.startsWith("image/")) {
+    return NextResponse.json({ error: "File must be an image" }, { status: 400 });
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return NextResponse.json({ error: "File too large (max 5MB)" }, { status: 400 });
   }
 
   // Convert file to base64

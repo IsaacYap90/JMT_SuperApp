@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
+import { verifyMetaSignature } from "@/lib/meta-webhook";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -55,6 +56,13 @@ export async function GET(req: NextRequest) {
 
 // ── POST: Receive lead form submissions ──
 export async function POST(req: NextRequest) {
+  // Verify Meta's HMAC signature on the RAW body BEFORE parsing. Fail closed:
+  // missing META_APP_SECRET or missing/invalid signature → 403.
+  const raw = await req.text();
+  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"))) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+
   const supabase = getSupabase();
   if (!supabase) {
     return NextResponse.json({ ok: false, error: "no supabase" }, { status: 500 });
@@ -62,7 +70,7 @@ export async function POST(req: NextRequest) {
 
   let body: Record<string, unknown>;
   try {
-    body = await req.json();
+    body = JSON.parse(raw);
   } catch {
     return NextResponse.json({ ok: false, error: "invalid json" }, { status: 400 });
   }

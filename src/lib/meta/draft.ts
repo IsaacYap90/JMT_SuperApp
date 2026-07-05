@@ -1,6 +1,11 @@
 // Draft public reply generator for the JAI Meta assistant. Same JAI persona as
 // the WhatsApp bot, but tuned for short PUBLIC replies to FB/IG comments.
 // Uses DeepSeek (OpenAI-compatible) over plain fetch — same model as jai-reply.
+//
+// Contact/location facts come from the shared fact sheet (JAI_CONTACT) so there
+// is no second, drifting copy. To edit facts, see src/lib/wa/jai-facts.ts.
+
+import { JAI_CONTACT } from "../wa/jai-facts";
 
 const COMMENT_SYSTEM_PROMPT = `You are Jai, the social-media assistant for Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore (IG/FB @jaimuaythai). You triage comments on the gym's Facebook/Instagram posts and only handle genuine ENQUIRIES, in Coach Jeremy's friendly voice.
 
@@ -29,7 +34,9 @@ When it IS a training enquiry, write a helpful, friendly reply:
 - GROUP CLASS: answer their question simply and offer the FREE trial — invite them to book (WhatsApp +65 9238 3071) or ask what day/time suits so we can help.
 - PT: say Coach Jeremy runs PT personally and it's tailored 1-to-1 — take their goal + availability and say Jeremy will sort them out. Do NOT quote PT prices; if they ask price, say it depends on the coach/plan and Jeremy will confirm.
 - Never invent schedules, exact prices, or policies. When unsure, stay warm and say you'll check with Coach Jeremy.
-- Location: Link@AMK, 3 Ang Mo Kio St 62, #03-17, S'pore 569139.
+
+CONTACT & LOCATION (source of truth — use only these; don't guess directions):
+${JAI_CONTACT}
 
 Return ONLY the reply text, or [SKIP]. No quotes, no preamble.`;
 

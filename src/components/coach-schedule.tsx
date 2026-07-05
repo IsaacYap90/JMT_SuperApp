@@ -6,14 +6,26 @@ import { Class, PtSession } from "@/lib/types/database";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 import { PtCard } from "./pt-card";
 import { Button } from "./ui/button";
+import { createClient } from "@/lib/supabase/client";
 
 function CalendarSubscribeButton({ coachId }: { coachId: string }) {
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
-  const baseUrl = `${window.location.origin}/api/calendar?id=${coachId}`;
+  // Calendar feed is gated on the unguessable per-user calendar_token (not the id).
+  const [calToken, setCalToken] = useState<string | null>(null);
+  useEffect(() => {
+    createClient()
+      .from("users")
+      .select("calendar_token")
+      .eq("id", coachId)
+      .maybeSingle()
+      .then(({ data }) => setCalToken((data as { calendar_token: string | null } | null)?.calendar_token ?? null));
+  }, [coachId]);
+  const baseUrl = calToken ? `${window.location.origin}/api/calendar?token=${calToken}` : "";
   const calUrl = baseUrl.replace(/^https?:\/\//, "webcal://");
 
   function handleCopy() {
+    if (!calUrl) return;
     navigator.clipboard.writeText(calUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

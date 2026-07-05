@@ -6,6 +6,10 @@ Do not make changes until you have 95% confidence in what to build. Ask follow-u
 
 # JMT Dashboard — Coach + admin portal for Jai Muay Thai (Singapore)
 
+## JAI — the JMT AI Assistant (naming — Isaac, 2026-07-04)
+- **JAI is NOT a "bot". JAI = "JMT AI" — the JMT AI Assistant.** Refer to it as the JMT AI Assistant (or "Jai, Coach Jeremy's assistant"), never "the bot". It introduces itself as Coach Jeremy's / JMT's assistant, never "I'm a bot/chatbot".
+- **Single source of truth for its facts: `src/lib/wa/jai-facts.ts`** (`JAI_FACTS`). The WhatsApp reply logic (`src/lib/wa/jai-reply.ts`) and the FB/IG drafts (`src/lib/meta/draft.ts`) both import from it — edit facts in ONE place. JAI must ONLY answer from the fact sheet; if something isn't in it, it escalates to Coach Jeremy (never guesses).
+
 ## Tech Stack
 Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel | Telegram Bot (notifications)
 

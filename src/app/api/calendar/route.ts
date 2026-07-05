@@ -21,20 +21,6 @@ function escapeIcs(text: string): string {
   return text.replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\n/g, "\\n");
 }
 
-// Deterministic colored-dot emoji per coach name. Hard-coded mappings for
-// Isaac/Jeremy/Shafiq per Isaac's spec; rest fall back to a stable hash.
-const COACH_FALLBACK_DOTS = ["🟠", "🟣", "🟡", "🟤", "⚫", "⚪"];
-function coachDot(name: string | undefined | null): string {
-  const n = (name || "").toLowerCase();
-  if (n.includes("isaac")) return "🔴";
-  if (n.includes("jeremy")) return "🔵";
-  if (n.includes("shafiq")) return "🟢";
-  if (!n) return "⚪";
-  let hash = 0;
-  for (let i = 0; i < n.length; i++) hash = (hash * 31 + n.charCodeAt(i)) >>> 0;
-  return COACH_FALLBACK_DOTS[hash % COACH_FALLBACK_DOTS.length];
-}
-
 // Local (SGT) ICS datetime string — meant to be used with TZID=Asia/Singapore
 function toLocalIcs(y: number, m: number, d: number, h: number, min: number): string {
   return `${y}${pad(m)}${pad(d)}T${pad(h)}${pad(min)}00`;
@@ -88,11 +74,14 @@ function sgtParts(utc: Date): { y: number; m: number; d: number; h: number; min:
 }
 
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("id");
-  const isAdminMode = req.nextUrl.searchParams.get("admin") === "1";
+  // Auth = the unguessable per-user calendar token. Calendar apps can't send
+  // cookies, so the token IS the credential (route is in the middleware
+  // allow-list). No token → no feed. This replaces the old `?id=` + `?admin=1`
+  // access which leaked every client's PII to anyone who guessed a user id.
+  const token = req.nextUrl.searchParams.get("token");
 
-  if (!userId) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+  if (!token) {
+    return NextResponse.json({ error: "Missing token" }, { status: 401 });
   }
 
   const supabase = createClient(
@@ -100,16 +89,19 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // User name for calendar title
+  // Look up the owner by their calendar token. `.eq` never matches a NULL
+  // column, so rows with no token issued yet are safely un-subscribable.
   const { data: userProfile } = await supabase
     .from("users")
-    .select("full_name")
-    .eq("id", userId)
-    .single();
+    .select("id, full_name")
+    .eq("calendar_token", token)
+    .maybeSingle();
 
   if (!userProfile) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+
+  const userId = userProfile.id as string;
 
   // Active classes (include created_at for the RRULE DTSTART anchor)
   const { data: allClasses } = await supabase
@@ -120,40 +112,31 @@ export async function GET(req: NextRequest) {
     .eq("is_active", true)
     .order("start_time");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let myClasses: any[];
-  if (isAdminMode) {
-    myClasses = allClasses || [];
-  } else {
-    const { data: classCoachLinks } = await supabase
-      .from("class_coaches")
-      .select("class_id")
-      .eq("coach_id", userId);
+  const { data: classCoachLinks } = await supabase
+    .from("class_coaches")
+    .select("class_id")
+    .eq("coach_id", userId);
 
-    const classCoachIds = new Set((classCoachLinks || []).map((cc: { class_id: string }) => cc.class_id));
+  const classCoachIds = new Set((classCoachLinks || []).map((cc: { class_id: string }) => cc.class_id));
 
-    myClasses = (allClasses || []).filter(
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (c: any) =>
-        c.lead_coach_id === userId ||
-        c.assistant_coach_id === userId ||
-        classCoachIds.has(c.id)
-    );
-  }
+  const myClasses = (allClasses || []).filter(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (c: any) =>
+      c.lead_coach_id === userId ||
+      c.assistant_coach_id === userId ||
+      classCoachIds.has(c.id)
+  );
 
   // PT sessions — ALL history + all future, single VEVENT each.
   // Status filter already excludes cancelled / no_show.
-  let ptQuery = supabase
+  const ptQuery = supabase
     .from("pt_sessions")
     .select(
       "*, member:users!pt_sessions_member_id_fkey(full_name), coach:users!pt_sessions_coach_id_fkey(full_name)"
     )
     .in("status", ["scheduled", "confirmed", "completed"])
-    .order("scheduled_at");
-
-  if (!isAdminMode) {
-    ptQuery = ptQuery.eq("coach_id", userId);
-  }
+    .order("scheduled_at")
+    .eq("coach_id", userId);
 
   const { data: ptSessions } = await ptQuery;
 
@@ -189,7 +172,7 @@ export async function GET(req: NextRequest) {
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//JAI Muay Thai//Dashboard//EN",
-    `X-WR-CALNAME:JAI - ${escapeIcs(userProfile.full_name)}${isAdminMode ? " (All)" : ""}`,
+    `X-WR-CALNAME:JAI - ${escapeIcs(userProfile.full_name)}`,
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "X-PUBLISHED-TTL:PT30M",
@@ -350,12 +333,9 @@ export async function GET(req: NextRequest) {
 
     const clientName = pt.member?.full_name || "Client";
     const coachName = pt.coach?.full_name || "";
-    // Coach-name prefix + colored dot only matter when one feed shows multiple
-    // coaches (admin subscription). On a coach's personal feed every event is
-    // already theirs, so the prefix is noise — keep the original "PT — Name".
-    const titlePrefix = isAdminMode
-      ? (coachName ? `${coachDot(coachName)} ${coachName.split(/\s+/)[0]} · PT` : `${coachDot(coachName)} PT`)
-      : "PT";
+    // Every event on this feed is already the owner's own, so the coach-name
+    // prefix is noise — keep the simple "PT — Name".
+    const titlePrefix = "PT";
     const logUrl = `${baseUrl}/pt/log/${pt.id}`;
 
     lines.push(

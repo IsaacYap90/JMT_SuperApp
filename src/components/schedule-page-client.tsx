@@ -49,13 +49,24 @@ function getDates(anchorDate: string) {
   return dates;
 }
 
-function CalendarSubscribeButton({ userId, isAdmin }: { userId: string; isAdmin?: boolean }) {
+function CalendarSubscribeButton({ userId }: { userId: string; isAdmin?: boolean }) {
   const [showModal, setShowModal] = useState(false);
   const [copied, setCopied] = useState(false);
-  const baseUrl = `${window.location.origin}/api/calendar?id=${userId}${isAdmin ? "&admin=1" : ""}`;
+  // Calendar feed is gated on the unguessable per-user calendar_token (not the id).
+  const [calToken, setCalToken] = useState<string | null>(null);
+  useEffect(() => {
+    createClient()
+      .from("users")
+      .select("calendar_token")
+      .eq("id", userId)
+      .maybeSingle()
+      .then(({ data }) => setCalToken((data as { calendar_token: string | null } | null)?.calendar_token ?? null));
+  }, [userId]);
+  const baseUrl = calToken ? `${window.location.origin}/api/calendar?token=${calToken}` : "";
   const calUrl = baseUrl.replace(/^https?:\/\//, "webcal://");
 
   function handleCopy() {
+    if (!calUrl) return;
     navigator.clipboard.writeText(calUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);

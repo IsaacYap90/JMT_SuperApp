@@ -4,6 +4,7 @@
 // Triggered by Vercel Cron at "0 0 * * *" UTC = 08:00 SGT.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createClient } from "@supabase/supabase-js";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { firstNameFrom } from "@/lib/wa/jai-reply";
@@ -32,12 +33,8 @@ function waLink(phone: string, name?: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization") || "";
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

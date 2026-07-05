@@ -4,6 +4,7 @@
 // Triggered by Vercel Cron at "0 13 * * *" UTC = 21:00 SGT (UTC+8).
 
 import { NextRequest, NextResponse } from "next/server";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createClient } from "@supabase/supabase-js";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 
@@ -38,12 +39,8 @@ function fmtTime(iso: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization") || "";
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;

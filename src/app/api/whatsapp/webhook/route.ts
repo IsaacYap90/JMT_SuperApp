@@ -13,6 +13,7 @@ import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } 
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { cancelCalendlyEvent } from "@/lib/calendly";
+import { verifyMetaSignature } from "@/lib/meta-webhook";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -28,7 +29,9 @@ export const dynamic = "force-dynamic";
 // Done-verification can wait ~8s for Calendly's webhook to land before re-checking.
 export const maxDuration = 30;
 
-const VERIFY_TOKEN = () => (process.env.WA_VERIFY_TOKEN || "jai_muay_thai_verify").trim();
+// Require the verify token from the env — no literal fallback (a hardcoded
+// fallback would let anyone re-subscribe the webhook).
+const VERIFY_TOKEN = () => (process.env.WA_VERIFY_TOKEN || "").trim();
 
 // ── Handshake ────────────────────────────────────────────────────────────────
 export function GET(req: NextRequest) {
@@ -36,7 +39,8 @@ export function GET(req: NextRequest) {
   const mode = p.get("hub.mode");
   const token = (p.get("hub.verify_token") || "").trim();
   const challenge = p.get("hub.challenge") || "";
-  if (mode === "subscribe" && token && token === VERIFY_TOKEN()) {
+  const expected = VERIFY_TOKEN();
+  if (mode === "subscribe" && expected && token === expected) {
     return new NextResponse(challenge, { status: 200 });
   }
   return new NextResponse("forbidden", { status: 403 });
@@ -44,9 +48,16 @@ export function GET(req: NextRequest) {
 
 // ── Inbound message ──────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  // Verify Meta's HMAC signature on the RAW body BEFORE parsing. Fail closed:
+  // missing META_APP_SECRET or missing/invalid signature → 403.
+  const raw = await req.text();
+  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"))) {
+    return new NextResponse("forbidden", { status: 403 });
+  }
+
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(raw);
   } catch {
     return NextResponse.json({ ok: true }); // ack malformed so Meta doesn't retry
   }

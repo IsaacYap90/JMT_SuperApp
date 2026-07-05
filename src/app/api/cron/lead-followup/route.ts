@@ -11,6 +11,7 @@
 // Done), never during quiet hours (21:00–09:00 SGT), never members, never
 // chats Jeremy has taken over (ai_paused).
 import { NextRequest, NextResponse } from "next/server";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { firstNameFrom } from "@/lib/wa/jai-reply";
@@ -39,12 +40,8 @@ function nudge2(first: string): string {
 }
 
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization") || "";
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Supabase env vars missing" }, { status: 500 });

@@ -7,6 +7,7 @@
 // CRON_SECRET is set in the project's env vars.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createClient } from "@supabase/supabase-js";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { isPublicHoliday } from "@/lib/sg-holidays";
@@ -66,12 +67,8 @@ function fmtTime(hhmm: string): string {
 export async function GET(req: NextRequest) {
   // Auth: Vercel Cron sends Bearer token. Locally, allow if no secret set
   // OR if the matching secret is provided.
-  const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get("authorization") || "";
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
