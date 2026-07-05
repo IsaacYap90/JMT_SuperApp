@@ -165,6 +165,14 @@ export async function generateReply(
   isMember?: boolean
 ): Promise<ParsedReply> {
   let systemPrompt = SYSTEM_PROMPT;
+  // Give JAI the real current date/time in SINGAPORE (SGT, UTC+8) so "today / tomorrow /
+  // tonight / this week / what day" is always correct — never let the model guess the date.
+  const nowSgt = new Date().toLocaleString("en-SG", {
+    timeZone: "Asia/Singapore",
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+  systemPrompt += `\n\n## CURRENT DATE & TIME (Singapore, SGT)\nRight now in Singapore it is ${nowSgt}. Use Singapore time (SGT, UTC+8) for ALL date/day reasoning ("today", "tomorrow", "tonight", "this week", "what day is it"). Work out tomorrow's day from THIS — never guess. Group classes run Mon–Sat; Sunday is PT only.`;
   const firstName = firstNameFrom(customerName);
   if (firstName) {
     systemPrompt += `\n\nThe customer's first name is "${firstName}". Address them by it naturally — especially in the greeting (e.g. "Hey ${firstName}!"). Don't overuse it or repeat it every message. Never greet them using an emoji or symbol as if it were their name.`;
