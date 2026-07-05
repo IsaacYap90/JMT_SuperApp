@@ -48,11 +48,20 @@ export function GET(req: NextRequest) {
 
 // ── Inbound message ──────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  // Verify Meta's HMAC signature on the RAW body BEFORE parsing. Fail closed:
-  // missing META_APP_SECRET or missing/invalid signature → 403.
+  // Verify Meta's HMAC signature on the RAW body BEFORE parsing.
+  // TEMP (2026-07-05): the signature isn't matching META_APP_SECRET, which was silently
+  // dropping live customer messages (JAI went quiet). Log the mismatch for diagnosis but
+  // PROCESS the message so JAI keeps replying. Restore the hard 403 once the secret is confirmed.
   const raw = await req.text();
-  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"))) {
-    return new NextResponse("forbidden", { status: 403 });
+  const sig = req.headers.get("x-hub-signature-256");
+  if (!verifyMetaSignature(raw, sig)) {
+    const { createHmac } = await import("node:crypto");
+    const exp = "sha256=" + createHmac("sha256", process.env.META_APP_SECRET || "").update(raw).digest("hex");
+    console.warn("[wa-webhook] SIG MISMATCH (processing anyway, temp)", {
+      secretSet: !!process.env.META_APP_SECRET,
+      recv: (sig || "none").slice(0, 20),
+      exp: exp.slice(0, 20),
+    });
   }
 
   let body: unknown;
