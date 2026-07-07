@@ -16,6 +16,7 @@ type Conv = {
   last_body: string;
   last_role: Role;
   paused: boolean;
+  isMember: boolean;
   messages: Msg[];
 };
 
@@ -35,6 +36,16 @@ function fmtDateDivider(iso: string): string {
   const ydy = new Date(today); ydy.setDate(ydy.getDate() - 1);
   if (`${ydy.getFullYear()}-${ydy.getMonth()}-${ydy.getDate()}` === mk) return "Yesterday";
   return new Date(iso).toLocaleDateString("en-SG", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Singapore" });
+}
+// Thread-list stamp: show the DATE alongside the time (not just time), so the
+// last-message time isn't ambiguous across days.
+function fmtListStamp(iso: string): string {
+  const div = fmtDateDivider(iso);
+  const t = fmtTime(iso);
+  if (div === "Today") return `Today ${t}`;
+  if (div === "Yesterday") return `Ysd ${t}`;
+  const d = new Date(iso).toLocaleDateString("en-SG", { day: "2-digit", month: "short", timeZone: "Asia/Singapore" });
+  return `${d} ${t}`;
 }
 function initialOf(name: string | null, phone: string): string {
   if (name && name.trim() && /[a-zA-Z]/.test(name.trim()[0])) return name.trim()[0].toUpperCase();
@@ -143,7 +154,7 @@ export default function WaInboxClient() {
                       <p className={`text-sm truncate ${unread.has(c.phone) && !isActive ? "font-bold text-white" : "font-medium text-white"}`}>{c.name || `+${c.phone}`}</p>
                       <span className="flex items-center gap-1.5 shrink-0">
                         {unread.has(c.phone) && !isActive && <span className="w-2 h-2 rounded-full bg-jai-blue" />}
-                        <span className="text-[10px] text-gray-500 whitespace-nowrap">{fmtTime(c.last_ts)}</span>
+                        <span className="text-[10px] text-gray-500 whitespace-nowrap">{fmtListStamp(c.last_ts)}</span>
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -174,6 +185,17 @@ export default function WaInboxClient() {
                 <p className="text-sm font-semibold text-white truncate">{active.name || `+${active.phone}`}</p>
                 <p className="text-[11px] text-gray-500 font-mono truncate">+{active.phone}</p>
               </div>
+              <button
+                onClick={async () => {
+                  const next = !active.isMember;
+                  const r = await fetch("/api/wa-inbox/member", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone, is_member: next }) });
+                  if (r.ok) fetchMessages(); else setErr("Toggle failed");
+                }}
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition shrink-0 ${active.isMember ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
+                title={active.isMember ? "Confirmed member — JAI greets them as a member, no trial link. Tap to unmark." : "Mark this contact as an existing member so JAI stops treating them as a new lead."}
+              >
+                {active.isMember ? "✓ Member" : "Mark member"}
+              </button>
               <button
                 onClick={async () => {
                   const next = !active.paused;
