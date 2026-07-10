@@ -1,5 +1,5 @@
 // GET /api/wa-inbox/messages — master_admin only.
-// Reads the JAI bot's `jai.conversations` (grouped per contact) + merges the
+// Reads the JAI AI assistant's `jai.conversations` (grouped per contact) + merges the
 // per-contact `ai_paused` flag from `jai.leads`. Returns an empty list when
 // there's no live data yet — real chats arrive once the bot webhook is live.
 import { NextResponse } from "next/server";

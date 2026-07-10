@@ -416,7 +416,7 @@ export async function POST(req: NextRequest) {
               if (matches[0].calendly_event_uri) {
                 const freed = await cancelCalendlyEvent(
                   matches[0].calendly_event_uri,
-                  "Cancelled by the customer via WhatsApp (JAI bot)"
+                  "Cancelled by the customer via WhatsApp (JAI, JMT AI assistant)"
                 );
                 cancelNote += freed
                   ? "Calendly slot freed ✅\n"
@@ -440,7 +440,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ ok: true });
         }
         const alert =
-          `🔔 JAI bot — ${label}\n` +
+          `🔔 JAI — ${label}\n` +
           `Customer: ${contactName || "Unknown"} (+${from})\n` +
           (esc.intent ? `Intent: ${esc.intent}\n` : "") +
           `Last message: "${text}"\n` +
