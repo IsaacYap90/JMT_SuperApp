@@ -9,13 +9,16 @@ import { revalidatePath } from "next/cache";
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 // Find recurring class assignments that fall within a leave date range for a coach.
-// Half-day leaves (Option A: off before 6:30pm, teaching evening) only flag classes
-// with start_time < 18:30. Full-day leaves flag every class on those dates.
+// Half-day leaves are period-aware:
+//   morning = off before 6:30pm, teaching evening → only classes < 18:30 are flagged.
+//   evening = teach earlier, off from 6:30pm       → only classes >= 18:30 are flagged.
+// A missing period is treated as 'morning' (legacy back-compat). Full-day flags every class.
 async function findAffectedClasses(
   coachId: string,
   leaveStart: string,
   leaveEnd: string,
-  isHalfDay: boolean = false
+  isHalfDay: boolean = false,
+  halfDayPeriod: "morning" | "evening" | null = null
 ): Promise<{ name: string; date: string; time: string }[]> {
   const admin = createAdminClient();
 
@@ -61,8 +64,14 @@ async function findAffectedClasses(
       // One-off events conflict only on their exact date; recurring by day-of-week.
       const dYmd = d.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
       if (c.event_date ? c.event_date !== dYmd : c.day_of_week !== dow) continue;
-      // Half-day = off before 6:30pm; skip classes that start at 18:30 or later
-      if (isHalfDay && c.start_time >= "18:30") continue;
+      // Half-day is period-aware. `continue` = coach still teaching, so NOT flagged.
+      if (isHalfDay) {
+        const period = halfDayPeriod || "morning";
+        // morning: off before 6:30pm, teaching evening → keep evening classes.
+        if (period === "morning" && c.start_time >= "18:30") continue;
+        // evening: teach earlier, off from 6:30pm → keep the earlier classes.
+        if (period === "evening" && c.start_time < "18:30") continue;
+      }
       const dateLabel = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Singapore" });
       affected.push({ name: c.name, date: dateLabel, time: c.start_time.slice(0, 5) });
     }
@@ -75,6 +84,7 @@ export async function submitLeave(payload: {
   leave_end_date: string;
   leave_type: string;
   is_half_day: boolean;
+  half_day_period?: "morning" | "evening" | null;
   reason: string;
   target_coach_id?: string;
 }) {
@@ -120,6 +130,7 @@ export async function submitLeave(payload: {
       leave_end_date: payload.leave_end_date || payload.leave_date,
       leave_type: payload.leave_type,
       is_half_day: payload.is_half_day,
+      half_day_period: payload.is_half_day ? (payload.half_day_period || "morning") : null,
       reason: payload.reason,
       status: "pending",
     })
@@ -133,7 +144,8 @@ export async function submitLeave(payload: {
     coachId,
     payload.leave_date,
     payload.leave_end_date || payload.leave_date,
-    payload.is_half_day
+    payload.is_half_day,
+    payload.is_half_day ? (payload.half_day_period || "morning") : null
   );
 
   // Notify all admins
@@ -147,7 +159,11 @@ export async function submitLeave(payload: {
     const dateRange = payload.leave_date === (payload.leave_end_date || payload.leave_date)
       ? payload.leave_date
       : `${payload.leave_date} to ${payload.leave_end_date}`;
-    const halfDayLabel = payload.is_half_day ? " (half day — off before 6:30pm)" : "";
+    const halfDayLabel = payload.is_half_day
+      ? ((payload.half_day_period || "morning") === "evening"
+          ? " (half day — off from 6:30pm (evening off))"
+          : " (half day — off before 6:30pm (teaching evening))")
+      : "";
     const conflictLine = affected.length
       ? `\n\n⚠️ Affected classes needing substitute:\n${affected.map((a) => `• ${a.name} — ${a.date} ${a.time}`).join("\n")}`
       : "";
@@ -174,7 +190,7 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
 
   const { data: leave } = await admin
     .from("leaves")
-    .select("id, coach_id, leave_date, leave_end_date, leave_type, is_half_day, status, coach:users!leaves_coach_id_fkey(full_name)")
+    .select("id, coach_id, leave_date, leave_end_date, leave_type, is_half_day, half_day_period, status, coach:users!leaves_coach_id_fkey(full_name)")
     .eq("id", leaveId)
     .is("deleted_at", null)
     .single();
@@ -206,11 +222,15 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
   const dateRange = leave.leave_date === leave.leave_end_date
     ? leave.leave_date
     : `${leave.leave_date} to ${leave.leave_end_date}`;
-  const halfDayLabel = leave.is_half_day ? " (half day — off before 6:30pm)" : "";
+  const halfDayLabel = leave.is_half_day
+    ? ((leave.half_day_period || "morning") === "evening"
+        ? " (half day — off from 6:30pm (evening off))"
+        : " (half day — off before 6:30pm (teaching evening))")
+    : "";
 
   if (action === "approved") {
     // Find conflicts and re-notify admins so Jeremy is reminded right at approval time
-    const affected = await findAffectedClasses(leave.coach_id, leave.leave_date, leave.leave_end_date, leave.is_half_day);
+    const affected = await findAffectedClasses(leave.coach_id, leave.leave_date, leave.leave_end_date, leave.is_half_day, leave.is_half_day ? ((leave.half_day_period as "morning" | "evening" | null) || "morning") : null);
     const coachName = ((leave.coach as unknown as { full_name: string } | null))?.full_name || "Coach";
 
     if (affected.length > 0) {

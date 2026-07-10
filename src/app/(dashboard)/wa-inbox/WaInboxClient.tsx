@@ -93,9 +93,12 @@ export default function WaInboxClient() {
     if (c) setSelected(c);
   }, []);
 
-  // Jump to the latest message when a conversation is opened.
+  // Jump to the latest message when a conversation is opened. Scroll the thread
+  // container itself (not scrollIntoView, which would also scroll the whole page
+  // and tuck the header under the top nav).
   useEffect(() => {
-    if (selected && threadEndRef.current) threadEndRef.current.scrollIntoView();
+    const el = threadContainerRef.current;
+    if (selected && el) el.scrollTop = el.scrollHeight;
   }, [selected]);
 
   // Mark the open thread read (per-device) so the Marketing tab badge and the
@@ -116,9 +119,9 @@ export default function WaInboxClient() {
   // near it — so scrolling up to read history isn't yanked back down.
   useEffect(() => {
     const el = threadContainerRef.current;
-    if (!el || !threadEndRef.current) return;
+    if (!el) return;
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-    if (nearBottom) threadEndRef.current.scrollIntoView();
+    if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [conversations]);
 
   const active = conversations.find((c) => c.phone === selected);
@@ -130,7 +133,7 @@ export default function WaInboxClient() {
 
   return (
     // Fill the dashboard content area (viewport minus fixed top bar + bottom nav).
-    <div className="-mx-4 md:-mx-6 lg:-mx-8 h-[calc(100vh-9.5rem)] flex bg-jai-bg text-gray-100 overflow-hidden">
+    <div className="-mx-4 md:-mx-6 lg:-mx-8 h-[calc(100dvh-9.5rem)] flex bg-jai-bg text-gray-100 overflow-hidden">
       {/* Conversation list */}
       <aside className={`${showThreadOnly ? "hidden" : "flex"} md:flex w-full md:w-[320px] shrink-0 border-r border-jai-border bg-jai-card flex-col min-h-0`}>
         <div className="px-3 py-2.5 border-b border-jai-border shrink-0">
@@ -226,7 +229,7 @@ export default function WaInboxClient() {
                   const isOut = m.role === "assistant";
                   els.push(
                     <div key={m.id} className={`flex ${isOut ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap ${isOut ? "bg-jai-blue text-white rounded-br-sm" : "bg-jai-card text-gray-100 rounded-bl-sm"}`}>
+                      <div className={`max-w-[80%] min-w-0 rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${isOut ? "bg-jai-blue text-white rounded-br-sm" : "bg-jai-card text-gray-100 rounded-bl-sm"}`}>
                         {isOut && (
                           <div className={`text-[11px] font-bold mb-0.5 ${m.via === "human" ? "text-amber-200" : "text-white/90"}`}>
                             {m.via === "human" ? "Coach Jeremy" : "Jai"}

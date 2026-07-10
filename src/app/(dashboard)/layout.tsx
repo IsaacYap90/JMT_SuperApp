@@ -39,7 +39,7 @@ export default async function DashboardLayout({
   const commandIndex = await buildCommandIndex(profile);
 
   return (
-    <div className="flex min-h-screen bg-jai-bg">
+    <div className="flex min-h-[100dvh] bg-jai-bg">
       <Sidebar profile={profile} />
       <main className="flex-1 px-4 pt-14 pb-24 md:px-6 lg:px-8 overflow-auto">
         {children}

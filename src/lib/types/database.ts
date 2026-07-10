@@ -130,6 +130,9 @@ export interface Leave {
   leave_end_date: string | null;
   leave_type: LeaveType;
   is_half_day: boolean;
+  // Only meaningful when is_half_day. null = full day, or a legacy half-day
+  // (legacy half-days are treated as 'morning' — off before 6:30pm, teaching evening).
+  half_day_period?: "morning" | "evening" | null;
   reason: string;
   status: LeaveStatus;
   reviewed_by: string | null;

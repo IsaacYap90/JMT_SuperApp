@@ -157,11 +157,11 @@ export async function GET(req: NextRequest) {
     leaveCoachIds.size > 0
       ? await supabase
           .from("leaves")
-          .select("coach_id, leave_date, leave_end_date, is_half_day")
+          .select("coach_id, leave_date, leave_end_date, is_half_day, half_day_period")
           .eq("status", "approved")
           .is("deleted_at", null)
           .in("coach_id", Array.from(leaveCoachIds))
-      : { data: [] as Array<{ coach_id: string; leave_date: string; leave_end_date: string | null; is_half_day: boolean }> };
+      : { data: [] as Array<{ coach_id: string; leave_date: string; leave_end_date: string | null; is_half_day: boolean; half_day_period: string | null }> };
 
   // "Today" in SGT as a UTC midnight Date so we can compare with date-only objects
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
@@ -265,8 +265,13 @@ export async function GET(req: NextRequest) {
 
     for (const leave of approvedLeaves || []) {
       if (!affectedCoachIds.has(leave.coach_id)) continue;
-      // Half-day rule (JMT): half-day = off before 6:30pm, evening classes still run.
-      if (leave.is_half_day && classStartHHMM >= "18:30") continue;
+      // Half-day rule (JMT): morning-half = off before 6:30pm (evening still runs);
+      // evening-half = off from 6:30pm (earlier classes still run). Legacy/null = morning.
+      if (leave.is_half_day) {
+        const period = (leave as { half_day_period?: string | null }).half_day_period || "morning";
+        if (period === "morning" && classStartHHMM >= "18:30") continue;
+        if (period === "evening" && classStartHHMM < "18:30") continue;
+      }
 
       const [lsY, lsM, lsD] = parseYmd(leave.leave_date);
       const endYmd = leave.leave_end_date || leave.leave_date;

@@ -222,7 +222,7 @@ async function handleStart(
 
   const { data: user, error: userErr } = await supabase
     .from("users")
-    .select("id, full_name, role")
+    .select("id, full_name, role, telegram_chat_id")
     .eq("id", userId)
     .maybeSingle();
 
@@ -233,6 +233,18 @@ async function handleStart(
 
   if (!["coach", "admin", "master_admin"].includes(user.role)) {
     await sendReply(token, chatId, "Telegram alerts are only available for coaches and admins.");
+    return;
+  }
+
+  // Refuse to re-link an account that's already bound to a DIFFERENT Telegram.
+  // The deep-link carries only the raw user id, so without this an attacker who
+  // learns a staff member's user id could DM the bot /start <id> and redirect
+  // that person's alerts to themselves. Re-linking (e.g. new phone) must be
+  // admin-initiated by clearing telegram_chat_id first. Same-device re-link is
+  // idempotent and allowed.
+  if (user.telegram_chat_id && user.telegram_chat_id !== String(chatId)) {
+    await sendReply(token, chatId, "This account is already linked to a Telegram account. If you've changed phones, please ask your admin to reset your link first.");
+    console.warn(`[telegram-webhook] refused re-link of ${userId} (already bound) from chat ${chatId}`);
     return;
   }
 
@@ -1738,6 +1750,13 @@ async function handleCallback(token: string, cb: NonNullable<TelegramUpdate["cal
 }
 
 export async function POST(req: NextRequest) {
+  // Fail-closed secret-token check (mirrors verifyMetaSignature): if
+  // TELEGRAM_WEBHOOK_SECRET is unset, or Telegram's header doesn't match, reject.
+  // Telegram sends this header when the webhook is registered with a secret_token.
+  if (req.headers.get("x-telegram-bot-api-secret-token") !== process.env.TELEGRAM_WEBHOOK_SECRET) {
+    return new NextResponse("forbidden", { status: 403 });
+  }
+
   const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
   if (!token) {
     return NextResponse.json({ ok: false, error: "no bot token" }, { status: 500 });

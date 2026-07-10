@@ -14,6 +14,7 @@ export type UnreadConv = {
 };
 
 function readMap(): Record<string, number> {
+  if (typeof window === "undefined") return {};
   try {
     return JSON.parse(localStorage.getItem(READ_KEY) || "{}");
   } catch {
@@ -22,6 +23,7 @@ function readMap(): Record<string, number> {
 }
 
 function baseline(): number {
+  if (typeof window === "undefined") return Date.now();
   const raw = localStorage.getItem(BASELINE_KEY);
   if (raw) {
     const n = Number(raw);
@@ -33,6 +35,7 @@ function baseline(): number {
 }
 
 export function markThreadRead(phone: string, lastTs: string) {
+  if (typeof window === "undefined") return;
   const t = new Date(lastTs).getTime();
   if (Number.isNaN(t)) return;
   const m = readMap();

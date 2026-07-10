@@ -90,6 +90,9 @@ export function LeavePageClient({
   const [leaveEndDate, setLeaveEndDate] = useState("");
   const [leaveType, setLeaveType] = useState<LeaveType>("annual");
   const [isHalfDay, setIsHalfDay] = useState(false);
+  // Which half is off. Default 'morning' = off before 6:30pm, teaching evening
+  // (the original half-day behaviour). 'evening' = teach earlier, off from 6:30pm.
+  const [halfDayPeriod, setHalfDayPeriod] = useState<"morning" | "evening">("morning");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
@@ -222,6 +225,7 @@ export function LeavePageClient({
         leave_end_date: leaveEndDate || leaveStartDate,
         leave_type: leaveType,
         is_half_day: isHalfDay,
+        half_day_period: isHalfDay ? halfDayPeriod : null,
         reason: reason.trim(),
         target_coach_id: targetCoachId || undefined,
       });
@@ -230,6 +234,7 @@ export function LeavePageClient({
       setLeaveStartDate("");
       setLeaveEndDate("");
       setIsHalfDay(false);
+      setHalfDayPeriod("morning");
       setReason("");
       router.refresh();
     } catch (err) {
@@ -275,6 +280,7 @@ export function LeavePageClient({
     setLeaveEndDate("");
     setLeaveType("sick");
     setIsHalfDay(false);
+    setHalfDayPeriod("morning");
     setReason("");
     setShowForm(true);
   };
@@ -534,9 +540,34 @@ export function LeavePageClient({
                 <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${isHalfDay ? "translate-x-5" : ""}`} />
               </div>
               <span className="text-sm text-white">
-                Half Day <span className="text-xs text-jai-text">(off before 6:30pm, teaching evening)</span>
+                Half Day <span className="text-xs text-jai-text">(morning or evening off)</span>
               </span>
             </label>
+            {isHalfDay && (
+              <div className="mt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHalfDayPeriod("morning")}
+                    className={`py-2 px-3 rounded-lg text-sm min-h-[44px] border transition-colors ${halfDayPeriod === "morning" ? "bg-jai-blue text-white border-jai-blue" : "bg-jai-bg text-jai-text border-jai-border"}`}
+                  >
+                    Morning off
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setHalfDayPeriod("evening")}
+                    className={`py-2 px-3 rounded-lg text-sm min-h-[44px] border transition-colors ${halfDayPeriod === "evening" ? "bg-jai-blue text-white border-jai-blue" : "bg-jai-bg text-jai-text border-jai-border"}`}
+                  >
+                    Evening off
+                  </button>
+                </div>
+                <p className="text-xs text-jai-text mt-1">
+                  {halfDayPeriod === "morning"
+                    ? "Off before 6:30pm, teaching evening classes."
+                    : "Teaching earlier classes, off from 6:30pm."}
+                </p>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm text-jai-text mb-1">Reason</label>

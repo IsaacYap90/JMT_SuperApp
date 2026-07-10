@@ -8,7 +8,7 @@
 // from the inbox, the message is still logged but the bot stays quiet.
 import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
-import { generateReply } from "@/lib/wa/jai-reply";
+import { generateReply, type Escalation } from "@/lib/wa/jai-reply";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
@@ -70,6 +70,48 @@ export async function POST(req: NextRequest) {
 
     const { from, contactName, messageId, text } = msg;
     const sb = createJaiClient();
+
+    // Idempotency — TWO-PHASE claim that FAILS OPEN. Meta re-delivers the same
+    // webhook if we don't ack fast enough. We only suppress a retry when we can
+    // POSITIVELY confirm a reply already went out (row exists AND handled=true).
+    // Any uncertainty — DB error, or a row that was claimed but never marked
+    // handled (a prior attempt died mid-send) — means we PROCEED and (re)reply.
+    // Never infer "duplicate" from a null/error that could just mean the query
+    // failed. `markHandled()` (below) flips handled=true only AFTER a successful
+    // WhatsApp send, so a customer never loses a reply to a crashed attempt.
+    const markHandled = async () => {
+      if (!messageId) return;
+      const { error } = await sb
+        .from("processed_messages")
+        .update({ handled: true })
+        .eq("wa_message_id", messageId);
+      if (error) console.error("[jai-webhook] markHandled failed", error);
+    };
+
+    if (messageId) {
+      const { error: claimErr } = await sb
+        .from("processed_messages")
+        .insert({ wa_message_id: messageId });
+      if (claimErr) {
+        if (claimErr.code === "23505") {
+          // Unique violation → we've seen this id. Suppress ONLY if a reply is
+          // confirmed sent (handled=true); otherwise fall through and re-handle.
+          const { data: existing } = await sb
+            .from("processed_messages")
+            .select("handled")
+            .eq("wa_message_id", messageId)
+            .maybeSingle();
+          if (existing?.handled === true) {
+            return NextResponse.json({ ok: true, dedup: true });
+          }
+          // Row exists but no reply confirmed → prior attempt died mid-flight.
+          // Fail open: proceed and reply.
+        } else {
+          // Any other DB error → fail OPEN, never treat as a duplicate.
+          console.error("[jai-webhook] dedup claim insert failed, proceeding", claimErr);
+        }
+      }
+    }
 
     // History BEFORE this message → tells us if it's a brand-new contact.
     const { data: prior } = await sb
@@ -157,7 +199,12 @@ export async function POST(req: NextRequest) {
       console.error("[jai-webhook] wa-inbox notify failed", e);
     }
 
-    if (lead?.ai_paused) return NextResponse.json({ ok: true });
+    if (lead?.ai_paused) {
+      // Handling is complete: logged + intentional silence (Jeremy owns this
+      // chat). No reply is owed, so it's safe to mark handled and dedup retries.
+      await markHandled();
+      return NextResponse.json({ ok: true });
+    }
 
     // ── Hardcoded "Done" booking verification (bypasses the AI entirely) ──
     // Triggered by the Done quick-reply tap (or typed "done"), or by the
@@ -182,6 +229,7 @@ export async function POST(req: NextRequest) {
           via: "bot",
         });
         await sendText(from, `*Jai*\n${out}`);
+        await markHandled(); // reply delivered → safe to dedup retries
       };
 
       const pingAdmins = async (note: string) => {
@@ -252,6 +300,32 @@ export async function POST(req: NextRequest) {
       lead?.is_member ?? false
     );
 
+    // ── Deterministic anti-loop guard ──────────────────────────────────────
+    // LLMs ignore "don't repeat" under pressure, so we backstop it in code.
+    // If JAI is about to resend a booking link it just sent, or the chat has
+    // dragged on with no resolution, hand to Coach Jeremy and go quiet instead
+    // of looping the same reply (the 2026-07-09 "looked dumb" failure).
+    const priorBot = (prior || []).filter((m) => m.role === "assistant");
+    const prevBotMsg = [...priorBot].reverse()[0]?.message || "";
+    const resendingLink =
+      /calendly\.com\//i.test(messageText) && /calendly\.com\//i.test(prevBotMsg);
+    const dragging = priorBot.length >= 8;
+    const forceHandoff =
+      (resendingLink || dragging) &&
+      (!escalation || escalation.escalation === "GENERAL_ESCALATION");
+
+    const outText = forceHandoff
+      ? "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly."
+      : messageText;
+    const outQuick = forceHandoff ? [] : quickReplies;
+    const esc: Escalation | null = forceHandoff
+      ? {
+          escalation: "GENERAL_ESCALATION",
+          intent: resendingLink ? "loop_break" : "conversation_stuck",
+          source: "guard",
+        }
+      : escalation;
+
     // Learned member detection — once the bot recognises an existing member, remember it.
     if (member && !lead?.is_member) {
       await sb.from("leads").update({ is_member: true }).eq("contact_number", from);
@@ -261,7 +335,7 @@ export async function POST(req: NextRequest) {
       contact_number: from,
       contact_name: contactName,
       role: "assistant",
-      message: messageText,
+      message: outText,
       via: "bot",
     });
 
@@ -269,17 +343,21 @@ export async function POST(req: NextRequest) {
     // WA interactive (button) messages cap the body at 1024 chars and can fail
     // for other reasons — never let the buttons cost the customer the message:
     // long bodies go as plain text, and a failed interactive send falls back.
-    const outbound = `*Jai*\n${messageText}`;
-    if (quickReplies.length > 0 && outbound.length <= 1000) {
-      const ok = await sendQuickReplies(from, outbound, quickReplies);
+    const outbound = `*Jai*\n${outText}`;
+    if (outQuick.length > 0 && outbound.length <= 1000) {
+      const ok = await sendQuickReplies(from, outbound, outQuick);
       if (!ok) await sendText(from, outbound);
     } else {
       await sendText(from, outbound);
     }
 
+    // Reply delivered → NOW mark the message handled so Meta retries dedup.
+    // (Before this point any crash/timeout leaves handled=false → we re-reply.)
+    await markHandled();
+
     // Bot just sent a booking link → arm the silent-lead follow-up funnel
     // (lead-followup cron nudges at +1h and +20h if they stay quiet).
-    if (/calendly\.com\//i.test(messageText)) {
+    if (!forceHandoff && /calendly\.com\//i.test(outText)) {
       await sb
         .from("leads")
         .update({
@@ -292,7 +370,7 @@ export async function POST(req: NextRequest) {
 
     // Escalation → ping the gym's master_admin(s) (Jeremy) on Telegram so a
     // PT lead / freeze / complaint / corporate enquiry doesn't fall through.
-    if (escalation) {
+    if (esc) {
       try {
         const pub = createSbClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -313,7 +391,7 @@ export async function POST(req: NextRequest) {
         // single match (same phone tail, future date, still "booked") —
         // anything else is left for Jeremy to resolve from the alert.
         let cancelNote = "";
-        if (escalation.escalation === "TRIAL_CANCEL") {
+        if (esc.escalation === "TRIAL_CANCEL") {
           try {
             const tail = from.replace(/\D/g, "").slice(-8);
             const today = new Date(
@@ -353,16 +431,31 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        const label = labels[escalation.escalation] || escalation.escalation;
+        // Never echo an unknown (attacker-controlled) escalation type into the
+        // alert. generateReply already drops unknown types, but guard here too:
+        // if the key isn't a known label, skip the escalation entirely.
+        const label = labels[esc.escalation];
+        if (!label) {
+          console.warn("[jai-webhook] dropping unknown escalation type", esc.escalation);
+          return NextResponse.json({ ok: true });
+        }
         const alert =
           `🔔 JAI bot — ${label}\n` +
           `Customer: ${contactName || "Unknown"} (+${from})\n` +
-          (escalation.intent ? `Intent: ${escalation.intent}\n` : "") +
+          (esc.intent ? `Intent: ${esc.intent}\n` : "") +
           `Last message: "${text}"\n` +
           cancelNote +
           `\nReply in the WA INBOX (JMT OS).`;
         for (const a of admins || []) {
           await sendTelegramPlainToUser(a.id, alert, "jai-escalation");
+        }
+
+        // A handoff escalation means a human (Coach Jeremy) now owns this chat —
+        // pause JAI so it goes quiet instead of looping back into the flow.
+        // (Booking/cancel notifications are self-service — don't pause those.)
+        const HANDOFF = ["PT_LEAD", "CORPORATE", "COMPLAINT", "GENERAL_ESCALATION"];
+        if (HANDOFF.includes(esc.escalation)) {
+          await sb.from("leads").update({ ai_paused: true }).eq("contact_number", from);
         }
       } catch (e) {
         console.error("[jai-webhook] escalation notify failed", e);

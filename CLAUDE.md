@@ -29,7 +29,7 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - For ALL changes, build a Cloudflare Tunnel review link and wait for Isaac's approval before deploying to production
 - Always run `npm run build` before finishing — must be green
 - Never modify `.env.local`. Use `vercel env add` for production env vars
-- Half-day leave at JMT = off before 6:30pm, teaching evening (NOT a generic AM/PM split)
+- Half-day leave at JMT supports MORNING or EVENING half (NOT a generic AM/PM split): morning = off before 6:30pm / teaching evening (the default + legacy behaviour); evening = teaching earlier classes / off from 6:30pm. Stored in `leaves.half_day_period` ('morning'|'evening'; null = full day or legacy half-day, treated as morning).
 - Distinct from `~/projects/jmt/jai-bot/` (separate WhatsApp chatbot project)
 
 ## Skills (slash commands)

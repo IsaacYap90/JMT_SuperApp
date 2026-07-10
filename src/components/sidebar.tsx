@@ -30,6 +30,7 @@ const adminProfileLinks = [
 const coachLinks = [
   { href: "/", label: "Home", icon: "home" },
   { href: "/schedule", label: "Schedule", icon: "calendar" },
+  { href: "/leave", label: "Leave", icon: "leave" },
 ];
 
 // Isaac-only link
@@ -141,10 +142,9 @@ export function Sidebar({ profile }: { profile: User }) {
     ? (profile.role === "master_admin" ? [...adminMainLinks, waInboxLink, metaLink] : adminMainLinks)
     : coachLinks;
 
-  // Coaches keep Leave in the profile sheet (it left the bottom bar).
+  // Coaches keep Leave in the bottom bar (restored); profile sheet is Profile-only.
   const coachProfileLinks = [
     { href: "/profile", label: "Profile", icon: "profile" },
-    { href: "/leave", label: "Leave", icon: "leave" },
   ];
   const profileLinks = admin
     ? (isIsaac ? [...adminProfileLinks, earningLink] : adminProfileLinks)

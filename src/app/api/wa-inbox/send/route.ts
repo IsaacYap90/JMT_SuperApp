@@ -47,6 +47,22 @@ export async function POST(req: NextRequest) {
   if (!phone) return NextResponse.json({ error: "phone required" }, { status: 400 });
   if (!body) return NextResponse.json({ error: "body required" }, { status: 400 });
 
+  // Guard: never send manually while JAI is still live for this contact — the
+  // bot and the coach would both reply. Require AI paused first (ai_paused lives
+  // on the jai.leads row, keyed by contact_number). Don't auto-pause; reject.
+  const sbGuard = createJaiClient();
+  const { data: leadState } = await sbGuard
+    .from("leads")
+    .select("ai_paused")
+    .eq("contact_number", phone)
+    .maybeSingle();
+  if (!leadState?.ai_paused) {
+    return NextResponse.json(
+      { error: "Turn AI off for this contact before sending manually." },
+      { status: 409 }
+    );
+  }
+
   // Label the outbound so the customer sees it's the real coach, not the bot.
   const sent = await deliver(phone, `*Coach Jeremy*\n${body}`);
   if (!sent.ok) {

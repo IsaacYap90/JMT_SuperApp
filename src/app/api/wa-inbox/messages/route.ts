@@ -38,8 +38,8 @@ export async function GET() {
 
   const { data: leadRows } = await supabase
     .from("leads")
-    .select("contact_number, contact_name, ai_paused");
-  type Lead = { contact_number: string; contact_name: string | null; ai_paused: boolean | null };
+    .select("contact_number, contact_name, ai_paused, is_member");
+  type Lead = { contact_number: string; contact_name: string | null; ai_paused: boolean | null; is_member: boolean | null };
   const leadByPhone = new Map<string, Lead>();
   for (const l of (leadRows || []) as Lead[]) leadByPhone.set(l.contact_number, l);
 
@@ -64,6 +64,7 @@ export async function GET() {
       last_body: last.message,
       last_role: last.role,
       paused: !!lead?.ai_paused,
+      isMember: !!lead?.is_member,
       messages: sorted.map((m) => ({ id: m.id, role: m.role, body: m.message, via: m.via, ts: m.created_at })),
     };
   });
