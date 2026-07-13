@@ -37,7 +37,7 @@ For Teens & Adults:
 - Muay Thai – All Levels: beginners start here; technique + a great workout.
 - Muay Thai – Advanced: for those with a solid foundation.
 - Sparring: once the coach clears you.
-For younger ones (small classes, capped at 8):
+For younger ones (small classes, capped at 10 pax per class — kept deliberately small so every child gets the coaches' full attention):
 - Pre-Teen: ages 11–14.
 - Kids: ages 6–10.
 Age bands: Kids 6–10 · Pre-Teen 11–14 · Teens & Adults.
