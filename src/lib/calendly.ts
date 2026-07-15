@@ -166,6 +166,20 @@ export async function cancelCalendlyEvent(
     // — extract the EVENT uuid, not whatever segment comes last.
     const uuid = eventUri.match(/scheduled_events\/([^/]+)/)?.[1];
     if (!uuid) return false;
+    // GROUP-SLOT GUARD (2026-07-15): the /cancellation endpoint cancels the WHOLE
+    // scheduled event, so on a group slot it cancels EVERY invitee. Cancelling one
+    // trial (Renu) nuked another attendee's booking (Rick). Only cancel the event
+    // when this booking is the sole active invitee; otherwise leave it so the
+    // co-attendees keep their slot (caller reports it wasn't freed).
+    const invitees = await calendlyFetch<{ collection: unknown[] }>(
+      `/scheduled_events/${uuid}/invitees?status=active&count=100`
+    );
+    if ((invitees.collection?.length ?? 0) > 1) {
+      console.warn(
+        `[calendly] skip event-cancel ${uuid}: ${invitees.collection.length} active invitees (group slot)`
+      );
+      return false;
+    }
     await calendlyFetch(`/scheduled_events/${uuid}/cancellation`, {
       method: "POST",
       body: JSON.stringify({ reason }),
