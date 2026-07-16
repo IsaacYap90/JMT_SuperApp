@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import { PtPageClient } from "@/components/pt-page-client";
 import type { ContractDraft } from "@/app/actions/pt";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function PtPage() {
   const supabase = createClient();
@@ -15,7 +16,7 @@ export default async function PtPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 
@@ -29,7 +30,7 @@ export default async function PtPage() {
   let pkgQuery = db
     .from("pt_packages")
     .select(
-      "*, member:users!pt_packages_user_id_fkey(*), coach:users!pt_packages_preferred_coach_id_fkey(*)"
+      `*, member:users!pt_packages_user_id_fkey(${USER_SELECT}), coach:users!pt_packages_preferred_coach_id_fkey(${USER_SELECT})`
     )
     .order("created_at", { ascending: false });
 

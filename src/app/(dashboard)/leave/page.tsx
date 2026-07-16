@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { User, Leave, isAdmin } from "@/lib/types/database";
 import { LeavePageClient } from "@/components/leave-page-client";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function LeavePage() {
   const supabase = createClient();
@@ -13,7 +14,7 @@ export default async function LeavePage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 
@@ -25,7 +26,7 @@ export default async function LeavePage() {
   // Coach view always sees only their own leaves regardless of employment type.
   let query = supabase
     .from("leaves")
-    .select("*, coach:users!leaves_coach_id_fkey!inner(*), reviewer:users!leaves_reviewed_by_fkey(*)")
+    .select(`*, coach:users!leaves_coach_id_fkey!inner(${USER_SELECT}), reviewer:users!leaves_reviewed_by_fkey(${USER_SELECT})`)
     .is("deleted_at", null)
     .order("leave_date", { ascending: false });
 

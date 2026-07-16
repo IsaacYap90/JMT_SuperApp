@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/sidebar";
 import { CommandPalette } from "@/components/command-palette";
 import { buildCommandIndex } from "@/lib/command-index";
 import { User } from "@/lib/types/database";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function DashboardLayout({
   children,
@@ -22,7 +23,7 @@ export default async function DashboardLayout({
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 

@@ -5,11 +5,12 @@ import { CoachSchedule } from "@/components/coach-schedule";
 import { SchedulePageClient } from "@/components/schedule-page-client";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export const dynamic = "force-dynamic";
 
 const CLASS_SELECT =
-  "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
+  `*, lead_coach:users!classes_lead_coach_id_fkey(${USER_SELECT}), assistant_coach:users!classes_assistant_coach_id_fkey(${USER_SELECT}), class_coaches(*, coach:users(${USER_SELECT}))`;
 
 // Resolve anchor date from ?date=YYYY-MM-DD in SGT, default to today.
 function resolveAnchorDate(raw?: string): string {
@@ -43,7 +44,7 @@ export default async function SchedulePage({
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 
@@ -108,7 +109,7 @@ export default async function SchedulePage({
       .eq("coach_id", user.id),
     supabase
       .from("pt_sessions")
-      .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
+      .select(`*, member:users!pt_sessions_member_id_fkey(${USER_SELECT}), package:pt_packages(guardian_name, guardian_phone)`)
       .eq("coach_id", user.id)
       .gte("scheduled_at", rangeStart)
       .lte("scheduled_at", `${rangeEnd}T23:59:59+08:00`)

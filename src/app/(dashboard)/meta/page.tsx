@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { User } from "@/lib/types/database";
 import MetaClient from "./MetaClient";
+import { USER_SELECT } from "@/lib/user-columns";
 
 // JAI Meta assistant — FB/IG comment inbox + activity. master_admin (Jeremy) only.
 export default async function MetaPage() {
@@ -13,7 +14,7 @@ export default async function MetaPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
   if (!profileData) redirect("/login");

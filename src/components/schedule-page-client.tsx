@@ -7,10 +7,12 @@ import { ClassModal } from "./class-modal";
 import { createClient } from "@/lib/supabase/client";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 import { updatePtSession } from "@/app/actions/pt";
+import { getMyCalendarToken } from "@/app/actions/calendar";
+import { USER_SELECT } from "@/lib/user-columns";
 import { Button, Fab } from "./ui/button";
 
 const CLASS_SELECT =
-  "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
+  `*, lead_coach:users!classes_lead_coach_id_fkey(${USER_SELECT}), assistant_coach:users!classes_assistant_coach_id_fkey(${USER_SELECT}), class_coaches(*, coach:users(${USER_SELECT}))`;
 
 const DAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -55,12 +57,7 @@ function CalendarSubscribeButton({ userId }: { userId: string; isAdmin?: boolean
   // Calendar feed is gated on the unguessable per-user calendar_token (not the id).
   const [calToken, setCalToken] = useState<string | null>(null);
   useEffect(() => {
-    createClient()
-      .from("users")
-      .select("calendar_token")
-      .eq("id", userId)
-      .maybeSingle()
-      .then(({ data }) => setCalToken((data as { calendar_token: string | null } | null)?.calendar_token ?? null));
+    getMyCalendarToken().then((token) => setCalToken(token));
   }, [userId]);
   const baseUrl = calToken ? `${window.location.origin}/api/calendar?token=${calToken}` : "";
   const calUrl = baseUrl.replace(/^https?:\/\//, "webcal://");

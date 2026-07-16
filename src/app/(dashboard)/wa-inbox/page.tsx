@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { User } from "@/lib/types/database";
 import WaInboxClient from "./WaInboxClient";
+import { USER_SELECT } from "@/lib/user-columns";
 
 // Native WhatsApp inbox — master_admin (Jeremy) only.
 export default async function WaInboxPage() {
@@ -13,7 +14,7 @@ export default async function WaInboxPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
   if (!profileData) redirect("/login");

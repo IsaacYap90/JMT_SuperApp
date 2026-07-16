@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { User, PtSession, PtConfirmation, isAdmin } from "@/lib/types/database";
 import { SundayPrepClient } from "@/components/sunday-prep-client";
+import { USER_SELECT } from "@/lib/user-columns";
 
 function getWeekRange() {
   const now = new Date();
@@ -36,7 +37,7 @@ export default async function SundayPrepPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 

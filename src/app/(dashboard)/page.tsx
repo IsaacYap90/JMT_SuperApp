@@ -7,11 +7,12 @@ import { ActivityFeed } from "@/components/activity-feed";
 import { FollowUp } from "@/components/follow-up";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export const dynamic = "force-dynamic";
 
 const CLASS_SELECT =
-  "*, lead_coach:users!classes_lead_coach_id_fkey(*), assistant_coach:users!classes_assistant_coach_id_fkey(*), class_coaches(*, coach:users(*))";
+  `*, lead_coach:users!classes_lead_coach_id_fkey(${USER_SELECT}), assistant_coach:users!classes_assistant_coach_id_fkey(${USER_SELECT}), class_coaches(*, coach:users(${USER_SELECT}))`;
 
 export default async function HomePage() {
   const supabase = createClient();
@@ -24,7 +25,7 @@ export default async function HomePage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 
@@ -173,7 +174,7 @@ export default async function HomePage() {
       .eq("coach_id", user.id),
     supabase
       .from("pt_sessions")
-      .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
+      .select(`*, member:users!pt_sessions_member_id_fkey(${USER_SELECT}), package:pt_packages(guardian_name, guardian_phone)`)
       .eq("coach_id", user.id)
       .gte("scheduled_at", todayStartSGT)
       .lt("scheduled_at", tomorrowStartSGT)
@@ -187,7 +188,7 @@ export default async function HomePage() {
       .lt("scheduled_at", sundayDate),
     supabase
       .from("pt_sessions")
-      .select("*, member:users!pt_sessions_member_id_fkey(*), package:pt_packages(guardian_name, guardian_phone)")
+      .select(`*, member:users!pt_sessions_member_id_fkey(${USER_SELECT}), package:pt_packages(guardian_name, guardian_phone)`)
       .eq("coach_id", user.id)
       .gte("scheduled_at", sundayDate)
       .lt("scheduled_at", nextSundayDate)
@@ -229,7 +230,7 @@ export default async function HomePage() {
 
   const { data: tomorrowPtData } = await supabase
     .from("pt_sessions")
-    .select("*, member:users!pt_sessions_member_id_fkey(*)")
+    .select(`*, member:users!pt_sessions_member_id_fkey(${USER_SELECT})`)
     .eq("coach_id", user.id)
     .gte("scheduled_at", tomorrowStartSGT)
     .lt("scheduled_at", dayAfterTomorrowStartSGT)

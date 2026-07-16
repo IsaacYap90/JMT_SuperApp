@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { isAdmin, User } from "@/lib/types/database";
 import { NewContractWizard } from "@/components/new-contract-wizard";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export default async function NewContractPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
   if (!profileData) redirect("/login");

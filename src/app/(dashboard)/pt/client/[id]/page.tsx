@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect, notFound } from "next/navigation";
 import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import { PtClientHistory } from "@/components/pt-client-history";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,7 @@ export default async function PtClientPage({
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
   if (!profileData) redirect("/login");
@@ -33,7 +34,7 @@ export default async function PtClientPage({
 
   const { data: memberData } = await db
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", params.id)
     .single();
   if (!memberData) notFound();
@@ -59,12 +60,12 @@ export default async function PtClientPage({
   const [packagesRes, sessionsRes] = await Promise.all([
     db
       .from("pt_packages")
-      .select("*, coach:users!pt_packages_preferred_coach_id_fkey(*)")
+      .select(`*, coach:users!pt_packages_preferred_coach_id_fkey(${USER_SELECT})`)
       .eq("user_id", params.id)
       .order("created_at", { ascending: false }),
     db
       .from("pt_sessions")
-      .select("*, coach:users!pt_sessions_coach_id_fkey(*)")
+      .select(`*, coach:users!pt_sessions_coach_id_fkey(${USER_SELECT})`)
       .eq("member_id", params.id)
       .order("scheduled_at", { ascending: false }),
   ]);

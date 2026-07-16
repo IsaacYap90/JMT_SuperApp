@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect } from "next/navigation";
 import { User, isAdmin } from "@/lib/types/database";
 import { TrialManagementClient } from "@/components/trial-management-client";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function TrialManagementPage() {
   const supabase = createClient();
@@ -13,7 +14,7 @@ export default async function TrialManagementPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
   if (!profileData) redirect("/login");

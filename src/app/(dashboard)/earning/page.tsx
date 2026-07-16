@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { User } from "@/lib/types/database";
 import { EarningClient } from "@/components/earning-client";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function EarningPage() {
   const supabase = createClient();
@@ -13,7 +14,7 @@ export default async function EarningPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 

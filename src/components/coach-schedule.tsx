@@ -6,7 +6,7 @@ import { Class, PtSession } from "@/lib/types/database";
 import { isPublicHoliday } from "@/lib/sg-holidays";
 import { PtCard } from "./pt-card";
 import { Button } from "./ui/button";
-import { createClient } from "@/lib/supabase/client";
+import { getMyCalendarToken } from "@/app/actions/calendar";
 
 function CalendarSubscribeButton({ coachId }: { coachId: string }) {
   const [showModal, setShowModal] = useState(false);
@@ -14,12 +14,7 @@ function CalendarSubscribeButton({ coachId }: { coachId: string }) {
   // Calendar feed is gated on the unguessable per-user calendar_token (not the id).
   const [calToken, setCalToken] = useState<string | null>(null);
   useEffect(() => {
-    createClient()
-      .from("users")
-      .select("calendar_token")
-      .eq("id", coachId)
-      .maybeSingle()
-      .then(({ data }) => setCalToken((data as { calendar_token: string | null } | null)?.calendar_token ?? null));
+    getMyCalendarToken().then((token) => setCalToken(token));
   }, [coachId]);
   const baseUrl = calToken ? `${window.location.origin}/api/calendar?token=${calToken}` : "";
   const calUrl = baseUrl.replace(/^https?:\/\//, "webcal://");

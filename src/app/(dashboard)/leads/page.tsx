@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { User, isAdmin } from "@/lib/types/database";
 import { LeadsPageClient } from "@/components/leads-page-client";
 import type { Lead } from "@/app/actions/leads";
+import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function LeadsPage() {
   const supabase = createClient();
@@ -15,7 +16,7 @@ export default async function LeadsPage() {
 
   const { data: profileData } = await supabase
     .from("users")
-    .select("*")
+    .select(USER_SELECT)
     .eq("id", user.id)
     .single();
 
