@@ -83,6 +83,18 @@ export async function POST(req: NextRequest) {
       console.error("[calendly-webhook] no signing key AND no CALENDLY_PAT — cannot verify");
       return NextResponse.json({ error: "not configured" }, { status: 500 });
     }
+    // SSRF guard: the payload is unverified on this path, so never send the PAT
+    // anywhere but Calendly's API. Reject any invitee uri that doesn't resolve
+    // to exactly https://api.calendly.com before attaching the Authorization header.
+    let u: URL;
+    try {
+      u = new URL(eventUri);
+    } catch {
+      return NextResponse.json({ error: "bad uri" }, { status: 400 });
+    }
+    if (u.origin !== "https://api.calendly.com") {
+      return NextResponse.json({ error: "invalid invitee uri" }, { status: 400 });
+    }
     try {
       const verify = await fetch(eventUri, {
         headers: { Authorization: `Bearer ${pat}` },
