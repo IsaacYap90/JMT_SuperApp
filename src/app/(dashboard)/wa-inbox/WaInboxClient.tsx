@@ -210,6 +210,17 @@ export default function WaInboxClient() {
               >
                 {active.paused ? "Jeremy taking over" : "AI on"}
               </button>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Delete this conversation with ${active.name || "+" + active.phone}? This wipes its JAI history and resets it to a brand-new contact.`)) return;
+                  const r = await fetch("/api/wa-inbox/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone }) });
+                  if (r.ok) { setSelected(null); fetchMessages(); } else setErr("Delete failed");
+                }}
+                className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition shrink-0 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                title="Delete this conversation — wipes its JAI history and resets it to a fresh contact. Use to reset test threads."
+              >
+                Delete
+              </button>
             </div>
 
             <div ref={threadContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-2">
