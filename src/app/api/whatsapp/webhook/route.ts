@@ -450,10 +450,13 @@ export async function POST(req: NextRequest) {
           await sendTelegramPlainToUser(a.id, alert, "jai-escalation");
         }
 
-        // A handoff escalation means a human (Coach Jeremy) now owns this chat —
-        // pause JAI so it goes quiet instead of looping back into the flow.
-        // (Booking/cancel notifications are self-service — don't pause those.)
-        const HANDOFF = ["PT_LEAD", "CORPORATE", "COMPLAINT", "GENERAL_ESCALATION"];
+        // Pause JAI only where a human should fully take over the thread
+        // (COMPLAINT) or the convo is stuck/looping (GENERAL_ESCALATION from the
+        // anti-loop guard). PT_LEAD / CORPORATE hand off to Jeremy but leave JAI
+        // LIVE — customers often come back with other questions and shouldn't be
+        // ghosted (Isaac, 2026-07-16). Jeremy can still fully silence any chat
+        // with the "Jeremy taking over" toggle in the WA inbox.
+        const HANDOFF = ["COMPLAINT", "GENERAL_ESCALATION"];
         if (HANDOFF.includes(esc.escalation)) {
           await sb.from("leads").update({ ai_paused: true }).eq("contact_number", from);
         }
