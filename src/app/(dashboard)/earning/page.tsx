@@ -5,7 +5,7 @@ import { EarningClient } from "@/components/earning-client";
 import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function EarningPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

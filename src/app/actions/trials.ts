@@ -7,7 +7,7 @@ import { revalidatePath } from "next/cache";
 import { createNotification } from "./notifications";
 
 async function requireAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

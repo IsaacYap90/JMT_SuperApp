@@ -7,12 +7,11 @@ import { USER_SELECT } from "@/lib/user-columns";
 
 export const dynamic = "force-dynamic";
 
-export default async function PtClientPage({
-  params,
-}: {
-  params: { id: string };
+export default async function PtClientPage(props: {
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = createClient();
+  const params = await props.params;
+  const supabase = await createClient();
 
   const {
     data: { user },

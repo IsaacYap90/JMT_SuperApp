@@ -1,8 +1,7 @@
-export default function ConfirmationPage({
-  searchParams,
-}: {
-  searchParams: { name?: string; date?: string; time?: string; class?: string };
+export default async function ConfirmationPage(props: {
+  searchParams: Promise<{ name?: string; date?: string; time?: string; class?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   const name = searchParams.name || "there";
   const date = searchParams.date || "";
   const time = searchParams.time || "";

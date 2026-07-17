@@ -25,7 +25,7 @@ export interface Lead {
 }
 
 export async function getLeads(): Promise<Lead[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -48,7 +48,7 @@ export async function getLeads(): Promise<Lead[]> {
 }
 
 export async function updateLeadStatus(leadId: string, status: LeadStatus) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -98,7 +98,7 @@ export async function updateLeadStatus(leadId: string, status: LeadStatus) {
 }
 
 export async function updateLeadNotes(leadId: string, notes: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

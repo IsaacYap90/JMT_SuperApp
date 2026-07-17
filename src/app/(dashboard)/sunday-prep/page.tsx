@@ -28,7 +28,7 @@ function getWeekRange() {
 }
 
 export default async function SundayPrepPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
