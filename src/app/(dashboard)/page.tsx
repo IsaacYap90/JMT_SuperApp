@@ -15,7 +15,7 @@ const CLASS_SELECT =
   `*, lead_coach:users!classes_lead_coach_id_fkey(${USER_SELECT}), assistant_coach:users!classes_assistant_coach_id_fkey(${USER_SELECT}), class_coaches(*, coach:users(${USER_SELECT}))`;
 
 export default async function HomePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

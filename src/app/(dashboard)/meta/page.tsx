@@ -6,7 +6,7 @@ import { USER_SELECT } from "@/lib/user-columns";
 
 // JAI Meta assistant — FB/IG comment inbox + activity. master_admin (Jeremy) only.
 export default async function MetaPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

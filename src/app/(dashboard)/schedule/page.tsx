@@ -27,15 +27,14 @@ function shiftIsoDate(iso: string, deltaDays: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
-export default async function SchedulePage({
-  searchParams,
-}: {
-  searchParams: { date?: string };
+export default async function SchedulePage(props: {
+  searchParams: Promise<{ date?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   const anchorDate = resolveAnchorDate(searchParams.date);
   const rangeStart = shiftIsoDate(anchorDate, -14);
   const rangeEnd = shiftIsoDate(anchorDate, 21);
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

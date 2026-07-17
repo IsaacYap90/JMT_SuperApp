@@ -19,7 +19,7 @@ function formatSgtTime(date: Date): string {
 }
 
 async function requireAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -626,7 +626,7 @@ export async function coachUpdatePtStatus(
   newStatus: "completed" | "cancelled" | "no_show",
   signature?: SessionSignaturePayload
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -693,7 +693,7 @@ export async function coachReschedulePtSession(
   newScheduledAt: string,
   newDurationMinutes: number
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -744,7 +744,7 @@ export async function logPtSession(
   coachNotes: string,
   nextFocus: string
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
