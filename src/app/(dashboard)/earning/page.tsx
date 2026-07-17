@@ -4,7 +4,7 @@ import { User } from "@/lib/types/database";
 import { EarningClient } from "@/components/earning-client";
 
 export default async function EarningPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

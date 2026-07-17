@@ -6,7 +6,7 @@ import { LeadsPageClient } from "@/components/leads-page-client";
 import type { Lead } from "@/app/actions/leads";
 
 export default async function LeadsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

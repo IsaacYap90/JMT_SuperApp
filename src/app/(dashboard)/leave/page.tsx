@@ -4,7 +4,7 @@ import { User, Leave, isAdmin } from "@/lib/types/database";
 import { LeavePageClient } from "@/components/leave-page-client";
 
 export default async function LeavePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

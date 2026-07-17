@@ -251,7 +251,7 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
 }
 
 async function getAuthUser() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -328,7 +328,7 @@ export async function addInLieuCredit(payload: {
   days: number;
   reason: string;
 }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

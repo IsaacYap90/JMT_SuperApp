@@ -5,7 +5,7 @@ import { User, isAdmin } from "@/lib/types/database";
 import { TrialManagementClient } from "@/components/trial-management-client";
 
 export default async function TrialManagementPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

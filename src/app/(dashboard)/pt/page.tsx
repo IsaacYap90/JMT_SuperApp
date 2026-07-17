@@ -6,7 +6,7 @@ import { PtPageClient } from "@/components/pt-page-client";
 import type { ContractDraft } from "@/app/actions/pt";
 
 export default async function PtPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

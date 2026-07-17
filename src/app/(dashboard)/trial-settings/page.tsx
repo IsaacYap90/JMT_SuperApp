@@ -5,7 +5,7 @@ import { User, isAdmin } from "@/lib/types/database";
 import { TrialSettingsClient } from "@/components/trial-settings-client";
 
 export default async function TrialSettingsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
