@@ -95,7 +95,7 @@ export async function buildCommandIndex(profile: User): Promise<CommandItem[]> {
       });
     }
   } else {
-    const supabase = createClient();
+    const supabase = await createClient();
     const classesRes = await supabase
       .from("classes")
       .select("id, name, day_of_week, start_time, event_date, lead_coach_id, assistant_coach_id")

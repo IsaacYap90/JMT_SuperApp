@@ -7,7 +7,7 @@ import type { ContractDraft } from "@/app/actions/pt";
 import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function PtPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

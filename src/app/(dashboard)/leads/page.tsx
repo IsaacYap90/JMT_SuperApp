@@ -7,7 +7,7 @@ import type { Lead } from "@/app/actions/leads";
 import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function LeadsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

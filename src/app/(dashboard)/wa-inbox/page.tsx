@@ -6,7 +6,7 @@ import { USER_SELECT } from "@/lib/user-columns";
 
 // Native WhatsApp inbox — master_admin (Jeremy) only.
 export default async function WaInboxPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

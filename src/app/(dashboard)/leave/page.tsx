@@ -5,7 +5,7 @@ import { LeavePageClient } from "@/components/leave-page-client";
 import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function LeavePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
