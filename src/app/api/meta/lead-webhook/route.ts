@@ -57,9 +57,12 @@ export async function GET(req: NextRequest) {
 // ── POST: Receive lead form submissions ──
 export async function POST(req: NextRequest) {
   // Verify Meta's HMAC signature on the RAW body BEFORE parsing. Fail closed:
-  // missing META_APP_SECRET or missing/invalid signature → 403.
+  // missing secret or missing/invalid signature → 403. Lead Ads payloads are
+  // signed by the "JMT Leads" app → LEADS_APP_SECRET (NOT META_APP_SECRET,
+  // which is the WhatsApp "JMT AI Bot" app — see the 2026-07-20 outage).
   const raw = await req.text();
-  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"))) {
+  const leadsSecret = process.env.LEADS_APP_SECRET ?? process.env.META_APP_SECRET;
+  if (!verifyMetaSignature(raw, req.headers.get("x-hub-signature-256"), leadsSecret)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
