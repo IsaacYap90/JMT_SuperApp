@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 function LoginPageContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -68,14 +69,29 @@ function LoginPageContent() {
             <label className="block text-sm text-jai-text mb-1">
               Password
             </label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-3 bg-jai-card border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue transition-colors"
-              placeholder="Enter password"
-              required
-            />
+            <div className="relative">
+              <input
+                type={showPw ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 bg-jai-card border border-jai-border rounded-lg text-white focus:outline-none focus:border-jai-blue transition-colors pr-16"
+                placeholder="Enter password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPw(!showPw)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-jai-text hover:text-white"
+              >
+                {showPw ? "Hide" : "Show"}
+              </button>
+            </div>
+            <a
+              href="/forgot-password"
+              className="block text-right text-sm text-jai-text hover:text-jai-blue mt-1 transition-colors"
+            >
+              Forgot password?
+            </a>
           </div>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
