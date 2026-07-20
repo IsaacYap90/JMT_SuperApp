@@ -9,27 +9,71 @@ import { isMasterAdmin } from "@/lib/wa-inbox-guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+// Cap the whole request so a dead JAI_BOT_SEND_URL can't hang the browser's fetch
+// (it used to run with no timeout → route never returned → UI showed "Network error").
+export const maxDuration = 30;
 const WA_VERSION = "v21.0";
+const FETCH_TIMEOUT_MS = 9000;
+const MAX_ATTEMPTS = 3;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// fetch with an AbortController timeout so a hung endpoint fails fast instead of
+// hanging until the platform kills the function.
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: ctrl.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// Retry transient failures (timeout / network error) a few times with small backoff.
+// A non-ok HTTP response is a real rejection from the endpoint — return it, don't retry.
+async function postWithRetry(
+  url: string,
+  init: RequestInit,
+  unreachableDetail: string
+): Promise<{ ok: boolean; detail?: string; status?: number }> {
+  let lastErr = "";
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const r = await fetchWithTimeout(url, init);
+      if (!r.ok) return { ok: false, status: r.status, detail: await r.text() };
+      return { ok: true };
+    } catch (e) {
+      lastErr = e instanceof Error && e.name === "AbortError" ? "request timed out" : String(e);
+      if (attempt < MAX_ATTEMPTS) await sleep(attempt * 400);
+    }
+  }
+  return { ok: false, status: 504, detail: `${unreachableDetail} (${lastErr})` };
+}
 
 async function deliver(phone: string, text: string): Promise<{ ok: boolean; detail?: string; status?: number }> {
   const botUrl = process.env.JAI_BOT_SEND_URL;
   if (botUrl) {
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (process.env.JAI_SEND_SECRET) headers["x-jai-secret"] = process.env.JAI_SEND_SECRET;
-    const r = await fetch(botUrl, { method: "POST", headers, body: JSON.stringify({ to: phone, text }) });
-    if (!r.ok) return { ok: false, status: r.status, detail: await r.text() };
-    return { ok: true };
+    return postWithRetry(
+      botUrl,
+      { method: "POST", headers, body: JSON.stringify({ to: phone, text }) },
+      "Bot endpoint unreachable"
+    );
   }
   const token = process.env.WA_ACCESS_TOKEN;
   const phoneId = process.env.WA_PHONE_NUMBER_ID;
   if (!token || !phoneId) return { ok: false, status: 500, detail: "WhatsApp not configured yet" };
-  const r = await fetch(`https://graph.facebook.com/${WA_VERSION}/${phoneId}/messages`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } }),
-  });
-  if (!r.ok) return { ok: false, status: r.status, detail: await r.text() };
-  return { ok: true };
+  return postWithRetry(
+    `https://graph.facebook.com/${WA_VERSION}/${phoneId}/messages`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ messaging_product: "whatsapp", to: phone, type: "text", text: { body: text } }),
+    },
+    "WhatsApp API unreachable"
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -67,7 +111,15 @@ export async function POST(req: NextRequest) {
   const sent = await deliver(phone, `*Coach Jeremy*\n${body}`);
   if (!sent.ok) {
     console.error("[wa-inbox send] deliver failed", sent.status, sent.detail);
-    return NextResponse.json({ error: "WhatsApp send failed", detail: sent.detail }, { status: 502 });
+    const status = sent.status ?? 502;
+    // Specific, actionable error instead of a generic "send failed" / browser "Network error".
+    const error =
+      status === 504
+        ? sent.detail?.split(" (")[0] || "Endpoint unreachable"
+        : status === 500
+          ? sent.detail || "WhatsApp not configured"
+          : "WhatsApp API rejected";
+    return NextResponse.json({ error, detail: sent.detail }, { status });
   }
 
   const { error } = await createJaiClient()

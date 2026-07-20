@@ -220,9 +220,15 @@ export async function generateReply(
   history: HistoryMsg[],
   isNewContact: boolean,
   customerName?: string | null,
-  isMember?: boolean
+  isMember?: boolean,
+  contactContext?: string
 ): Promise<ParsedReply> {
   let systemPrompt = SYSTEM_PROMPT;
+  // Who JAI is actually talking to (member / returning / new) + any recap, so it
+  // greets appropriately instead of defaulting to the brand-new greeting.
+  if (contactContext && contactContext.trim()) {
+    systemPrompt += `\n\n## WHO YOU'RE TALKING TO (use this — do not contradict it)\n${contactContext.trim()}`;
+  }
   // Give JAI the real current date/time in SINGAPORE (SGT, UTC+8) so "today / tomorrow /
   // tonight / this week / what day" is always correct — never let the model guess the date.
   const nowSgt = new Date().toLocaleString("en-SG", {
@@ -240,6 +246,14 @@ export async function generateReply(
   }
   if (isNewContact && !isMember) {
     systemPrompt += "\n\nThis is a NEW contact messaging for the first time. Use the greeting flow" + (firstName ? `, greeting ${firstName} by name.` : ".");
+  } else {
+    // Returning contact OR known member — gate off the "new contact" greeting.
+    // The static GREETING section carries an "I'm still new here, so I don't have
+    // your past chats" heads-up; it is ONLY for genuinely-new contacts.
+    systemPrompt +=
+      `\n\nThis is NOT a brand-new contact — you have spoken before or they are a known member. ` +
+      `Do NOT use the "I'm still new here, so I don't have your past chats" line (or any variation), and NEVER claim to be new or to lack their history. ` +
+      `Greet them as someone you already know${firstName ? ` — by name ("Hey ${firstName}!")` : ""}, and pick up the conversation naturally.`;
   }
 
   const messages = [

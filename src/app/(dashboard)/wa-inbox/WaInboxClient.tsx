@@ -65,6 +65,10 @@ export default function WaInboxClient() {
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  // messages payload doesn't carry is_member, so track confirmed member state locally
+  // (keyed by phone) — set optimistically then reconciled from the route response.
+  const [memberOverride, setMemberOverride] = useState<Record<string, boolean>>({});
   const threadEndRef = useRef<HTMLDivElement>(null);
   const threadContainerRef = useRef<HTMLDivElement>(null);
 
@@ -124,8 +128,55 @@ export default function WaInboxClient() {
     if (nearBottom) el.scrollTop = el.scrollHeight;
   }, [conversations]);
 
+  // Auto-dismiss the small confirmation toast.
+  useEffect(() => {
+    if (!note) return;
+    const t = setTimeout(() => setNote(null), 2500);
+    return () => clearTimeout(t);
+  }, [note]);
+
   const active = conversations.find((c) => c.phone === selected);
   const showThreadOnly = !!active;
+
+  // Send the current draft to the active contact. Keeps the draft on failure so a
+  // one-tap Retry works; surfaces the route's specific error instead of a bare
+  // "Network error" when the fetch itself rejects.
+  const sendDraft = useCallback(async () => {
+    if (!active) return;
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true); setErr(null);
+    try {
+      const r = await fetch("/api/wa-inbox/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone, body }) });
+      if (r.ok) { setDraft(""); fetchMessages(); }
+      else {
+        const j = await r.json().catch(() => ({}));
+        setErr([j.error || "Send failed", j.detail].filter(Boolean).join(" — ").slice(0, 200));
+      }
+    } catch {
+      setErr("Couldn't reach the server — draft kept, tap Retry");
+    } finally { setSending(false); }
+  }, [active, draft, sending, fetchMessages]);
+
+  // Optimistically toggle member status, then confirm from the route response.
+  const toggleMember = useCallback(async (phone: string, current: boolean) => {
+    const next = !current;
+    setMemberOverride((m) => ({ ...m, [phone]: next }));
+    try {
+      const r = await fetch("/api/wa-inbox/member", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ contact_number: phone, is_member: next }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setMemberOverride((m) => ({ ...m, [phone]: !!j.is_member }));
+        setNote(j.is_member ? "Marked as member" : "Unmarked member");
+      } else {
+        setMemberOverride((m) => ({ ...m, [phone]: current })); // revert
+        setErr(j.error || "Couldn't update member status");
+      }
+    } catch {
+      setMemberOverride((m) => ({ ...m, [phone]: current })); // revert
+      setErr("Couldn't reach the server");
+    }
+  }, []);
   const q = search.trim().toLowerCase();
   const filtered = q
     ? conversations.filter((c) => (c.name || "").toLowerCase().includes(q) || c.phone.includes(q) || c.last_body.toLowerCase().includes(q))
@@ -188,17 +239,18 @@ export default function WaInboxClient() {
                 <p className="text-sm font-semibold text-white truncate">{active.name || `+${active.phone}`}</p>
                 <p className="text-[11px] text-gray-500 font-mono truncate">+{active.phone}</p>
               </div>
-              <button
-                onClick={async () => {
-                  const next = !active.isMember;
-                  const r = await fetch("/api/wa-inbox/member", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone, is_member: next }) });
-                  if (r.ok) fetchMessages(); else setErr("Toggle failed");
-                }}
-                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition shrink-0 ${active.isMember ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
-                title={active.isMember ? "Confirmed member — JAI greets them as a member, no trial link. Tap to unmark." : "Mark this contact as an existing member so JAI stops treating them as a new lead."}
-              >
-                {active.isMember ? "✓ Member" : "Mark member"}
-              </button>
+              {(() => {
+                const isMember = memberOverride[active.phone] ?? active.isMember;
+                return (
+                  <button
+                    onClick={() => toggleMember(active.phone, isMember)}
+                    className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full transition shrink-0 ${isMember ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30" : "bg-white/5 text-gray-400 hover:bg-white/10"}`}
+                    title={isMember ? "Confirmed member — JAI greets them as a member, no trial link. Tap to unmark." : "Mark this contact as an existing member so JAI stops treating them as a new lead."}
+                  >
+                    {isMember ? "✓ Member" : "Mark member"}
+                  </button>
+                );
+              })()}
               <button
                 onClick={async () => {
                   const next = !active.paused;
@@ -258,18 +310,7 @@ export default function WaInboxClient() {
             </div>
 
             <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const body = draft.trim();
-                if (!body || sending) return;
-                setSending(true); setErr(null);
-                try {
-                  const r = await fetch("/api/wa-inbox/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone, body }) });
-                  if (r.ok) { setDraft(""); fetchMessages(); }
-                  else { const j = await r.json().catch(() => ({})); setErr(j.error || "Send failed"); }
-                } catch { setErr("Network error"); }
-                finally { setSending(false); }
-              }}
+              onSubmit={(e) => { e.preventDefault(); sendDraft(); }}
               className="border-t border-jai-border bg-jai-card px-3 sm:px-4 py-2.5 sm:py-3 flex items-end gap-2 shrink-0"
             >
               <textarea
@@ -288,7 +329,16 @@ export default function WaInboxClient() {
         )}
       </section>
 
-      {err && <div className="fixed bottom-24 right-4 bg-red-500/20 text-red-300 text-xs px-4 py-2 rounded z-50">{err}</div>}
+      {err && (
+        <div className="fixed bottom-24 right-4 bg-red-500/20 text-red-300 text-xs px-4 py-2 rounded z-50 flex items-center gap-3 max-w-[90vw]">
+          <span className="min-w-0">{err}</span>
+          {active && draft.trim() && (
+            <button onClick={() => sendDraft()} disabled={sending} className="shrink-0 underline text-red-200 hover:text-white disabled:opacity-50">Retry</button>
+          )}
+          <button onClick={() => setErr(null)} className="shrink-0 text-red-200 hover:text-white" aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {note && <div className="fixed bottom-24 right-4 bg-emerald-500/20 text-emerald-200 text-xs px-4 py-2 rounded z-50">{note}</div>}
     </div>
   );
 }

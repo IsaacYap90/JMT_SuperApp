@@ -9,6 +9,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { generateReply, type Escalation } from "@/lib/wa/jai-reply";
+import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
@@ -151,7 +152,7 @@ export async function POST(req: NextRequest) {
     // Jeremy has taken over this chat from the inbox → stay quiet (still logged above).
     const { data: lead } = await sb
       .from("leads")
-      .select("ai_paused, is_member")
+      .select("ai_paused, is_member, contact_name")
       .eq("contact_number", from)
       .maybeSingle();
 
@@ -292,12 +293,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Member recognition — tell JAI who it's talking to (known member /
+    // returning contact / new) so it greets appropriately instead of defaulting
+    // to the brand-new greeting. member_notes is read defensively (optional col).
+    const memberNotes = lead?.is_member ? await fetchMemberNotes(sb, from) : null;
+    const contactContext = buildContactContext({
+      isMember: lead?.is_member ?? false,
+      contactName: lead?.contact_name ?? contactName,
+      memberNotes,
+      history: prior || [],
+    });
+
     const history = [...(prior || []), { role: "user" as const, message: text }];
     const { messageText, quickReplies, escalation, member } = await generateReply(
       history,
       isNewContact,
       contactName,
-      lead?.is_member ?? false
+      lead?.is_member ?? false,
+      contactContext
     );
 
     // ── Deterministic anti-loop guard ──────────────────────────────────────
@@ -459,6 +472,39 @@ export async function POST(req: NextRequest) {
         const HANDOFF = ["COMPLAINT", "GENERAL_ESCALATION"];
         if (HANDOFF.includes(esc.escalation)) {
           await sb.from("leads").update({ ai_paused: true }).eq("contact_number", from);
+        }
+
+        // Also raise a follow-up task on Jeremy's pending-items board so the
+        // escalation isn't just a fleeting Telegram alert. De-dupe: skip if an
+        // open jai_escalation for this contact was already raised in the last
+        // few hours. Own try/catch — a task hiccup must not affect the alert.
+        try {
+          const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+          const { data: existingTask } = await pub
+            .from("admin_pending_items")
+            .select("id")
+            .eq("category", "jai_escalation")
+            .eq("status", "open")
+            .ilike("link", `%contact=${from}`)
+            .gte("created_at", cutoff)
+            .limit(1);
+          if (!existingTask || existingTask.length === 0) {
+            const who = contactName || `+${from}`;
+            const preview = text.length > 200 ? text.slice(0, 197) + "..." : text;
+            await pub.from("admin_pending_items").insert({
+              id: globalThis.crypto?.randomUUID?.() ?? `jai-${from}-${Date.now()}`,
+              title: `JAI: ${who} needs Jeremy`,
+              description:
+                `${label} — "${preview}"` +
+                (esc.intent ? ` (intent: ${esc.intent})` : ""),
+              category: "jai_escalation",
+              link: `https://jmtos.ionicx.ai/wa-inbox?contact=${from}`,
+              priority: esc.escalation === "COMPLAINT" ? "high" : "medium",
+              status: "open",
+            });
+          }
+        } catch (e) {
+          console.error("[jai-webhook] escalation task create failed", e);
         }
       } catch (e) {
         console.error("[jai-webhook] escalation notify failed", e);
