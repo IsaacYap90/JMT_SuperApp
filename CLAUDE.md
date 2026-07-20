@@ -21,8 +21,17 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - Auth: `auth.users` ↔ `public.users` (linked by id). `public.users.role` = `coach` | `admin` | `master_admin`
 
 ## Hosting
-- Production: deployed to Vercel project `isaacs-projects-14fce6f6/dashboard`
-- Project path: `~/projects/jmt/dashboard/`
+- Production: deployed to Vercel project `isaacs-projects-14fce6f6/dashboard` → jmtos.ionicx.ai
+- Project path: `~/Projects/jmt/super-app/` (capital P; the old `~/projects/jmt/dashboard/` path is stale)
+- Deploys are **CLI** (`vercel --prod` from the working tree), NOT git-integration. So the live commit is whatever tree was deployed — **always confirm the live SHA via the Vercel API deployment `meta.githubCommitSha` before basing a deploy branch** (2026-07-20: a main-based branch nearly wiped 11 live commits; live lineage was feat/ui-redesign c0a2b35 → chore/jai-improvements-live → feat/forgot-password ee11399).
+- **MANDATORY before any prod deploy: the full `/predeploy jmt` pipeline.** A PreToolUse hook (`~/.claude/hooks/predeploy-gate.sh`) hard-blocks `vercel --prod` without a fresh pipeline pass — no phrasing from anyone skips it.
+
+## Meta webhook secrets (2026-07-20 outage lesson — do not "simplify")
+- Two Meta apps sign our webhooks with DIFFERENT secrets: WhatsApp = "JMT AI Bot" → `META_APP_SECRET`; Lead Ads = "JMT Leads" → `LEADS_APP_SECRET` (fallback to META_APP_SECRET). `verifyMetaSignature(raw, header, secretOverride?)` in `src/lib/meta-webhook.ts`.
+- Never point both webhooks at one secret env — fixing one silences the other (JAI went deaf 20:42–21:00 on 2026-07-20 exactly this way).
+
+## Auth (added 2026-07-20)
+- Coach self-serve password reset: `/forgot-password` → Supabase recovery email → `/reset-password` (handles PKCE `?code=` AND implicit `#fragment` tokens via explicit setSession — the @supabase/ssr PKCE client does NOT consume hash tokens itself). Supabase auth config: site_url=https://jmtos.ionicx.ai, uri_allow_list=…/reset-password. Built-in mailer only (~2-4 emails/hr) — custom SMTP if volume ever matters.
 
 ## Hard Rules
 - **Never assume anything. Always ask before taking action. Always confirm with Isaac first.** Default mode: **Mode B** — free to read, search, grep, fetch; ask before any write, edit, deploy, delete, commit, push, or outbound message. (Set 2026-04-08.)
