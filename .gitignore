@@ -44,3 +44,8 @@ jai-muaythai-app/
 
 # Supabase CLI local state (not for git)
 supabase/.temp/
+
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
