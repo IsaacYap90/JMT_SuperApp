@@ -477,8 +477,11 @@ async function deepseekJson(system: string, user: string, maxTokens = 300): Prom
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: "deepseek-chat",
+      // deepseek-chat retired 2026-07; v4 reasons by default and would eat maxTokens before
+      // emitting JSON, so thinking is disabled explicitly.
+      model: "deepseek-v4-flash",
       max_tokens: maxTokens,
+      thinking: { type: "disabled" },
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },

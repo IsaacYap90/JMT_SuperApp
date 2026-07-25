@@ -463,16 +463,15 @@ export async function POST(req: NextRequest) {
           await sendTelegramPlainToUser(a.id, alert, "jai-escalation");
         }
 
-        // Pause JAI only where a human should fully take over the thread
-        // (COMPLAINT) or the convo is stuck/looping (GENERAL_ESCALATION from the
-        // anti-loop guard). PT_LEAD / CORPORATE hand off to Jeremy but leave JAI
-        // LIVE — customers often come back with other questions and shouldn't be
-        // ghosted (Isaac, 2026-07-16). Jeremy can still fully silence any chat
-        // with the "Jeremy taking over" toggle in the WA inbox.
-        const HANDOFF = ["COMPLAINT", "GENERAL_ESCALATION"];
-        if (HANDOFF.includes(esc.escalation)) {
-          await sb.from("leads").update({ ai_paused: true }).eq("contact_number", from);
-        }
+        // Escalation NEVER auto-pauses JAI (Isaac, 2026-07-25: "once it is
+        // escalate to jeremy, JAI still answering the lead ... dont leave the
+        // lead hanging"). Previously COMPLAINT and GENERAL_ESCALATION set
+        // ai_paused, which silently ghosted the customer until Jeremy noticed —
+        // the same failure that lost a 4-child enquiry on 2026-07-25.
+        // Jeremy still owns the thread via the Telegram alert + the pending-items
+        // task below, and can fully silence any chat by hand with the
+        // "Jeremy taking over" toggle in the WA inbox (jai.leads.ai_paused).
+        // Extends the 2026-07-16 PT_LEAD / CORPORATE rule to every escalation type.
 
         // Also raise a follow-up task on Jeremy's pending-items board so the
         // escalation isn't just a fleeting Telegram alert. De-dupe: skip if an

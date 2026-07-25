@@ -277,7 +277,10 @@ export async function generateReply(
         Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ model: "deepseek-chat", max_tokens: 500, messages }),
+      // deepseek-chat was retired 2026-07 (API 400s). v4 models reason by default and burn
+      // max_tokens on reasoning before emitting content — thinking must be disabled or the
+      // reply comes back as an empty string with HTTP 200.
+      body: JSON.stringify({ model: "deepseek-v4-flash", max_tokens: 500, thinking: { type: "disabled" }, messages }),
       cache: "no-store",
     });
     if (!res.ok) {

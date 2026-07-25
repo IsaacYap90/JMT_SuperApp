@@ -59,8 +59,10 @@ export async function generateDmDraft(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        // deepseek-chat retired 2026-07; thinking disabled or v4 returns empty content.
+        model: "deepseek-v4-flash",
         max_tokens: 220,
+        thinking: { type: "disabled" },
         temperature: 0.6,
         messages: [
           { role: "system", content: DM_SYSTEM_PROMPT },
@@ -105,8 +107,10 @@ export async function generateCommentDraft(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        // deepseek-chat retired 2026-07; thinking disabled or v4 returns empty content.
+        model: "deepseek-v4-flash",
         max_tokens: 160,
+        thinking: { type: "disabled" },
         temperature: 0.6,
         messages: [
           { role: "system", content: COMMENT_SYSTEM_PROMPT },
