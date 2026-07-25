@@ -36,6 +36,10 @@
     {
       "path": "/api/cron/lead-pipeline-watchdog?report=1",
       "schedule": "0 1 * * 1"
+    },
+    {
+      "path": "/api/cron/jai-canary",
+      "schedule": "15 1 * * *"
     }
   ]
 }
