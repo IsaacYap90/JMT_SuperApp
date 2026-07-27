@@ -13,3 +13,16 @@ ALTER FUNCTION public.notify_coach_on_class_assignment() SET search_path TO 'pub
 
 ALTER FUNCTION public.notify_lead_coach_assignment() SECURITY DEFINER;
 ALTER FUNCTION public.notify_lead_coach_assignment() SET search_path TO 'public', 'pg_temp';
+
+-- 2026-07-27 follow-up. The security watchdog flagged both functions as HIGH the
+-- morning after: they already carried EXECUTE grants to anon (inherited from
+-- creation), which is harmless on a SECURITY INVOKER function but reads as
+-- privilege escalation once it runs as owner. Low real risk — both return
+-- `trigger`, and Postgres refuses a direct call to a trigger function — but wrong.
+--
+-- Safe because triggers execute as the table owner, not the caller: revoking
+-- anon's EXECUTE does not touch the trigger path. Verified by running a real
+-- admin class UPDATE as role `authenticated` with the revoke applied inside a
+-- rolled-back transaction (rows_updated=1), and again on the live state after.
+REVOKE EXECUTE ON FUNCTION public.notify_coach_on_class_assignment() FROM anon;
+REVOKE EXECUTE ON FUNCTION public.notify_lead_coach_assignment() FROM anon;
