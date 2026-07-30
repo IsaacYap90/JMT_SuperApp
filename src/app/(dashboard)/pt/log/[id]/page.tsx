@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { redirect, notFound } from "next/navigation";
 import { isAdmin } from "@/lib/types/database";
 import { PtLogForm } from "@/components/pt-log-form";
+import { maskName } from "@/lib/demo-mask";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,7 @@ export default async function PtLogPage({ params }: { params: { id: string } }) 
   const { data: session } = await db
     .from("pt_sessions")
     .select(
-      "id, coach_id, scheduled_at, duration_minutes, status, coach_notes, next_focus, member:users!pt_sessions_member_id_fkey(full_name)"
+      "id, coach_id, scheduled_at, duration_minutes, status, coach_notes, next_focus, member:users!pt_sessions_member_id_fkey(id, full_name)"
     )
     .eq("id", params.id)
     .single();
@@ -42,10 +43,10 @@ export default async function PtLogPage({ params }: { params: { id: string } }) 
     status: string;
     coach_notes: string | null;
     next_focus: string | null;
-    member: { full_name: string } | { full_name: string }[] | null;
+    member: { id?: string; full_name: string } | { id?: string; full_name: string }[] | null;
   };
   const member = Array.isArray(raw.member) ? raw.member[0] : raw.member;
-  const memberName = member?.full_name || "Client";
+  const memberName = member?.full_name ? maskName(member.full_name, member.id) : "Client";
 
   const dt = new Date(raw.scheduled_at);
   const dateLabel = dt.toLocaleDateString("en-SG", {

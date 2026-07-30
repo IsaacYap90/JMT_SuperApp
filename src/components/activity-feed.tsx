@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createJaiClient } from "@/lib/supabase/jai";
+import { DEMO_MODE, maskName, maskPhone } from "@/lib/demo-mask";
 
 type FeedItem = {
   id: string;
@@ -46,7 +47,7 @@ export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: 
       .limit(limit),
     db
       .from("pt_sessions")
-      .select("id, status, updated_at, member:users!pt_sessions_member_id_fkey(full_name)")
+      .select("id, status, updated_at, member:users!pt_sessions_member_id_fkey(id, full_name)")
       .gte("updated_at", sinceIso)
       .order("updated_at", { ascending: false })
       .limit(limit),
@@ -66,7 +67,7 @@ export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: 
       id: `lead-${l.id}`,
       kind: "lead",
       label: isNew ? "New lead" : `Lead → ${l.status}`,
-      detail: `${l.name}${l.source ? ` · ${l.source}` : ""}`,
+      detail: `${maskName(l.name, l.id)}${l.source ? ` · ${l.source}` : ""}`,
       at: l.updated_at || l.created_at,
       dotClass: "bg-blue-400",
       href: "/leads",
@@ -86,14 +87,14 @@ export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: 
     });
   }
 
-  for (const s of (ptRes.data || []) as Array<{ id: string; status: string; updated_at: string; member: { full_name: string } | { full_name: string }[] | null }>) {
+  for (const s of (ptRes.data || []) as Array<{ id: string; status: string; updated_at: string; member: { id?: string; full_name: string } | { id?: string; full_name: string }[] | null }>) {
     if (!["completed", "cancelled", "no_show"].includes(s.status)) continue;
     const member = Array.isArray(s.member) ? s.member[0] : s.member;
     items.push({
       id: `pt-${s.id}`,
       kind: "pt",
       label: `PT ${s.status.replace("_", " ")}`,
-      detail: member?.full_name || "Member",
+      detail: member?.full_name ? maskName(member.full_name, member.id) : "Member",
       at: s.updated_at,
       dotClass:
         s.status === "completed" ? "bg-green-400"
@@ -109,7 +110,7 @@ export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: 
       id: `trial-${t.id}`,
       kind: "trial",
       label: isNew ? "Trial booked" : `Trial → ${t.status.replace("_", " ")}`,
-      detail: t.name,
+      detail: maskName(t.name, t.id),
       at: t.updated_at || t.created_at,
       dotClass:
         t.status === "showed" ? "bg-green-400"
@@ -140,7 +141,9 @@ export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: 
           id: `jai-${m.id}`,
           kind: "jai",
           label: "JAI replied",
-          detail: m.contact_name || `+${m.contact_number}`,
+          detail: m.contact_name
+            ? maskName(m.contact_name, m.contact_number)
+            : (DEMO_MODE ? maskPhone(m.contact_number, m.contact_number) : `+${m.contact_number}`),
           at: m.created_at,
           dotClass: "bg-jai-blue",
           href: `/wa-inbox?contact=${m.contact_number}`,

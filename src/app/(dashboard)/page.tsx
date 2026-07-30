@@ -8,6 +8,12 @@ import { FollowUp } from "@/components/follow-up";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
 import { USER_SELECT } from "@/lib/user-columns";
+import { DEMO_MODE, maskName, maskPhone, maskPtSession } from "@/lib/demo-mask";
+
+// Display-only PII mask (env-gated). Identity passthrough when DEMO_MODE is off.
+function maskSessions(arr: PtSession[]): PtSession[] {
+  return DEMO_MODE ? arr.map((s) => maskPtSession(s)) : arr;
+}
 
 export const dynamic = "force-dynamic";
 
@@ -106,8 +112,8 @@ export default async function HomePage() {
       db,
       combinedUpcoming.map((s) => s.member_id)
     );
-    const todayPtSessions = attachPreviousFocusToNext(rawTodayPt, focusMap, combinedUpcoming);
-    const tomorrowPtSessions = attachPreviousFocusToNext(rawTomorrowPt, focusMap, combinedUpcoming);
+    const todayPtSessions = maskSessions(attachPreviousFocusToNext(rawTodayPt, focusMap, combinedUpcoming));
+    const tomorrowPtSessions = maskSessions(attachPreviousFocusToNext(rawTomorrowPt, focusMap, combinedUpcoming));
 
     const activePtPackages = (ptPackagesRes.data || []).filter(
       (pt: { sessions_used: number; total_sessions: number }) => pt.sessions_used < pt.total_sessions
@@ -121,8 +127,8 @@ export default async function HomePage() {
       const cls = allClasses.find((c) => c.id === t.class_id);
       return {
         id: t.id,
-        name: t.name,
-        phone: t.phone,
+        name: maskName(t.name, t.id),
+        phone: t.phone != null ? maskPhone(t.phone, t.id) : t.phone,
         status: (t.status || "booked") as "booked" | "showed" | "no_show" | "cancelled",
         class_name: cls?.name || "Class",
         class_start_time: (cls?.start_time || "00:00").slice(0, 5),
@@ -244,9 +250,9 @@ export default async function HomePage() {
     supabase,
     combinedCoachUpcoming.map((s) => s.member_id)
   );
-  const todayPtSessions = attachPreviousFocusToNext(rawTodayPt, coachFocusMap, combinedCoachUpcoming);
-  const tomorrowPtSessions = attachPreviousFocusToNext(rawTomorrowPt, coachFocusMap, combinedCoachUpcoming);
-  const nextWeekPtSessions = attachPreviousFocusToNext(rawNextWeekPt, coachFocusMap, combinedCoachUpcoming);
+  const todayPtSessions = maskSessions(attachPreviousFocusToNext(rawTodayPt, coachFocusMap, combinedCoachUpcoming));
+  const tomorrowPtSessions = maskSessions(attachPreviousFocusToNext(rawTomorrowPt, coachFocusMap, combinedCoachUpcoming));
+  const nextWeekPtSessions = maskSessions(attachPreviousFocusToNext(rawNextWeekPt, coachFocusMap, combinedCoachUpcoming));
 
   // Today's trials for this coach's classes (read-only on overview)
   const myClassIds = myClasses.map((c) => c.id);
@@ -271,8 +277,8 @@ export default async function HomePage() {
         const cls = myClasses.find((c) => c.id === t.class_id);
         return {
           id: t.id,
-          name: t.name,
-          phone: t.phone,
+          name: maskName(t.name, t.id),
+          phone: t.phone != null ? maskPhone(t.phone, t.id) : t.phone,
           status: (t.status || "booked") as "booked" | "showed" | "no_show" | "cancelled",
           class_name: cls?.name || "Class",
           class_start_time: (cls?.start_time || "00:00").slice(0, 5),

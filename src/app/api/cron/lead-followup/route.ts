@@ -1,4 +1,17 @@
-// Silent-lead follow-up — runs every 30 min via Vercel Cron.
+// Silent-lead follow-up.
+//
+// ⚠ PAUSED 2026-07-30 on Isaac's instruction — NOT scheduled, does not fire.
+// Why: adult trials are paused, and the nudge-1 fallback booking link below
+// ("https://calendly.com/jaimuaythaisg/muay-thai-trial-class", used when no
+// calendly URL is found in the lead's history) is a DEAD Calendly event — so
+// this cron could WhatsApp an adult lead a broken booking link.
+// How it is off: its entry was removed from `crons` in vercel.json. The route
+// and all its logic are intact and still callable by an authorized cron caller.
+// To RE-ENABLE (one step): add back to vercel.json ->
+//   { "path": "/api/cron/lead-followup", "schedule": "*/30 * * * *" }
+// Before re-enabling, confirm the fallback Calendly link on line ~131 is live.
+//
+// Behaviour when running:
 //
 // When the bot sends a booking link and the lead goes quiet, nudge exactly
 // twice (Jeremy-approved 2026-07-02), then go cold:

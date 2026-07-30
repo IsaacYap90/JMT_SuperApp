@@ -30,6 +30,12 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 - Two Meta apps sign our webhooks with DIFFERENT secrets: WhatsApp = "JMT AI Bot" → `META_APP_SECRET`; Lead Ads = "JMT Leads" → `LEADS_APP_SECRET` (fallback to META_APP_SECRET). `verifyMetaSignature(raw, header, secretOverride?)` in `src/lib/meta-webhook.ts`.
 - Never point both webhooks at one secret env — fixing one silences the other (JAI went deaf 20:42–21:00 on 2026-07-20 exactly this way).
 
+## Alerting to Isaac — Telegram, never freeform WhatsApp (2026-07-25 lesson)
+- A freeform WA send (`sendText` in `src/lib/wa/jai-send.ts`) only delivers inside Meta's **24-hour customer-service window**. Outside it Meta rejects, `sendText` swallows the failure into a `console.error` and returns `false`, and the caller happily reports success. **Any alert/health-check/report to Isaac must go to Telegram** (`JMT_TELEGRAM_BOT_TOKEN` + `WATCHDOG_TG_CHAT_ID`, see `src/app/api/cron/lead-pipeline-watchdog/route.ts`) **or use a pre-approved template.** Caught by `/predeploy` before it shipped.
+- Telegram sends carrying model-generated text: omit `parse_mode`. Interpolated/truncated LLM output can contain unbalanced `*` `_` `<` and will 400 an HTML/Markdown send, losing the alert.
+- Crons doing slow work must `export const maxDuration` (siblings use 60) — a timeout longer than the function duration can never fire.
+- `/api/cron/jai-canary` (daily 09:15 SGT) exercises the real JAI reply path and reports pass/fail every run. Silence = the canary is down. `?dry=1` skips the send.
+
 ## Auth (added 2026-07-20)
 - Coach self-serve password reset: `/forgot-password` → Supabase recovery email → `/reset-password` (handles PKCE `?code=` AND implicit `#fragment` tokens via explicit setSession — the @supabase/ssr PKCE client does NOT consume hash tokens itself). Supabase auth config: site_url=https://jmtos.ionicx.ai, uri_allow_list=…/reset-password. Built-in mailer only (~2-4 emails/hr) — custom SMTP if volume ever matters.
 
@@ -53,3 +59,21 @@ Next.js 14 (App Router) | TypeScript | Tailwind | Supabase (DB + auth) | Vercel 
 
 ## Reply Style
 - No explanation. Answer only. Caveman mode. Under 100 words.
+
+## Filmed-demo mode (built 2026-07-27, env-gated OFF, uncommitted)
+For screen-recording without exposing real client PII.
+- `src/lib/demo-mask.ts` — deterministic fake names/SG numbers/emails; EXACT
+  identity passthrough when off.
+- `src/lib/demo-wa-fixture.ts` — 6 fully synthetic WA conversations. The inbox is
+  REPLACED, not masked, because real first names appear inside message bodies
+  ("Welcome Gwen") and no regex catches every name in free text.
+- ⚠ **`process.env.DEMO_MODE` is `undefined` in the browser.** A client component
+  reading it silently no-ops, and if the server renders a fixture the client does
+  not, you get a hydration error. Read the flag in the SERVER component
+  (`wa-inbox/page.tsx`) and pass it down as a prop. Do not rely on `NEXT_PUBLIC_`.
+- ⚠ **Demo replies MUST follow `src/lib/wa/jai-facts.ts`.** A first attempt
+  invented a "$20 trial" (trials are FREE — never quote a trial fee) and promised
+  a specific trial time (Calendly is the ONLY source of availability). Both are
+  documented hard rules. A demo video showing that misrepresents the product.
+- Activate with `DEMO_MODE=1` inline on the dev-server launch. Do NOT put it in
+  `.env.local` (hard rule: never modify .env files).

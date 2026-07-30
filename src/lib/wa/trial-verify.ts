@@ -159,9 +159,16 @@ export function notFoundQuestion(): string {
   );
 }
 
+// NO trial link here, deliberately. This used to append the ADULT Calendly
+// (muay-thai-trial-class), which Jeremy switched OFF on 2026-07-30 — the page now
+// reads "not valid", identical to a deleted event. Worse, post-pause the only
+// Done buttons in circulation are Kids/Pre-Teen, so whoever reaches this branch is
+// a PARENT and that link was the wrong age band even when it worked. This is
+// deterministic code, so nothing in jai-facts.ts could have stopped it. Jeremy is
+// already being paged in the same sentence — that is the whole answer.
 export function stillNotFoundText(): string {
   return (
     `No worries — I'll get Coach Jeremy to confirm your booking personally 🙏 ` +
-    `He'll message you shortly. If you haven't actually picked a slot yet, you can do it here: https://calendly.com/jaimuaythaisg/muay-thai-trial-class`
+    `He'll message you shortly.`
   );
 }

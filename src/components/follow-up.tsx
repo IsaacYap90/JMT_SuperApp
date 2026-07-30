@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { FollowUpCard, FollowUpItem } from "@/components/follow-up-card";
+import { maskName } from "@/lib/demo-mask";
 
 // "Follow up" — the action list at the top of the admin dashboard: only things
 // waiting on a human, each one tap to act, gone once handled. Server half
@@ -40,7 +41,7 @@ export async function FollowUp() {
       id: `lead-${l.id}`,
       tone: "blue",
       label: "Contact new lead",
-      detail: `${l.name}${l.source ? ` · ${l.source}` : ""}`,
+      detail: `${maskName(l.name, l.id)}${l.source ? ` · ${l.source}` : ""}`,
       href: "/leads",
     });
   }
@@ -50,7 +51,7 @@ export async function FollowUp() {
       id: `trial-${t.id}`,
       tone: "amber",
       label: "Follow up no-show trial",
-      detail: t.name,
+      detail: maskName(t.name, t.id),
       href: "/trial-management",
     });
   }

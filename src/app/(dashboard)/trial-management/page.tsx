@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { User, isAdmin } from "@/lib/types/database";
 import { TrialManagementClient } from "@/components/trial-management-client";
 import { USER_SELECT } from "@/lib/user-columns";
+import { DEMO_MODE, maskName, maskPhone, maskEmail, scrubText } from "@/lib/demo-mask";
 
 export default async function TrialManagementPage() {
   const supabase = createClient();
@@ -23,10 +24,44 @@ export default async function TrialManagementPage() {
 
   const admin = createAdminClient();
 
-  const { data: bookings } = await admin
+  const { data: rawBookings } = await admin
     .from("trial_bookings")
     .select("*, class:classes(name, start_time, end_time)")
     .order("booking_date", { ascending: false });
+
+  // Display-only PII mask (env-gated), seeded by booking id.
+  type RawBooking = {
+    id: string;
+    name: string;
+    phone: string;
+    notes?: string | null;
+    calendly_details?: {
+      email?: string | null;
+      questions_and_answers?: { question: string; answer: string }[];
+    } | null;
+    [key: string]: unknown;
+  };
+  const bookings = DEMO_MODE
+    ? (rawBookings || []).map((b) => {
+        const rb = b as RawBooking;
+        return {
+          ...rb,
+          name: maskName(rb.name, rb.id),
+          phone: maskPhone(rb.phone, rb.id),
+          notes: scrubText(rb.notes),
+          calendly_details: rb.calendly_details
+            ? {
+                ...rb.calendly_details,
+                email: rb.calendly_details.email != null ? maskEmail(rb.calendly_details.email, rb.id) : rb.calendly_details.email,
+                questions_and_answers: (rb.calendly_details.questions_and_answers || []).map((qa) => ({
+                  question: qa.question,
+                  answer: scrubText(qa.answer),
+                })),
+              }
+            : rb.calendly_details,
+        };
+      })
+    : rawBookings;
 
   // Classes enabled for trial booking (for the manual-add dropdown)
   const { data: enabledSettings } = await admin

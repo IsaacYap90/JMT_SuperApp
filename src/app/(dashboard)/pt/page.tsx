@@ -5,6 +5,7 @@ import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import { PtPageClient } from "@/components/pt-page-client";
 import type { ContractDraft } from "@/app/actions/pt";
 import { USER_SELECT } from "@/lib/user-columns";
+import { DEMO_MODE, maskUser, maskPtSession, maskPtPackage, maskName, maskPhone } from "@/lib/demo-mask";
 
 export default async function PtPage() {
   const supabase = createClient();
@@ -39,7 +40,9 @@ export default async function PtPage() {
   }
 
   const { data: pkgData } = await pkgQuery;
-  const ptPackages = (pkgData || []) as unknown as PtPackage[];
+  const rawPtPackages = (pkgData || []) as unknown as PtPackage[];
+  // Display-only PII mask (env-gated); member seeded by user id, guardian by phone.
+  const ptPackages = DEMO_MODE ? rawPtPackages.map((p) => maskPtPackage(p)) : rawPtPackages;
 
   // Fetch next sessions for coach view
   const nextSessions: Record<string, string> = {};
@@ -56,7 +59,8 @@ export default async function PtPage() {
       .gte("scheduled_at", ptPastDate)
       .in("status", ["scheduled", "confirmed", "completed"])
       .order("scheduled_at");
-    ptSessions = (sessData || []) as unknown as PtSession[];
+    const rawSessions = (sessData || []) as unknown as PtSession[];
+    ptSessions = DEMO_MODE ? rawSessions.map((s) => maskPtSession(s)) : rawSessions;
   } else if (ptPackages.length > 0) {
     const memberIds = ptPackages.map((p) => p.user_id);
     const { data: sessData } = await supabase
@@ -115,9 +119,19 @@ export default async function PtPage() {
         .eq("status", "draft")
         .order("created_at", { ascending: false }),
     ]);
-    members = (membersRes.data || []) as unknown as User[];
-    coaches = (coachesRes.data || []) as unknown as User[];
-    contractDrafts = (draftsRes.data || []) as unknown as ContractDraft[];
+    const rawMembers = (membersRes.data || []) as unknown as User[];
+    members = DEMO_MODE ? rawMembers.map((m) => maskUser(m)) : rawMembers;
+    coaches = (coachesRes.data || []) as unknown as User[]; // staff — not masked
+    const rawDrafts = (draftsRes.data || []) as unknown as ContractDraft[];
+    // Contract-draft review modal (PT area) surfaces client_name/phone/nric.
+    contractDrafts = DEMO_MODE
+      ? rawDrafts.map((d) => ({
+          ...d,
+          client_name: d.client_name != null ? maskName(d.client_name, d.id) : d.client_name,
+          client_phone: d.client_phone != null ? maskPhone(d.client_phone, d.id) : d.client_phone,
+          client_nric: d.client_nric != null ? maskPhone(d.client_nric, d.id).replace(/\D/g, "").slice(-4) : d.client_nric,
+        }))
+      : rawDrafts;
   }
 
   return (

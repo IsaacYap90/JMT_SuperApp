@@ -6,6 +6,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { markThreadRead, unreadPhones } from "@/lib/wa-unread";
+import { DEMO_MODE } from "@/lib/demo-mask";
+import { DEMO_CONVERSATIONS } from "@/lib/demo-wa-fixture";
 
 type Role = "user" | "assistant";
 type Msg = { id: string; role: Role; body: string; via?: string | null; ts: string };
@@ -51,6 +53,20 @@ function initialOf(name: string | null, phone: string): string {
   if (name && name.trim() && /[a-zA-Z]/.test(name.trim()[0])) return name.trim()[0].toUpperCase();
   return phone.slice(-2);
 }
+// SG numbers read better grouped: 6591234567 -> +65 9123 4567. Anything else is
+// left as-is rather than mangled.
+function fmtPhone(phone: string): string {
+  const m = /^65(\d{4})(\d{4})$/.exec(phone);
+  return m ? `+65 ${m[1]} ${m[2]}` : `+${phone}`;
+}
+// No PII mask here: in demo mode the whole inbox is replaced by the synthetic
+// fixture (see demo-wa-fixture.ts), so there is no real name or number to hide.
+function dName(name: string | null, phone: string): string {
+  return name || fmtPhone(phone);
+}
+function dPhone(phone: string): string {
+  return fmtPhone(phone);
+}
 const AVATAR_COLORS = ["bg-rose-500", "bg-amber-500", "bg-blue-500", "bg-sky-500", "bg-violet-500", "bg-pink-500", "bg-teal-500", "bg-orange-500"];
 function avatarColor(phone: string): string {
   let h = 0;
@@ -58,8 +74,18 @@ function avatarColor(phone: string): string {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-export default function WaInboxClient() {
+export default function WaInboxClient({ demo = false }: { demo?: boolean }) {
+  // `demo` comes from the server (process.env.DEMO_MODE) — a NEXT_PUBLIC_ var is
+  // not guaranteed to reach the browser bundle, and when it didn't, the server
+  // rendered the fixture while the client rendered an empty list (hydration error).
+  const demoMode = demo || DEMO_MODE;
   const [conversations, setConversations] = useState<Conv[]>([]);
+
+  // Seeded AFTER mount, so the server HTML and the first client render agree
+  // (the fixture's timestamps are generated per-process and would never match).
+  useEffect(() => {
+    if (demoMode) setConversations(DEMO_CONVERSATIONS as unknown as Conv[]);
+  }, [demoMode]);
   const [selected, setSelected] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -73,6 +99,10 @@ export default function WaInboxClient() {
   const threadContainerRef = useRef<HTMLDivElement>(null);
 
   const fetchMessages = useCallback(async () => {
+    // Demo filming: serve fully synthetic threads and never call the real inbox.
+    // Field-masking can't catch real names written inside message bodies, so for
+    // filming the contents are replaced outright. No JAI data is read here.
+    if (demoMode) return;
     try {
       const r = await fetch("/api/wa-inbox/messages", { cache: "no-store" });
       if (!r.ok) { setErr("Fetch failed"); return; }
@@ -81,7 +111,7 @@ export default function WaInboxClient() {
     } catch {
       setErr("Network error");
     }
-  }, []);
+  }, [demoMode]);
 
   useEffect(() => {
     fetchMessages();
@@ -145,6 +175,26 @@ export default function WaInboxClient() {
     if (!active) return;
     const body = draft.trim();
     if (!body || sending) return;
+    // Demo filming: append locally so a reply can be filmed end-to-end. No real
+    // WhatsApp send — the fixture numbers are not real people.
+    if (demoMode) {
+      const now = new Date().toISOString();
+      setConversations((cs) =>
+        cs.map((c) =>
+          c.phone === active.phone
+            ? {
+                ...c,
+                messages: [...c.messages, { id: `demo-sent-${now}`, role: "assistant" as Role, body, via: "human", ts: now }],
+                last_ts: now,
+                last_body: body,
+                last_role: "assistant" as Role,
+              }
+            : c
+        )
+      );
+      setDraft("");
+      return;
+    }
     setSending(true); setErr(null);
     try {
       const r = await fetch("/api/wa-inbox/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone, body }) });
@@ -201,11 +251,11 @@ export default function WaInboxClient() {
                 <button onClick={() => setSelected(c.phone)}
                   className={`w-full text-left px-3 py-3 border-b border-jai-border/50 hover:bg-white/5 transition flex items-start gap-3 ${isActive ? "bg-jai-blue/10" : ""}`}>
                   <div className={`w-10 h-10 rounded-full ${avatarColor(c.phone)} text-white text-sm font-semibold flex items-center justify-center shrink-0`}>
-                    {initialOf(c.name, c.phone)}
+                    {initialOf(dName(c.name, c.phone), dPhone(c.phone))}
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex justify-between items-baseline gap-2">
-                      <p className={`text-sm truncate ${unread.has(c.phone) && !isActive ? "font-bold text-white" : "font-medium text-white"}`}>{c.name || `+${c.phone}`}</p>
+                      <p className={`text-sm truncate ${unread.has(c.phone) && !isActive ? "font-bold text-white" : "font-medium text-white"}`}>{dName(c.name, c.phone)}</p>
                       <span className="flex items-center gap-1.5 shrink-0">
                         {unread.has(c.phone) && !isActive && <span className="w-2 h-2 rounded-full bg-jai-blue" />}
                         <span className="text-[10px] text-gray-500 whitespace-nowrap">{fmtListStamp(c.last_ts)}</span>
@@ -234,10 +284,10 @@ export default function WaInboxClient() {
               <button onClick={() => setSelected(null)} className="md:hidden -ml-1 p-1.5 text-gray-400 hover:text-white rounded shrink-0" aria-label="Back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
               </button>
-              <div className={`w-9 h-9 rounded-full ${avatarColor(active.phone)} text-white text-sm font-semibold flex items-center justify-center shrink-0`}>{initialOf(active.name, active.phone)}</div>
+              <div className={`w-9 h-9 rounded-full ${avatarColor(active.phone)} text-white text-sm font-semibold flex items-center justify-center shrink-0`}>{initialOf(dName(active.name, active.phone), dPhone(active.phone))}</div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-white truncate">{active.name || `+${active.phone}`}</p>
-                <p className="text-[11px] text-gray-500 font-mono truncate">+{active.phone}</p>
+                <p className="text-sm font-semibold text-white truncate">{dName(active.name, active.phone)}</p>
+                <p className="text-[11px] text-gray-500 font-mono truncate">{dPhone(active.phone)}</p>
               </div>
               {(() => {
                 const isMember = memberOverride[active.phone] ?? active.isMember;
@@ -264,7 +314,7 @@ export default function WaInboxClient() {
               </button>
               <button
                 onClick={async () => {
-                  if (!confirm(`Delete this conversation with ${active.name || "+" + active.phone}? This wipes its JAI history and resets it to a brand-new contact.`)) return;
+                  if (!confirm(`Delete this conversation with ${dName(active.name, active.phone)}? This wipes its JAI history and resets it to a brand-new contact.`)) return;
                   const r = await fetch("/api/wa-inbox/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: active.phone }) });
                   if (r.ok) { setSelected(null); fetchMessages(); } else setErr("Delete failed");
                 }}

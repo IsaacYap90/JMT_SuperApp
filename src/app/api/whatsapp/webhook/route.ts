@@ -15,6 +15,7 @@ import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { cancelCalendlyEvent } from "@/lib/calendly";
 import { verifyMetaSignature } from "@/lib/meta-webhook";
+import { detectJoinIntent, hasDisallowedPrice, JOIN_HANDOFF_TEXT } from "@/lib/wa/join-intent";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -304,14 +305,32 @@ export async function POST(req: NextRequest) {
       history: prior || [],
     });
 
+    // ── Join / promo intent — deterministic, runs BEFORE the model ─────────
+    // Isaac, 2026-07-29: "if trial or anyone say they want to join, ping jeremy
+    // right away. let him to handle." On a clear buy/promo signal we skip the
+    // model entirely — it cannot quote, guess or negotiate a promo if it never
+    // runs. (The prompt also asks the model to emit JOIN_INTENT for phrasings
+    // this regex misses; both funnel into the same handling below.)
+    // Isaac, same evening: "still quote the standard rate for adult class. dont
+    // go quiet on the lead." A plain RATE question is NOT a hit — it returns
+    // null here, goes to the model, and gets the standard rate + rates link.
+    const joinHit = detectJoinIntent(text);
+
     const history = [...(prior || []), { role: "user" as const, message: text }];
-    const { messageText, quickReplies, escalation, member } = await generateReply(
-      history,
-      isNewContact,
-      contactName,
-      lead?.is_member ?? false,
-      contactContext
-    );
+    const { messageText, quickReplies, escalation, member } = joinHit
+      ? {
+          messageText: JOIN_HANDOFF_TEXT,
+          quickReplies: [] as string[],
+          escalation: { escalation: "JOIN_INTENT", intent: joinHit, source: "guard" },
+          member: false,
+        }
+      : await generateReply(
+          history,
+          isNewContact,
+          contactName,
+          lead?.is_member ?? false,
+          contactContext
+        );
 
     // ── Deterministic anti-loop guard ──────────────────────────────────────
     // LLMs ignore "don't repeat" under pressure, so we backstop it in code.
@@ -327,17 +346,35 @@ export async function POST(req: NextRequest) {
       (resendingLink || dragging) &&
       (!escalation || escalation.escalation === "GENERAL_ESCALATION");
 
-    const outText = forceHandoff
+    let outText = forceHandoff
       ? "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly."
       : messageText;
-    const outQuick = forceHandoff ? [] : quickReplies;
-    const esc: Escalation | null = forceHandoff
+    let outQuick = forceHandoff ? [] : quickReplies;
+    let esc: Escalation | null = forceHandoff
       ? {
           escalation: "GENERAL_ESCALATION",
           intent: resendingLink ? "loop_break" : "conversation_stuck",
           source: "guard",
         }
       : escalation;
+
+    // ── Money guard (last line of defence) ─────────────────────────────────
+    // The fact sheet holds the STANDARD rate card and no promo, but the model
+    // can still parrot a figure the CUSTOMER quoted ("the $252 offer") or
+    // invent one — exactly what happened on 2026-07-29. Any money amount
+    // outside the standard rate card ("$252", "252 dollars", "252 SGD",
+    // "252/mo") means the reply is quoting a promo it doesn't have: bin it and
+    // hand to Jeremy instead. Standard-card figures pass through untouched.
+    const priceLeak = esc?.escalation !== "JOIN_INTENT" && hasDisallowedPrice(outText);
+    if (priceLeak) {
+      console.warn("[jai-webhook] blocked price in outbound, escalating instead");
+      esc = { escalation: "JOIN_INTENT", intent: "price_blocked", source: "guard" };
+    }
+    const moneyHandoff = esc?.escalation === "JOIN_INTENT";
+    if (moneyHandoff) {
+      outText = JOIN_HANDOFF_TEXT;
+      outQuick = [];
+    }
 
     // Learned member detection — once the bot recognises an existing member, remember it.
     if (member && !lead?.is_member) {
@@ -368,6 +405,25 @@ export async function POST(req: NextRequest) {
     // (Before this point any crash/timeout leaves handled=false → we re-reply.)
     await markHandled();
 
+    // Join / promo intent → hand the chat to Jeremy for real: pause JAI on this
+    // contact so it can't keep talking over him while he closes, or get pressed
+    // into guessing a promo figure it does not have. Same interlock the WA inbox
+    // "Jeremy taking over" toggle uses (jai.leads.ai_paused, see
+    // /api/wa-inbox/pause) — Jeremy flips it back off from the inbox when done.
+    // This is the ONE escalation type that auto-pauses; every other type still
+    // leaves JAI answering (2026-07-25 rule, deliberately not changed).
+    // Scope narrowed 2026-07-29: only a real commitment to join/pay or a promo
+    // ask reaches here. A plain rate question never pauses — it is answered.
+    // Jeremy is ALWAYS pinged on Telegram + given a pending item below, so a
+    // paused chat is a handoff, never silence.
+    if (moneyHandoff) {
+      const { error: pauseErr } = await sb
+        .from("leads")
+        .update({ ai_paused: true })
+        .eq("contact_number", from);
+      if (pauseErr) console.error("[jai-webhook] join-intent pause failed", pauseErr);
+    }
+
     // Bot just sent a booking link → arm the silent-lead follow-up funnel
     // (lead-followup cron nudges at +1h and +20h if they stay quiet).
     if (!forceHandoff && /calendly\.com\//i.test(outText)) {
@@ -392,6 +448,7 @@ export async function POST(req: NextRequest) {
         const { data: admins } = await pub.from("users").select("id").eq("role", "master_admin");
         const labels: Record<string, string> = {
           PT_LEAD: "PT lead 🥊",
+          JOIN_INTENT: "Wants to join / asked about a promo 💰 — JAI paused, take over",
           CORPORATE: "Corporate / group enquiry",
           COMPLAINT: "Complaint / issue ⚠️",
           TRIAL_BOOKED: "Trial booked ✅",
@@ -479,14 +536,18 @@ export async function POST(req: NextRequest) {
         // few hours. Own try/catch — a task hiccup must not affect the alert.
         try {
           const cutoff = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
-          const { data: existingTask } = await pub
+          let taskQuery = pub
             .from("admin_pending_items")
             .select("id")
             .eq("category", "jai_escalation")
             .eq("status", "open")
             .ilike("link", `%contact=${from}`)
-            .gte("created_at", cutoff)
-            .limit(1);
+            .gte("created_at", cutoff);
+          // A join/money escalation must never be swallowed by an unrelated
+          // open item (e.g. a PT lead from an hour ago) — dedupe it only
+          // against other join escalations for the same contact.
+          if (moneyHandoff) taskQuery = taskQuery.ilike("description", `${label}%`);
+          const { data: existingTask } = await taskQuery.limit(1);
           if (!existingTask || existingTask.length === 0) {
             const who = contactName || `+${from}`;
             const preview = text.length > 200 ? text.slice(0, 197) + "..." : text;
@@ -498,7 +559,10 @@ export async function POST(req: NextRequest) {
                 (esc.intent ? ` (intent: ${esc.intent})` : ""),
               category: "jai_escalation",
               link: `https://jmtos.ionicx.ai/wa-inbox?contact=${from}`,
-              priority: esc.escalation === "COMPLAINT" ? "high" : "medium",
+              priority:
+                esc.escalation === "COMPLAINT" || esc.escalation === "JOIN_INTENT"
+                  ? "high"
+                  : "medium",
               status: "open",
             });
           }

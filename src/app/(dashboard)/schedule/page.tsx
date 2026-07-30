@@ -6,6 +6,7 @@ import { SchedulePageClient } from "@/components/schedule-page-client";
 import { Class, User, PtSession, isAdmin } from "@/lib/types/database";
 import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus";
 import { USER_SELECT } from "@/lib/user-columns";
+import { maskPtSession } from "@/lib/demo-mask";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,8 @@ export default async function SchedulePage({
       db,
       rawPtSessions.map((s) => s.member_id)
     );
-    const ptSessions = attachPreviousFocusToNext(rawPtSessions, adminFocusMap);
+      // Demo mask: PT client names/numbers on the schedule. Identity passthrough when off.
+    const ptSessions = attachPreviousFocusToNext(rawPtSessions, adminFocusMap).map(maskPtSession);
 
     return (
       <SchedulePageClient
@@ -134,7 +136,8 @@ export default async function SchedulePage({
     supabase,
     rawPtSessions.map((s) => s.member_id)
   );
-  const ptSessions = attachPreviousFocusToNext(rawPtSessions, coachFocusMap);
+  // Demo mask: PT client names/numbers on the schedule. Identity passthrough when off.
+  const ptSessions = attachPreviousFocusToNext(rawPtSessions, coachFocusMap).map(maskPtSession);
 
   return <CoachSchedule classes={myClasses} ptSessions={ptSessions} showFilter coachId={user.id} anchorDate={anchorDate} />;
 }
