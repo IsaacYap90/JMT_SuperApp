@@ -105,6 +105,9 @@ function LoginPageContent() {
           </button>
         </form>
         <p className="text-center text-[10px] text-jai-text/50 mt-6">Built by IonicX AI</p>
+        <p className="text-center text-[10px] text-jai-text/40 mt-1">
+          build {process.env.NEXT_PUBLIC_BUILD_SHA} · {process.env.NEXT_PUBLIC_BUILD_TIME}
+        </p>
       </div>
     </div>
   );

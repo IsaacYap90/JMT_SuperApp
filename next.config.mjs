@@ -1,5 +1,19 @@
 /** @type {import('next').NextConfig} */
 
+import { execSync } from "node:child_process";
+
+// Build stamp — captured at build time. Vercel CLI deploys from the working tree
+// and does NOT inject VERCEL_GIT_COMMIT_SHA reliably, so fall back to git.
+const buildSha = (() => {
+  if (process.env.VERCEL_GIT_COMMIT_SHA) return process.env.VERCEL_GIT_COMMIT_SHA.slice(0, 7);
+  try {
+    return execSync("git rev-parse --short HEAD").toString().trim();
+  } catch {
+    return "dev";
+  }
+})();
+const buildTime = new Date().toISOString().slice(0, 10);
+
 // Standard security headers (security audit 2026-07).
 // TODO: add CSP (report-only first) — needs per-site asset-origin testing.
 const securityHeaders = [
@@ -13,6 +27,10 @@ const securityHeaders = [
 const nextConfig = {
   allowedDevOrigins: ["*.trycloudflare.com"],
   poweredByHeader: false,
+  env: {
+    NEXT_PUBLIC_BUILD_SHA: buildSha,
+    NEXT_PUBLIC_BUILD_TIME: buildTime,
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
