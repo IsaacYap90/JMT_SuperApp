@@ -197,3 +197,37 @@ function quotesUnknownBareAmount(text: string): boolean {
 export function hasDisallowedPrice(text: string): boolean {
   return disallowedAmounts(text).length > 0;
 }
+
+// ── Dead adult-trial-link guard ──────────────────────────────────────────────
+// WHY (real incident 2026-08-01): a female adult beginner ("nss") asked "how to
+// book trial". jai-facts.ts / jai-reply.ts both say plainly that adult free
+// trials are PAUSED, the adult Calendly link is SWITCHED OFF, and the model must
+// NEVER send it — offer the $42 drop-in instead. DeepSeek ignored all of that and
+// sent https://calendly.com/jaimuaythaisg/muay-thai-trial-class anyway; she got
+// "unable to access". SAME failure class as the 2026-07-29 "$252" promo incident:
+// you cannot trust the model to obey "never send X". So, exactly like the money
+// guard above, this is the deterministic OUTBOUND backstop.
+//
+// PRECISION IS CRITICAL. The DEAD adult slug is  jaimuaythaisg/muay-thai-trial-class.
+// The two KIDS/PRE-TEEN slugs are still LIVE and MUST pass untouched:
+//   jaimuaythaisg/kids-muay-thai-trial-class           (Kids 6–10)
+//   jaimuaythaisg/kids-pre-teen-muay-thai-trial-class  (Pre-Teen 11–14)
+// Both kids slugs CONTAIN "muay-thai-trial-class" as a substring — but always
+// preceded by a hyphen ("…-muay-thai-trial-class"). The adult slug is preceded by
+// a slash ("/muay-thai-trial-class") or nothing (bare path). So we match the slug
+// only when it is NOT preceded by a hyphen: fires on the adult link (with or
+// without the domain) and the bare path, never on the "kids-…" forms.
+const DEAD_ADULT_LINK = /(?<!-)\bmuay-thai-trial-class\b/;
+
+/** True if the outbound text contains the switched-off ADULT trial Calendly link. */
+export function hasDeadAdultLink(text: string): boolean {
+  return DEAD_ADULT_LINK.test((text || "").toLowerCase());
+}
+
+// The reply JAI sends when the dead adult link is intercepted — the correct
+// paused-adult + $42 drop-in answer, lifted from the model reply in jai-facts.ts
+// (the "FREE TRIALS ARE PAUSED" section). NO Calendly link of any kind. Gives the
+// customer the useful answer AND tells them Coach Jeremy will follow up (he is
+// also paged on Telegram by the escalation).
+export const PAUSED_ADULT_TRIAL_TEXT =
+  "We've actually paused free trials for our Adult All-Levels classes at the moment, as the classes are running close to full. We're looking to bring them back around September, though that isn't fixed yet. In the meantime you can still come try us out with a drop-in class at $42 — same class, same coaches, beginners welcome 🙂 You can book it on our website here: https://jaimuaythai.com/booking\n\nI'm also getting Coach Jeremy to follow up with you personally 🙏";

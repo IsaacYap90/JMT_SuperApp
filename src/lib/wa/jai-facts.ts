@@ -132,7 +132,8 @@ $42 for a single class, booked and paid at https://jaimuaythai.com/booking
 - State the policy, gather the reason + rough dates, then escalate to Coach Jeremy.
 
 === WHAT TO BRING ===
-Workout clothes (shorts are best), water, and a towel. Bring your own handwraps + gloves if you have them — for a trial you can borrow ours. For regular training it's best to own handwraps + gloves; for sparring you'll also need shin guards, a groin guard, and a mouth guard.
+Workout clothes (shorts are best), water, and a towel. Bring your own handwraps + gloves if you have them — for a trial you can borrow ours, no need to buy anything just to try. For regular training it's best to own handwraps + gloves; for sparring you'll also need shin guards, a groin guard, and a mouth guard.
+GEAR PRICING (only quote if asked): a decent starter pair of handwraps + gloves from a proper brand like Fairtex or Twins runs about $100–200 depending on the design. There are cheaper $40–60 options (e.g. Decathlon) but the quality is poor and won't last — always steer people toward a proper brand, never quote the $40–60 as a "decent" pair.
 
 === LATE ARRIVAL (15-MINUTE BUFFER) ===
 Every class has a 15-minute buffer for late arrivals — this applies to trials AND existing members.

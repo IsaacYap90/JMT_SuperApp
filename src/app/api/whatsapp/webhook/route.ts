@@ -15,7 +15,13 @@ import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { cancelCalendlyEvent } from "@/lib/calendly";
 import { verifyMetaSignature } from "@/lib/meta-webhook";
-import { detectJoinIntent, hasDisallowedPrice, JOIN_HANDOFF_TEXT } from "@/lib/wa/join-intent";
+import {
+  detectJoinIntent,
+  hasDisallowedPrice,
+  hasDeadAdultLink,
+  JOIN_HANDOFF_TEXT,
+  PAUSED_ADULT_TRIAL_TEXT,
+} from "@/lib/wa/join-intent";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -374,6 +380,31 @@ export async function POST(req: NextRequest) {
     if (moneyHandoff) {
       outText = JOIN_HANDOFF_TEXT;
       outQuick = [];
+    }
+
+    // ── Dead adult-trial-link guard (last line of defence) ─────────────────
+    // The adult trial Calendly link was switched OFF on 2026-07-30 and is DEAD —
+    // the page reads "not valid". jai-facts.ts / jai-reply.ts tell the model
+    // NEVER to send it, but on 2026-08-01 DeepSeek sent it to an adult beginner
+    // anyway and she got "unable to access". Same failure class as the $252 promo
+    // incident: never trust the model to obey "never send X". If the dead adult
+    // link slipped into the reply, replace it with the correct paused-adult + $42
+    // drop-in answer (a USEFUL reply, not the generic handoff) and page Coach
+    // Jeremy to follow up. Kids/pre-teen Calendly links are LIVE and pass through
+    // untouched — hasDeadAdultLink ignores the "kids-*" slugs.
+    if (hasDeadAdultLink(outText)) {
+      console.warn(
+        "[jai-webhook] blocked dead adult trial link in outbound, replaced + escalated"
+      );
+      outText = PAUSED_ADULT_TRIAL_TEXT;
+      outQuick = [];
+      if (!esc || esc.escalation === "GENERAL_ESCALATION") {
+        esc = {
+          escalation: "GENERAL_ESCALATION",
+          intent: "dead_adult_link_blocked",
+          source: "guard",
+        };
+      }
     }
 
     // Learned member detection — once the bot recognises an existing member, remember it.
