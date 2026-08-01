@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 
 import { execSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 
 // Build stamp — captured at build time. Vercel CLI deploys from the working tree
 // and does NOT inject VERCEL_GIT_COMMIT_SHA reliably, so fall back to git.
@@ -13,6 +14,15 @@ const buildSha = (() => {
   }
 })();
 const buildTime = new Date().toISOString().slice(0, 10);
+const buildNumber = (() => {
+  try {
+    return execSync("git rev-list --count HEAD").toString().trim();
+  } catch {
+    return "0";
+  }
+})();
+const pkgVersion = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
+const buildVersion = `v${pkgVersion}.${buildNumber}`;
 
 // Standard security headers (security audit 2026-07).
 // TODO: add CSP (report-only first) — needs per-site asset-origin testing.
@@ -30,6 +40,7 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_SHA: buildSha,
     NEXT_PUBLIC_BUILD_TIME: buildTime,
+    NEXT_PUBLIC_BUILD_VERSION: buildVersion,
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
