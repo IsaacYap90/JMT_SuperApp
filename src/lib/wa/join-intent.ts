@@ -114,9 +114,43 @@ export function detectJoinIntent(text: string): string | null {
 //   50 / 60          PT trial range
 //   350              10-class pack total ($35 × 10)
 //   0                "free" / "$0 for the trial" — trials are free, that is a fact
+//   100 / 200        gear: "a decent starter pair of handwraps + gloves… about
+//   40  (/ 60)       $100–200", "cheaper $40–60 options" — the GEAR PRICING line
+//                    in jai-facts.ts (WHAT TO BRING). Added 2026-08-05: without
+//                    them, a correct answer to "how much are gloves?" tripped
+//                    hasDisallowedPrice, became a JOIN_INTENT, got REPLACED by
+//                    the handoff line and set leads.ai_paused — i.e. JAI went
+//                    silent on a live lead over a shopping question. Neither 100
+//                    nor 40 is a plausible membership/promo figure (the card runs
+//                    200–280 and the $252 class of incident sits there), which is
+//                    what this guard exists to catch, so allowing them costs the
+//                    money guard nothing.
 // Anything else in an outbound reply is a promo figure JAI does not have —
 // including a number the customer quoted at it (the $252 incident).
 const ALLOWED_AMOUNTS = new Set([280, 250, 230, 200, 42, 35, 50, 60, 350, 0]);
+
+// GEAR RANGES — the fact sheet's gear line quotes "$100–200" and "$40–60"
+// (jai-facts.ts GEAR PRICING). Those must not trip the money guard, but putting
+// 100 and 40 in ALLOWED_AMOUNTS was too blunt in BOTH directions:
+//   - outbound, it un-guarded a bare "$40", and the real drop-in is $42 — a model
+//     typo that used to be caught and escalated would have shipped to a customer;
+//   - inbound, ALLOWED_AMOUNTS is shared with quotesUnknownBareAmount(), so "the
+//     100 deal" stopped tripping the promo guard written after a live incident.
+// So neutralise the RANGE as a phrase instead, and leave the bare numbers guarded.
+// Only a low–high pair glued to a currency marker matches; "$40" alone does not.
+// ⚠ The separator alternation is deliberately WIDE. A first pass matched only a
+// bare dash and tested clean against the fact sheet's own two spellings — but the
+// fact sheet is not what goes out. The prompt tells JAI to speak "casually,
+// warmly", i.e. to PARAPHRASE, and "$100-$200" (dollar repeated) is one of the
+// commonest ways a model renders a range. Every missed spelling trips the money
+// guard, replaces a correct gear answer with the handoff line and sets
+// ai_paused — JAI silent on a lead who asked what gloves cost, which is the very
+// incident this whole block exists to prevent. Nemotron entering the chain makes
+// divergent phrasing MORE likely, not less.
+// It still cannot leak: the stripped span must literally be 100→200 or 40→60, so
+// no other figure can occupy it ("$100 and $252 and $200" → 252 still caught).
+const GEAR_RANGES =
+  /(?:\$\s?)?\b(?:100\s*(?:[-–—]|to|and|up\s+to)\s*(?:\$\s?)?200|40\s*(?:[-–—]|to|and|up\s+to)\s*(?:\$\s?)?60)\b/g;
 
 // How a money amount can appear. A bare number is NOT money — that would bin
 // ages (6, 10, 11, 14, 15), class sizes and class times. It only counts when a
@@ -145,7 +179,10 @@ const AMOUNT_PATTERNS: RegExp[] = [
 
 /** Every money amount in the text that is NOT on the standard rate card. */
 export function disallowedAmounts(text: string): number[] {
-  const t = (text || "").toLowerCase();
+  // Strip the fact sheet's gear RANGES first so their endpoints are never scanned
+  // as standalone prices. Outbound only — quotesUnknownBareAmount() deliberately
+  // does NOT do this, so a customer quoting "the 100 deal" still trips inbound.
+  const t = (text || "").toLowerCase().replace(GEAR_RANGES, " ");
   const out: number[] = [];
   for (const re of AMOUNT_PATTERNS) {
     re.lastIndex = 0;
@@ -213,11 +250,23 @@ export function hasDisallowedPrice(text: string): boolean {
 //   jaimuaythaisg/kids-muay-thai-trial-class           (Kids 6–10)
 //   jaimuaythaisg/kids-pre-teen-muay-thai-trial-class  (Pre-Teen 11–14)
 // Both kids slugs CONTAIN "muay-thai-trial-class" as a substring — but always
-// preceded by a hyphen ("…-muay-thai-trial-class"). The adult slug is preceded by
-// a slash ("/muay-thai-trial-class") or nothing (bare path). So we match the slug
-// only when it is NOT preceded by a hyphen: fires on the adult link (with or
-// without the domain) and the bare path, never on the "kids-…" forms.
-const DEAD_ADULT_LINK = /(?<!-)\bmuay-thai-trial-class\b/;
+// preceded by a hyphen ("…-muay-thai-trial-class"). The adult slug only ever
+// appears after a SLASH — both in the full link and in the bare
+// "/muay-thai-trial-class" path — because this guard exists to catch a SENDABLE
+// LINK, and a link has a slash in it.
+//
+// So we anchor on that slash rather than merely excluding the hyphen. The old
+// /(?<!-)\bmuay-thai-trial-class\b/ rejected the kids slugs correctly but ALSO
+// fired on prose — "the kids muay-thai-trial-class", "Muay-Thai-Trial-Class" —
+// where a SPACE precedes it. Cost of that false positive (fixed 2026-08-05): a
+// parent of a 6–14 year old gets outText replaced by PAUSED_ADULT_TRIAL_TEXT,
+// which is the ADULT answer that jai-reply.ts explicitly forbids sending to
+// them ("NEVER tell a parent of a 6–14 year old that trials are paused").
+// A start-of-string alternative was deliberately NOT added: it re-opens exactly
+// that false positive for a message that OPENS with the prose form, and the only
+// thing it would additionally catch is a slash-less bare slug, which is not a
+// link and cannot be tapped.
+const DEAD_ADULT_LINK = /\/muay-thai-trial-class\b/;
 
 /** True if the outbound text contains the switched-off ADULT trial Calendly link. */
 export function hasDeadAdultLink(text: string): boolean {

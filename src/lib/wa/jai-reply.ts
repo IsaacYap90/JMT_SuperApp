@@ -235,7 +235,177 @@ export function firstNameFrom(name?: string | null): string {
   return "";
 }
 
-// Call DeepSeek (OpenAI-compatible) and return the parsed reply.
+// ── Model providers ────────────────────────────────────────────────────────
+// DeepSeek 503'd for real on 2026-08-04 ("Service is too busy… switch to
+// alternative LLM API service providers") and every customer got the canned
+// apology. So: primary → fallback → apology, never primary → apology.
+//
+// Gemini is reached through its OpenAI-COMPATIBLE endpoint on purpose: the
+// message array (system prompt + history) is handed over byte-identical, so
+// JAI's persona, fact sheet and guardrails cannot drift between the two paths.
+// A different provider, not just a different DeepSeek model — a same-provider
+// fallback would have been down in the same outage.
+//
+// All three are reasoning models that burn max_tokens on thinking and return an
+// empty string unless it is disabled (see reference_deepseek_v4_migration):
+// DeepSeek needs thinking:{type:"disabled"}, Gemini needs reasoning_effort
+// (it rejects "none" with a 400, so "low" is the floor), Nemotron needs an
+// explicit small reasoning_budget (its default is 16384 — the whole reply).
+type Provider = {
+  name: string;
+  url: string;
+  apiKey: string | undefined;
+  timeoutMs: number;
+  body: (messages: unknown[]) => Record<string, unknown>;
+};
+
+const PROVIDERS: Provider[] = [
+  {
+    name: "deepseek",
+    url: "https://api.deepseek.com/chat/completions",
+    apiKey: process.env.DEEPSEEK_API_KEY,
+    // A customer waiting 30s is its own failure — cut over early. Healthy
+    // DeepSeek answers in 1–4s. The overall cap across all tiers is
+    // CHAIN_BUDGET_MS below, not the sum of these per-provider timeouts.
+    timeoutMs: 8_000,
+    body: (messages) => ({
+      model: "deepseek-v4-flash",
+      max_tokens: 500,
+      thinking: { type: "disabled" },
+      messages,
+    }),
+  },
+  {
+    name: "gemini",
+    url: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    apiKey: process.env.GEMINI_API_KEY,
+    timeoutMs: 12_000,
+    body: (messages) => ({
+      model: "gemini-flash-latest",
+      // Gemini's reasoning tokens come OUT of max_tokens and cannot be fully
+      // switched off, so 500 (DeepSeek's budget) truncates the reply mid-
+      // sentence. Headroom, not a longer answer — the prompt still says short.
+      max_tokens: 1500,
+      reasoning_effort: "low",
+      messages,
+    }),
+  },
+  {
+    // Last resort. NVIDIA's build.nvidia.com is a FREE PROTOTYPE tier — no SLA,
+    // rate-limited, throttleable — so it sits below Gemini deliberately. It is
+    // still strictly better than the apology: a third independent vendor means
+    // DeepSeek and Google would both have to be down before a customer gets
+    // nothing. Also OpenAI-compatible, so the prompt stays byte-identical.
+    name: "nemotron",
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    apiKey: process.env.NVIDIA_API_KEY,
+    // Measured 2026-08-05 on the real prompt: 4.1s / 7.1s / 7.8s and one
+    // timeout at 8s. The free tier is simply slower and more variable than the
+    // paid two, and this is the LAST tier — the alternative to waiting is the
+    // apology, so give it room. CHAIN_BUDGET_MS still caps the total.
+    timeoutMs: 10_000,
+    body: (messages) => ({
+      model: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      max_tokens: 1500,
+      // Thinking cannot be switched off, only budgeted. 512 is enough for a
+      // short factual reply and leaves the rest of max_tokens for the answer;
+      // the default 16384 would swallow it and return empty content.
+      reasoning_budget: 512,
+      temperature: 0.6,
+      top_p: 0.95,
+      messages,
+    }),
+  },
+];
+
+// The WhatsApp webhook is capped at maxDuration = 30 (see its route.ts), and
+// that budget covers the Supabase reads and the WA send too, not just this
+// call. Three providers at their full individual timeouts would be 8+12+10 =
+// 30s on their own, so the chain runs against a WALL-CLOCK DEADLINE: each
+// provider gets whatever is left, and one that cannot get a fair shot is
+// skipped rather than started and guillotined. A fourth tier cannot overrun it.
+//
+// The budget is NOT "whatever fits under 30 on its own" — this deadline starts
+// INSIDE completeWithFallback, so everything the webhook does around it is
+// outside the clock and still counts against maxDuration: BEFORE generateReply,
+// ~8 Supabase round-trips plus an awaited Telegram send; AFTER it, the WA send,
+// up to 2 more Telegram sends, ~6 more queries and a possible live Calendly
+// call. That surrounding work measures ~4.5–7.5s. At 24s the platform could kill
+// the request in the window between the WA send and markHandled() — and dedup
+// fails OPEN by design, so Meta re-delivers and the customer gets a SECOND copy
+// of the same reply, repeatably. 18s leaves ~12s of headroom, which covers the
+// slow end of that surrounding work.
+//
+// Accepted trade: if BOTH paid tiers hang to their full timeouts (8+12 = 20s >
+// 18s) Nemotron is skipped and the customer gets the apology. A duplicate
+// message to a real customer is worse than the apology, and the case that
+// actually matters is the common one — a provider that FAILS fast (503/401 in
+// well under a second) leaves nearly the whole budget for the next tier.
+const CHAIN_BUDGET_MS = 18_000;
+// Below this there is no point starting a provider — it would time out mid-
+// flight and burn the remaining budget for nothing.
+const MIN_ATTEMPT_MS = 2_500;
+
+// Try each configured provider in turn. Returns the first non-empty completion,
+// or "" if they all fail — "" is what makes generateReply send the canned
+// apology, so reaching the end of this loop is the thing worth avoiding.
+// EVERY failure falls through to the next tier (see the !res.ok branch below).
+async function completeWithFallback(messages: unknown[]): Promise<string> {
+  const deadline = Date.now() + CHAIN_BUDGET_MS;
+  for (const p of PROVIDERS) {
+    if (!p.apiKey) continue;
+    // Never let a later tier overrun the webhook's own duration cap.
+    const budgetLeft = deadline - Date.now();
+    if (budgetLeft < MIN_ATTEMPT_MS) {
+      console.error(`[jai-reply] out of time before ${p.name} (${budgetLeft}ms left)`);
+      break;
+    }
+    const timeoutMs = Math.min(p.timeoutMs, budgetLeft);
+    try {
+      const res = await fetch(p.url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${p.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(p.body(messages)),
+        cache: "no-store",
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!res.ok) {
+        // Fall through on EVERY failure, 4xx included. This used to bail out of
+        // the whole chain on a 4xx ("our bug, it would repeat elsewhere") — but
+        // that is only true of a bad prompt, which is shared. Auth and request
+        // shape are NOT shared: each provider has its own key and its own body.
+        // So one expired DEEPSEEK_API_KEY would 401 and send every customer the
+        // apology while two healthy providers sat unused. A genuinely shared
+        // bug still fails all three and still ends in "" — same outcome, one
+        // deadline-bounded chain later.
+        console.error(`[jai-reply] ${p.name} error`, res.status, await res.text().catch(() => ""));
+        continue;
+      }
+      const data = await res.json();
+      const text: string = data?.choices?.[0]?.message?.content ?? "";
+      // Empty-but-200 is the reasoning-token trap; treat it as a failure so the
+      // next provider gets a go rather than shipping a blank message.
+      if (!text.trim()) {
+        console.error(`[jai-reply] ${p.name} returned empty content`);
+        continue;
+      }
+      console.log(`[jai-reply] served by ${p.name}`);
+      return text;
+    } catch (err) {
+      console.error(`[jai-reply] ${p.name} failed`, err);
+    }
+  }
+  return "";
+}
+
+// What the customer gets when there is no usable model text — either every
+// provider failed, or the reply parsed down to nothing. One line, no promise.
+const APOLOGY_TEXT = "Hey! Sorry, having a quick issue. Bear with me 🙏";
+
+// Build JAI's prompt, call the model chain, and return the parsed reply.
 export async function generateReply(
   history: HistoryMsg[],
   isNewContact: boolean,
@@ -286,28 +456,29 @@ export async function generateReply(
     ...history.map((m) => ({ role: m.role, content: m.message })),
   ];
 
-  try {
-    const res = await fetch("https://api.deepseek.com/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      // deepseek-chat was retired 2026-07 (API 400s). v4 models reason by default and burn
-      // max_tokens on reasoning before emitting content — thinking must be disabled or the
-      // reply comes back as an empty string with HTTP 200.
-      body: JSON.stringify({ model: "deepseek-v4-flash", max_tokens: 500, thinking: { type: "disabled" }, messages }),
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      console.error("[jai-reply] DeepSeek error", res.status, await res.text().catch(() => ""));
-      return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [], member: false };
-    }
-    const data = await res.json();
-    const text: string = data?.choices?.[0]?.message?.content ?? "";
-    return parseResponse(text);
-  } catch (err) {
-    console.error("[jai-reply] error", err);
-    return { messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏", escalation: null, quickReplies: [], member: false };
+  const text = await completeWithFallback(messages);
+  if (!text) {
+    console.error("[jai-reply] all providers failed — sending canned apology");
+    return { messageText: APOLOGY_TEXT, escalation: null, quickReplies: [], member: false };
   }
+
+  const parsed = parseResponse(text);
+  // The provider-level !text.trim() check above sees the RAW text. parseResponse
+  // THEN strips the escalation JSON and the [QUICK_REPLIES:…] directive, so a
+  // reply made up of ONLY those leaves messageText === "" — and the prompt
+  // ACTIVELY DEMANDS a bare escalation block on cancel/reschedule ("MANDATORY:
+  // every reply … MUST end with this exact JSON block"). The webhook would then
+  // send "*Jai*" and nothing else. Same apology as the all-failed path.
+  //
+  // ORDER MATTERS: the escalation is kept, not dropped. The customer text is what
+  // was lost — Jeremy still needs the alert, and TRIAL_CANCEL still needs to
+  // release the slot. Downstream this is also strictly better than a bare
+  // apology: the webhook's JOIN_INTENT guard swaps in the handoff line. The quick
+  // replies ARE dropped — a "Done" button under "having a quick issue" is noise,
+  // and they were only ever labels for the message we just threw away.
+  if (!parsed.messageText.trim()) {
+    console.error("[jai-reply] model reply was only directives — sending canned apology");
+    return { ...parsed, messageText: APOLOGY_TEXT, quickReplies: [] };
+  }
+  return parsed;
 }
