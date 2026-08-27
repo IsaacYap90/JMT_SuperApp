@@ -1,19 +1,22 @@
 // ============================================================================
-// JAI MUAY THAI — CANONICAL FACT SHEET  (single source of truth)
+// JAI MUAY THAI — CANONICAL FACT SHEET
 // ============================================================================
-// This is THE one place the JAI bot's facts live. Both bots read from here:
-//   • WhatsApp bot  → src/lib/wa/jai-reply.ts     (imports JAI_FACTS)
-//   • FB/IG bot     → src/lib/meta/draft.ts        (imports JAI_FACTS)
+// 🛑 TO UPDATE A FACT (address, hours, prices, links, coaches, etc.):
+//   edit the `jai_facts` row in Supabase (key='facts') — NO deploy needed.
+//   The WhatsApp bot reads it live at answer time via getJaiFacts().
 //
-// TO UPDATE A FACT (address, hours, prices, links, coaches, etc.):
-//   edit the text inside the JAI_FACTS template string below, then redeploy.
-//   Do NOT copy facts into the bot prompts — keep them here ONLY so there is
-//   never a second, drifting copy.
+// The JAI_FACTS constant below is a FALLBACK ONLY: it is served verbatim when
+// the DB is unset/unreachable/empty, so a blip never leaves the bot factless in
+// front of a customer. It was the source of truth until 2026-08-27; keep it a
+// reasonable mirror, but the DB row is now authoritative for edits.
+//
+// The FB/IG bot (src/lib/meta/draft.ts) still imports JAI_CONTACT (the small
+// address/contact subset) from code — that is unchanged.
 //
 // Keep entries plain and factual — the bots wrap this with their own voice and
-// rules. Don't add markdown ** bold here (WhatsApp uses *single asterisks* and
-// the bot handles formatting).
+// rules. Don't add markdown ** bold here (WhatsApp uses *single asterisks*).
 // ============================================================================
+import { createClient } from "@supabase/supabase-js";
 
 // Contact + location subset — the ONE copy of these facts. Used both inside
 // JAI_FACTS (WhatsApp bot) and directly by the FB/IG bot (src/lib/meta/draft.ts).
@@ -202,3 +205,34 @@ Example (someone messages that they'll be a bit late): "No worries, traffic happ
 
 === COACHES ===
 If asked who teaches: "Coach Jeremy is our founder, owner and head coach." Keep it to Jeremy unless they ask for the full team (then you can add Coach Shafiq). Don't list other names, ages, or personal numbers.`;
+
+// ── DB-backed facts ─────────────────────────────────────────────────────────
+// Reads the editable fact sheet from Supabase (`jai_facts` row, key='facts') at
+// answer time, so Isaac/Jeremy can change a fact with no deploy. Falls back to
+// the JAI_FACTS constant above whenever the env is unset, the query errors, or
+// the row is empty — the bot must never answer a customer with no facts because
+// a read blipped. Seeded 2026-08-27 with JAI_FACTS verbatim, so behaviour is
+// identical until someone edits the row.
+function jaiFactsClient() {
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+}
+
+export async function getJaiFacts(): Promise<string> {
+  const sb = jaiFactsClient();
+  if (!sb) return JAI_FACTS;
+  try {
+    const { data, error } = await sb
+      .from("jai_facts")
+      .select("content")
+      .eq("key", "facts")
+      .maybeSingle();
+    const content = (data?.content ?? "").trim();
+    if (error || !content) return JAI_FACTS;
+    return content;
+  } catch {
+    return JAI_FACTS;
+  }
+}

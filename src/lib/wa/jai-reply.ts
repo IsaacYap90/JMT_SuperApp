@@ -4,7 +4,7 @@
 // FACTS live in ONE place: src/lib/wa/jai-facts.ts (JAI_FACTS). Edit facts
 // there — this file holds only Jai's voice, rules, and escalation logic.
 
-import { JAI_FACTS } from "./jai-facts";
+import { getJaiFacts } from "./jai-facts";
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
 
@@ -38,7 +38,7 @@ Do NOT open by promising a free trial — whether there is one depends on their 
 Do NOT tell a first-time enquirer that you're "still new here" or that you don't have their past chats — they have no past chats, so it just reads as confusing and unsure. Only ever mention it if you are explicitly told below that this is a known member whose history predates you.
 
 ## FACT SHEET — YOUR ONLY SOURCE OF TRUTH
-${JAI_FACTS}
+__JAI_FACTS__
 
 ## BEGINNERS
 Total beginners join any All-Levels class — coaches scale it to you. After ~3–6 months (depends on the person) the instructor assesses your level and clears you for Advanced + Sparring.
@@ -413,7 +413,10 @@ export async function generateReply(
   isMember?: boolean,
   contactContext?: string
 ): Promise<ParsedReply> {
-  let systemPrompt = SYSTEM_PROMPT;
+  // Facts are pulled live from the DB (with the in-code JAI_FACTS as fallback),
+  // so a fact can be edited with no deploy. Injected per-message here, not baked
+  // into SYSTEM_PROMPT at import time.
+  let systemPrompt = SYSTEM_PROMPT.replace("__JAI_FACTS__", await getJaiFacts());
   // Who JAI is actually talking to (member / returning / new) + any recap, so it
   // greets appropriately instead of defaulting to the brand-new greeting.
   if (contactContext && contactContext.trim()) {
