@@ -9,10 +9,12 @@ import {
   validateReply,
   describeViolations,
   statesAClassTime,
+  daysNamedIn,
+  looksNonEnglish,
   JMT_FACT_GUARD_CONFIG,
   type FactCheckResult,
 } from "./fact-guard";
-import { buildDeterministicAnswer } from "./deterministic-answers";
+import { buildDeterministicAnswer, scheduleAnswerForDay } from "./deterministic-answers";
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
 
@@ -502,32 +504,60 @@ export async function generateReply(
   // detector above can afford to be greedy.
   if (statesAClassTime(parsed.messageText)) {
     const lastUser = [...history].reverse().find((m) => m.role === "user")?.message ?? "";
-    const det = buildDeterministicAnswer(lastUser, jaiFacts);
-    if (det) {
+
+    // An escalation means this reply is doing something other than quoting a
+    // timetable — cancelling a trial, handing a buy signal to Jeremy. Replacing
+    // the text would tell the customer nothing about the action we just took:
+    // e2e found a child's trial cancelled and Jeremy pinged while the parent was
+    // asked which day they meant. Leave those to the fact guard below, which
+    // still checks every time and price in them.
+    if (parsed.escalation) {
       console.error(
-        "[jai-reply] TIMETABLE CLAIM replaced with the sheet-built answer —",
-        JSON.stringify({ draft: parsed.messageText, sent: det.messageText })
+        "[jai-reply] timetable claim inside an escalation reply — guarding, not replacing",
+        JSON.stringify({ escalation: parsed.escalation.escalation })
+      );
+    } else if (looksNonEnglish(parsed.messageText) || looksNonEnglish(lastUser)) {
+      // The canned answers are English. The fact sheet tells JAI to mirror the
+      // lead's language, so answering a Chinese enquiry with English copy trades
+      // one wrong answer for another. Guard it instead.
+      console.error("[jai-reply] non-English timetable claim — guarding, not replacing");
+    } else {
+      // Prefer the day the conversation ALREADY names — the draft first, then
+      // the customer's own words. Only ask when nothing anywhere names a day.
+      // Re-running intent detection here was the bug: it is tuned to return null
+      // freely (safe for the Layer 2 intercept, where null means "let the AI
+      // answer"), so a customer who wrote "can I come Monday at 7:30pm?" got
+      // asked which day they meant — twice, and again when they tapped the
+      // fallback's own Today button.
+      const day = daysNamedIn(parsed.messageText)[0] ?? daysNamedIn(lastUser)[0] ?? null;
+      const det = day
+        ? scheduleAnswerForDay(day, jaiFacts)
+        : buildDeterministicAnswer(lastUser, jaiFacts);
+      if (det) {
+        console.error(
+          "[jai-reply] TIMETABLE CLAIM replaced with the sheet-built answer —",
+          JSON.stringify({ day, draft: parsed.messageText, sent: det.messageText })
+        );
+        return {
+          messageText: det.messageText,
+          escalation: parsed.escalation,
+          quickReplies: det.quickReplies,
+          member: parsed.member,
+        };
+      }
+      // Nothing named a day and nothing could be built. Asking is now honest:
+      // the customer genuinely has not said which day.
+      console.error(
+        "[jai-reply] TIMETABLE CLAIM, no day anywhere — asking —",
+        JSON.stringify({ draft: parsed.messageText, question: lastUser })
       );
       return {
-        messageText: det.messageText,
+        messageText: "Happy to give you exact times — which day were you thinking of? 🙂",
         escalation: parsed.escalation,
-        quickReplies: det.quickReplies,
+        quickReplies: ["Today", "Tomorrow"],
         member: parsed.member,
       };
     }
-    // No deterministic answer for this question, so we cannot verify the claim
-    // and cannot rebuild it. Ask which day rather than guess or escalate.
-    console.error(
-      "[jai-reply] TIMETABLE CLAIM with no sheet-built answer — asking for the day —",
-      JSON.stringify({ draft: parsed.messageText, question: lastUser })
-    );
-    return {
-      messageText:
-        "Happy to give you exact times — which day were you thinking of? 🙂",
-      escalation: parsed.escalation,
-      quickReplies: ["Today", "Tomorrow"],
-      member: parsed.member,
-    };
   }
 
   // ── FACT GUARD (layer 1) ──────────────────────────────────────────────────

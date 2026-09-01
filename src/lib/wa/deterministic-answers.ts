@@ -534,6 +534,34 @@ function priceAnswer(
  * comes from — the JAI_FACTS constant today, a DB row (getJaiFacts()) tomorrow,
  * another tenant's sheet after that.
  */
+
+/**
+ * Answer for a day we ALREADY know, skipping intent detection entirely.
+ *
+ * detectIntent is deliberately conservative because for the Layer 2 intercept
+ * `null` means "let the AI answer" — a safe default there. The reply-substitution
+ * path needs the opposite bias: by the time it runs we have already decided the
+ * model's own answer is not trustworthy, so `null` there means "ask the customer
+ * which day", and that produced the worst bug of the whole build — a customer who
+ * wrote "can I come Monday at 7:30pm?" was asked which day they meant, twice,
+ * because a bare day word never satisfies detectIntent's topic anchor.
+ *
+ * So: if we know the day, answer for the day.
+ */
+export function scheduleAnswerForDay(
+  day: string,
+  facts: string,
+  cfg: DeterministicConfig = DEFAULT_CONFIG
+): DeterministicAnswer | null {
+  try {
+    const sched = parseSchedule(facts, cfg);
+    if (!sched) return null;
+    return scheduleAnswer({ intent: "SCHEDULE", score: 99, day }, sched, cfg);
+  } catch {
+    return null;
+  }
+}
+
 export function buildDeterministicAnswer(
   text: string,
   facts: string,

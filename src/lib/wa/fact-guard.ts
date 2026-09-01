@@ -424,6 +424,14 @@ const DAY_WORD_ANY_RE = new RegExp(
 // Chinese states times as 晚上7点半 / 7點 / 下午4:30 — the latin-digit forms are
 // caught by the shared time regex, so only the CJK hour marker is added here.
 const CJK_TIME_RE = /\d{1,2}\s*[:：.]?\s*\d{0,2}\s*[点點]/;
+// The day side of this detector was multilingual from the start; the TIME side
+// was am/pm only, and I claimed the language bypass was closed when it was not.
+// A live DeepSeek reply in Malay wrote "7:00–8:00 pagi … 6:30–7:30 petang" and
+// walked straight past. The 19-case suite missed it because every non-English
+// case in it happened to write the time in English format.
+const MS_TIME_RE = /\d{1,2}([:.]\d{2})?\s*(pagi|petang|malam|tengah\s*hari)/i;
+// Bare clock times with no meridiem at all: "7:00-8:00", "19:30".
+const BARE_CLOCK_RE = /\b\d{1,2}[:.]\d{2}\b/;
 
 /**
  * Does this draft assert a class time? Day word + any time, in any of the three
@@ -432,7 +440,49 @@ const CJK_TIME_RE = /\d{1,2}\s*[:：.]?\s*\d{0,2}\s*[点點]/;
 export function statesAClassTime(reply: string): boolean {
   const hasDay = DAY_WORD_ANY_RE.test(reply);
   if (!hasDay) return false;
-  return extractTimes(reply).length > 0 || CJK_TIME_RE.test(reply);
+  return (
+    extractTimes(reply).length > 0 ||
+    CJK_TIME_RE.test(reply) ||
+    MS_TIME_RE.test(reply) ||
+    BARE_CLOCK_RE.test(reply)
+  );
+}
+
+/** The canonical days named anywhere in a piece of text, sheet-label style. */
+export function daysNamedIn(text: string): string[] {
+  const map: Record<string, string> = {
+    mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun",
+  };
+  const zh: Record<string, string> = {
+    "一": "Mon", "二": "Tue", "三": "Wed", "四": "Thu", "五": "Fri", "六": "Sat", "日": "Sun", "天": "Sun",
+  };
+  const ms: Record<string, string> = {
+    isnin: "Mon", selasa: "Tue", rabu: "Wed", khamis: "Thu", jumaat: "Fri", sabtu: "Sat", ahad: "Sun",
+  };
+  const out = new Set<string>();
+  // exec loops rather than matchAll — the project's TS target predates
+  // downlevelIteration, so a RegExpStringIterator cannot be spread here.
+  const scan = (re: RegExp, pick: (m: RegExpExecArray) => string | undefined) => {
+    let m: RegExpExecArray | null;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      const v = pick(m);
+      if (v) out.add(v);
+    }
+  };
+  scan(/\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)[a-z]*\b/gi,
+       (m) => map[m[1].toLowerCase().slice(0, 3)]);
+  scan(/[周星期礼拜週]([一二三四五六日天])/g, (m) => zh[m[1]]);
+  scan(/\b(isnin|selasa|rabu|khamis|jumaat|sabtu|ahad)\b/gi, (m) => ms[m[1].toLowerCase()]);
+  return Array.from(out);
+}
+
+/** Does this text look like it is NOT in English? Used to avoid answering a
+ *  Chinese or Malay customer with English canned copy. */
+export function looksNonEnglish(text: string): boolean {
+  if (/[\u4e00-\u9fff\u3040-\u30ff]/.test(text)) return true;
+  const ms = /\b(kelas|hari|pukul|boleh|nak|saya|ada|berapa|jadual|petang|pagi|malam|esok)\b/i;
+  return ms.test(text);
 }
 
 // ── sheet index (memoised — the sheet is a module constant in practice) ─────
