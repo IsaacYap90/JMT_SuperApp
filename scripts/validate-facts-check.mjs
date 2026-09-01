@@ -28,7 +28,9 @@ const CASES = [
     name: "bare '7pm class' asserted with no customer prompt",
     reply: "Yes, we have a 7pm class on Monday!",
     expect: "block",
-    tokens: ["19:00"],
+    // Blocked twice over: 7pm is in no schedule line at all, AND it is not a
+    // Monday start time. Both are correct.
+    tokens: ["19:00", "19:00@mon"],
   },
   {
     name: "dot-separated invented time (7.15pm)",
@@ -41,10 +43,11 @@ const CASES = [
     // The guard checks each endpoint against the sheet, not the range as a
     // unit — checking ranges would block honest spans like "we run 6:30pm till
     // 9:30pm". One flagged token is enough to block the reply.
+    // Also caught by day binding — Sunday has no group classes at all.
     name: "invented Sunday morning class",
     reply: "There's a 9-10am class on Sunday.",
     expect: "block",
-    tokens: ["09:00"],
+    tokens: ["09:00", "09:00-10:00@sun"],
   },
   {
     name: "invented price ($199/month)",

@@ -59,7 +59,7 @@ check(
 check("pricing section parses", !!pricing);
 check(
   "Adults tier first option is the 1-month rate",
-  pricing?.tiers[0].label.startsWith("Adults") && pricing?.tiers[0].firstOption === "1 month $280",
+  pricing?.tiers[0].label.startsWith("Adults") && pricing?.tiers[0].firstOption === "1mo $280",
   JSON.stringify(pricing?.tiers[0])
 );
 check(
@@ -79,14 +79,14 @@ const hits = [
   { msg: "do you have morning class?", intent: "SCHEDULE", must: ["7:00–8:00am"], mustNot: ["6:30–7:30pm"] },
   { msg: "what time are the evening classes on thursday", intent: "SCHEDULE", must: ["6:30–7:30pm"], mustNot: ["12:15–1:15pm"] },
   { msg: "when are your classes?", intent: "SCHEDULE", must: ["Which day"] },
-  { msg: "how much per month?", intent: "PRICE", must: ["1 month $280"], mustNot: ["3 months", "6 months", "$42"] },
+  { msg: "how much per month?", intent: "PRICE", must: ["1mo $280"], mustNot: ["3 months", "6 months", "$42"] },
   { msg: "whats the price for classes", intent: "PRICE", must: ["$280"] },
   { msg: "berapa harga sebulan", intent: "PRICE", must: ["$280"] },
   { msg: "多少钱一个月", intent: "PRICE", must: ["$280"] },
-  { msg: "how much for my son", intent: "PRICE", must: ["1 month $250", "Kids"], mustNot: ["$280"] },
+  { msg: "how much for my son", intent: "PRICE", must: ["1mo $250", "Kids"], mustNot: ["$280"] },
   { msg: "kids fee?", intent: "PRICE", must: ["$250"] },
   { msg: "sunday got class what time", intent: "SCHEDULE", must: ["no group classes"], mustNot: ["•"] },
-  { msg: "how much is your monthly membership", intent: "PRICE", must: ["1 month $280"] },
+  { msg: "how much is your monthly membership", intent: "PRICE", must: ["1mo $280"] },
 ];
 for (const t of hits) {
   const a = buildDeterministicAnswer(t.msg, JAI_FACTS);

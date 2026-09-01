@@ -510,8 +510,21 @@ export async function generateReply(
       { role: "user", content: correctionPrompt(check) },
     ]);
     if (!retryText) {
-      console.error("[jai-reply] guard retry: all providers failed — sending canned apology");
-      return { messageText: APOLOGY_TEXT, escalation: null, quickReplies: [], member: false };
+      // The guard already caught the model inventing a fact, and now the retry
+      // could not run. Keep the ESCALATION: without it the customer gets the
+      // apology and Jeremy is never told, so a lead who asked the one question
+      // we got wrong is dropped silently. (Found in e2e, 2026-09-01.)
+      console.error("[jai-reply] guard retry: all providers failed — apology + escalation");
+      return {
+        messageText: APOLOGY_TEXT,
+        escalation: {
+          escalation: "GENERAL_ESCALATION",
+          intent: "fact_guard_block_no_retry",
+          source: "whatsapp",
+        },
+        quickReplies: [],
+        member: false,
+      };
     }
     const retried = parseResponse(retryText);
     check = guard(retried.messageText, lastCustomerMsg, jaiFacts);

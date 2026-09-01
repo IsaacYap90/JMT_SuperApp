@@ -34,7 +34,7 @@
 //    the safe direction, but worth knowing.
 // ============================================================================
 
-export type ViolationKind = "time" | "price" | "link";
+export type ViolationKind = "time" | "price" | "link" | "day";
 
 export type Violation = {
   kind: ViolationKind;
@@ -134,6 +134,25 @@ export function extractTimes(text: string): Token[] {
   return out;
 }
 
+/**
+ * Ranges and standalone times, kept APART. `extractTimes` flattens a range into
+ * two loose tokens, which is right for "does this time exist at all" but wrong
+ * for day binding: the end of a valid range would then be re-tested as if it
+ * were a class start and rejected.
+ */
+export function extractTimeParts(text: string): {
+  ranges: { start: Token; end: Token }[];
+  singles: Token[];
+} {
+  const ranges: { start: Token; end: Token }[] = [];
+  const masked = text.replace(TIME_RANGE_RE, (full: string) => {
+    const both = extractTimes(full);
+    if (both.length === 2) ranges.push({ start: both[0], end: both[1] });
+    return " ".repeat(full.length);
+  });
+  return { ranges, singles: extractTimes(masked) };
+}
+
 // ── price extraction ────────────────────────────────────────────────────────
 // A price needs a currency marker, so no bare number is ever read as one.
 // Canonical form: <SYMBOL><integer digits> — "RM 1,400", "RM1400.00" and
@@ -187,6 +206,118 @@ function linkAllowed(norm: string, allow: string[]): boolean {
     const e = normaliseLink(entry);
     return !!e && (norm === e || norm.startsWith(e + "/"));
   });
+}
+
+// TRUE negations only. `negationCues` in the config is a deliberately loose list
+// used for the ECHO allowance, where the token must ALSO be one the customer
+// wrote — there "we have" is a harmless extra signal. It must never be reused as
+// a standalone negation test: "Yes, we have a 7pm class on Monday!" matches it,
+// and reusing it exempted exactly the assertion this guard exists to stop.
+const TRUE_NEGATION_RE =
+  /\b(no|not|n't|never|none|cannot|unfortunately|afraid|isn't|aren't|don't|doesn't|won't)\b/i;
+
+// ── day binding ─────────────────────────────────────────────────────────────
+// Checking that a time exists SOMEWHERE in the sheet is not the same as checking
+// it exists on the day the model attached it to. E2E on 2026-09-01 caught the
+// difference in real output: JAI said there is an 8:30pm class "on Tue, Wed, Thu
+// and Fri". 8:30pm is a real time on Tue/Thu/Fri, so token validation passed it —
+// but Wednesday's last class ends at 8:30pm, and a lead following that turns up
+// to a closing gym. It also merged "4:30-5:15pm Kids · 5:15-6:00pm Pre-Teen"
+// into "4:30-6:00pm"; both endpoints are real, so the merged span passed too.
+//
+// So we also index the schedule PER DAY, and as whole ranges rather than loose
+// endpoints, then verify every (day, time) the reply actually asserts.
+const DAY_NAMES: Record<string, string> = {
+  mon: "mon", monday: "mon", tue: "tue", tues: "tue", tuesday: "tue",
+  wed: "wed", weds: "wed", wednesday: "wed", thu: "thu", thur: "thu",
+  thurs: "thu", thursday: "thu", fri: "fri", friday: "fri", sat: "sat",
+  saturday: "sat", sun: "sun", sunday: "sun",
+};
+const DAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+const DAY_WORD_RE = new RegExp(`\\b(${Object.keys(DAY_NAMES).join("|")})\\b`, "gi");
+// "Mon-Fri", "Monday to Saturday" — too coarse to bind a specific time to, so a
+// segment containing one is skipped rather than guessed at.
+const DAY_RANGE_RE = new RegExp(
+  `\\b(${Object.keys(DAY_NAMES).join("|")})\\b[ \\t]*(?:[-–—]|to)[ \\t]*\\b(${Object.keys(DAY_NAMES).join("|")})\\b`,
+  "i"
+);
+
+export type DaySchedule = Map<string, { starts: Set<string>; ends: Set<string>; ranges: Set<string> }>;
+
+/** Parse the "=== CLASS SCHEDULE ... ===" block into day -> allowed times/ranges. */
+export function indexSchedule(facts: string): DaySchedule {
+  const out: DaySchedule = new Map();
+  // NB: the header itself can contain '=' ("AL = All Levels"), so match to the
+  // end of the header LINE rather than excluding '=' characters.
+  const sec = /===[^\n]*SCHEDULE[^\n]*===[ \t]*\n([\s\S]*?)(?:\n===|$)/i.exec(facts);
+  if (!sec) return out;
+  for (const line of sec[1].split("\n")) {
+    const m = /^[-*\u2022]?[ \t]*([A-Za-z]{3,9})[ \t]*:[ \t]*(.+)$/.exec(line.trim());
+    if (!m) continue;
+    const day = DAY_NAMES[m[1].toLowerCase()];
+    if (!day) continue;
+    const entry = out.get(day) || { starts: new Set<string>(), ends: new Set<string>(), ranges: new Set<string>() };
+    // Ranges as UNITS (so a merged span is not reconstructable from two halves).
+    const toks = extractTimes(m[2]);
+    for (let i = 0; i + 1 < toks.length; i += 2) {
+      entry.ranges.add(`${toks[i].norm}-${toks[i + 1].norm}`);
+      entry.starts.add(toks[i].norm);
+      entry.ends.add(toks[i + 1].norm);
+    }
+    out.set(day, entry);
+  }
+  return out;
+}
+
+function daysIn(seg: string): string[] {
+  const found = new Set<string>();
+  let m: RegExpExecArray | null;
+  DAY_WORD_RE.lastIndex = 0;
+  while ((m = DAY_WORD_RE.exec(seg)) !== null) found.add(DAY_NAMES[m[1].toLowerCase()]);
+  return DAY_ORDER.filter((d) => found.has(d));
+}
+
+/**
+ * Every (day, time) the reply asserts must hold for EVERY day named in that
+ * segment — "8:30pm on Tue, Wed, Thu and Fri" is a claim about each of them.
+ * Segments that negate, or that use a day RANGE, are skipped: the first is the
+ * assistant correcting the customer, the second is too coarse to bind.
+ */
+export function checkDayBinding(reply: string, sched: DaySchedule): Token[] {
+  const bad: Token[] = [];
+  if (sched.size === 0) return bad;
+  for (const seg of reply.split(/[.!?;\n]|\u00b7/)) {
+    if (!seg.trim() || TRUE_NEGATION_RE.test(seg) || DAY_RANGE_RE.test(seg)) continue;
+    const days = daysIn(seg);
+    if (days.length === 0) continue;
+    const { ranges, singles } = extractTimeParts(seg);
+    if (ranges.length === 0 && singles.length === 0) continue;
+    // Ranges as UNITS — a merged span fails here even though its halves are real.
+    for (const r of ranges) {
+      const span = `${r.start.norm}-${r.end.norm}`;
+      for (const d of days) {
+        const e = sched.get(d);
+        if (e && !e.ranges.has(span)) {
+          bad.push({ raw: `${r.start.raw}-${r.end.raw} on ${d}`, norm: `${span}@${d}` });
+        }
+      }
+    }
+    // A class "at 8:30pm" must START at 8:30pm. On Wednesday 8:30pm is only ever
+    // the END of the 7:30pm class, which is exactly how the live model produced a
+    // Wednesday class that does not exist. An end time is therefore accepted only
+    // when the sentence is actually talking about an ending.
+    const endsCue = /\b(end|ends|ending|finish|finishes|finishing|until|till|til|through)\b/i.test(seg);
+    for (const t of singles) {
+      for (const d of days) {
+        const e = sched.get(d);
+        if (!e) continue;
+        if (e.starts.has(t.norm)) continue;
+        if (endsCue && e.ends.has(t.norm)) continue;
+        bad.push({ raw: `${t.raw} on ${d}`, norm: `${t.norm}@${d}` });
+      }
+    }
+  }
+  return bad;
 }
 
 // ── sheet index (memoised — the sheet is a module constant in practice) ─────
@@ -290,10 +421,24 @@ export function validateReply(
       violations.push({ kind, token: t.raw, normalised: t.norm });
     };
 
+    // The sheet side already ignores forbidding sentences; the reply side must
+    // too. "There is no 8pm class on Mondays" does not assert that 8pm exists,
+    // and blocking it would escalate the single most useful correction JAI can
+    // send — the one that stops a lead turning up at the wrong time.
+    const negatedSegment = (token: string): boolean =>
+      reply
+        .split(/[.!?;\n]/)
+        .some((seg) => seg.includes(token) && TRUE_NEGATION_RE.test(seg));
+
     for (const t of extractTimes(reply)) {
       if (idx.times.has(t.norm)) continue;
       if (echoedCorrection(reply, t.raw, custTimes, t.norm, config.negationCues)) continue;
+      if (negatedSegment(t.raw)) continue;
       add("time", t);
+    }
+    // Day binding — a real time asserted on the wrong day (see indexSchedule).
+    for (const d of checkDayBinding(reply, indexSchedule(facts))) {
+      add("day", d);
     }
     for (const p of extractPrices(reply)) {
       if (idx.prices.has(p.norm)) continue;
