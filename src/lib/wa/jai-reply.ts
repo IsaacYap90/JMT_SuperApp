@@ -8,9 +8,11 @@ import { getJaiFacts } from "./jai-facts";
 import {
   validateReply,
   describeViolations,
+  statesAClassTime,
   JMT_FACT_GUARD_CONFIG,
   type FactCheckResult,
 } from "./fact-guard";
+import { buildDeterministicAnswer } from "./deterministic-answers";
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
 
@@ -488,6 +490,45 @@ export async function generateReply(
   }
 
   let parsed = parseResponse(text);
+
+  // ── TIMETABLE CLAIMS ARE NOT THE MODEL'S TO MAKE ──────────────────────────
+  // If the draft states a day and a time, we do not grade it — we replace it
+  // with an answer built from the sheet. Grading was a blacklist and it never
+  // converged (three e2e rounds, six evasions, and nothing covering Chinese or
+  // Malay). Substitution has nothing to evade: the sentence the customer reads
+  // is generated from the sheet, so it cannot disagree with it.
+  //
+  // The customer still gets a real answer, not a deflection — which is why the
+  // detector above can afford to be greedy.
+  if (statesAClassTime(parsed.messageText)) {
+    const lastUser = [...history].reverse().find((m) => m.role === "user")?.message ?? "";
+    const det = buildDeterministicAnswer(lastUser, jaiFacts);
+    if (det) {
+      console.error(
+        "[jai-reply] TIMETABLE CLAIM replaced with the sheet-built answer —",
+        JSON.stringify({ draft: parsed.messageText, sent: det.messageText })
+      );
+      return {
+        messageText: det.messageText,
+        escalation: parsed.escalation,
+        quickReplies: det.quickReplies,
+        member: parsed.member,
+      };
+    }
+    // No deterministic answer for this question, so we cannot verify the claim
+    // and cannot rebuild it. Ask which day rather than guess or escalate.
+    console.error(
+      "[jai-reply] TIMETABLE CLAIM with no sheet-built answer — asking for the day —",
+      JSON.stringify({ draft: parsed.messageText, question: lastUser })
+    );
+    return {
+      messageText:
+        "Happy to give you exact times — which day were you thinking of? 🙂",
+      escalation: parsed.escalation,
+      quickReplies: ["Today", "Tomorrow"],
+      member: parsed.member,
+    };
+  }
 
   // ── FACT GUARD (layer 1) ──────────────────────────────────────────────────
   // The model is told to quote the fact sheet exactly and has invented class

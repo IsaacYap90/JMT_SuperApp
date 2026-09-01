@@ -160,11 +160,20 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
     scheduleNothingInWindow: "We don't have any {window} classes, sorry!",
     scheduleTrailer: "Anything else I can help with? 🙂",
     priceIntro: "*{tier}*\n{price}",
+    // NOT "everyone gets a free trial". Adult free trials are PAUSED — the fact
+    // sheet's hardest rule is "NEVER OFFER AN ADULT A TRIAL. IN ANY CONTEXT",
+    // and this canned line was offering one to every adult who asked a price,
+    // unguarded, because it never passes through the model. The paid drop-in is
+    // the invitation now. (Kids and Pre-Teen trials still run, but this trailer
+    // fires on adult pricing.)
     priceTrailer:
-      "Everyone gets a FREE trial class first though — want me to send you the booking link? 🥊",
+      // No second figure here: the sheet says give the starting price and the
+      // rates link, not the whole list, and the suite checks that the drop-in
+      // rate does not leak into a membership answer.
+      "You can come try a class first, no membership needed — want me to send you the booking link? 🥊",
     quickReplies: {
       schedule: ["Today", "Tomorrow"],
-      price: ["Book a trial"],
+      price: ["Book a class"],
     },
   },
 };

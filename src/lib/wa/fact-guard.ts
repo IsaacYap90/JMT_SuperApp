@@ -396,6 +396,45 @@ export function checkDayBinding(reply: string, sched: DaySchedule): Token[] {
   return bad;
 }
 
+// ── schedule-claim detection (the whitelist inversion) ──────────────────────
+// Three rounds of e2e taught the same lesson: enumerating the ways a reply can
+// be wrong is a blacklist, and a blacklist over natural language never
+// converges. Each round closed one phrasing and the next round found another,
+// and none of it covered Chinese or Malay — which the fact sheet explicitly
+// tells JAI to reply in.
+//
+// So stop grading timetable claims and stop letting the model make them. If a
+// draft states a day and a time, the caller replaces the whole reply with an
+// answer built from the sheet. Detection can be deliberately greedy here: a
+// false trigger costs a correct-but-differently-worded answer, not a customer
+// deflected to "let me check with Coach Jeremy".
+const DAY_WORDS_MULTILINGUAL = [
+  // English (plurals and possessives handled by the s? and 's? below)
+  "mon", "monday", "tue", "tues", "tuesday", "wed", "weds", "wednesday",
+  "thu", "thur", "thurs", "thursday", "fri", "friday", "sat", "saturday",
+  "sun", "sunday", "weekday", "weekend", "today", "tomorrow", "tonight",
+  // Bahasa Melayu
+  "isnin", "selasa", "rabu", "khamis", "jumaat", "sabtu", "ahad", "minggu",
+  "hari",
+];
+const DAY_WORD_ANY_RE = new RegExp(
+  `(\\b(${DAY_WORDS_MULTILINGUAL.join("|")})('?s)?\\b|周[一二三四五六日天]|星期[一二三四五六日天]|礼拜[一二三四五六日天]|週[一二三四五六日天])`,
+  "i"
+);
+// Chinese states times as 晚上7点半 / 7點 / 下午4:30 — the latin-digit forms are
+// caught by the shared time regex, so only the CJK hour marker is added here.
+const CJK_TIME_RE = /\d{1,2}\s*[:：.]?\s*\d{0,2}\s*[点點]/;
+
+/**
+ * Does this draft assert a class time? Day word + any time, in any of the three
+ * languages JAI replies in. Greedy by design — see the note above.
+ */
+export function statesAClassTime(reply: string): boolean {
+  const hasDay = DAY_WORD_ANY_RE.test(reply);
+  if (!hasDay) return false;
+  return extractTimes(reply).length > 0 || CJK_TIME_RE.test(reply);
+}
+
 // ── sheet index (memoised — the sheet is a module constant in practice) ─────
 type SheetIndex = { times: Set<string>; prices: Set<string>; links: Set<string> };
 let cachedSheet: string | null = null;
