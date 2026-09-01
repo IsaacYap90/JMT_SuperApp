@@ -64,6 +64,8 @@ export type DeterministicConfig = {
     scheduleNoDayAsk: string; // {days}
     scheduleNothingInWindow: string; // {window}
     scheduleTrailer: string;
+    lateOk: string;
+    lateTooLate: string;
     priceIntro: string; // {tier} {price}
     priceTrailer: string;
     quickReplies: { schedule: string[]; price: string[] };
@@ -159,6 +161,10 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
       "Sure! We run classes {days} 🥊 Which day are you looking at? Tell me the day and I'll give you the exact times.",
     scheduleNothingInWindow: "We don't have any {window} classes, sorry!",
     scheduleTrailer: "Anything else I can help with? 🙂",
+    lateOk:
+      "No worries — {mins} minutes is inside our 15-minute window, so you're still good to join 🙏 Just come straight in.",
+    lateTooLate:
+      "Thanks for letting us know 🙏 We hold a hard {cutoff}-minute cut-off, so unfortunately you won't be able to join that class. Happy to get you booked on another day — which day suits you?",
     priceIntro: "*{tier}*\n{price}",
     // NOT "everyone gets a free trial". Adult free trials are PAUSED — the fact
     // sheet's hardest rule is "NEVER OFFER AN ADULT A TRIAL. IN ANY CONTEXT",
@@ -557,6 +563,83 @@ export function scheduleAnswerForDay(
     const sched = parseSchedule(facts, cfg);
     if (!sched) return null;
     return scheduleAnswer({ intent: "SCHEDULE", score: 99, day }, sched, cfg);
+  } catch {
+    return null;
+  }
+}
+
+// ── Late arrival — deterministic, because the model flips a coin on it ───────
+// The sheet states a hard 15-minute cutoff in plain words and quotes a worked
+// example. Round 5 still produced "as long as you're in by 7:45pm, you're good
+// to join" for a 7:30pm class — the exact wrong answer Coach Jeremy had to
+// override live on 31 Aug — and got it right on a differently-worded turn. A
+// boundary the business cares about should not be a coin flip, so it moves out
+// of the prompt entirely.
+const CUTOFF_MINUTES = 15;
+
+/** "745", "7.45pm", "7:45 pm", "8pm" -> minutes since midnight, or null. */
+function clockToMinutes(raw: string): number | null {
+  const m = /^(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?$/i.exec(raw.trim());
+  if (!m) return null;
+  let h = parseInt(m[1], 10);
+  let min = m[2] ? parseInt(m[2], 10) : 0;
+  // "745" with no separator is 7:45, not 745 o'clock.
+  if (!m[2] && m[1].length >= 3) {
+    h = parseInt(m[1].slice(0, m[1].length - 2), 10);
+    min = parseInt(m[1].slice(-2), 10);
+  }
+  if (min > 59 || h > 23) return null;
+  const mer = m[3]?.toLowerCase();
+  if (mer === "pm" && h < 12) h += 12;
+  if (mer === "am" && h === 12) h = 0;
+  // Gym hours: a bare 7 or 8 with no meridiem means the evening class.
+  if (!mer && h >= 1 && h <= 9) h += 12;
+  return h * 60 + min;
+}
+
+export type LateArrivalAnswer = { messageText: string; canJoin: boolean };
+
+/**
+ * If the customer is telling us how late they will be, answer it from the rule
+ * rather than from the model. Returns null whenever we cannot pin down both the
+ * class and the arrival — the caller then falls through as usual.
+ */
+export function lateArrivalAnswer(
+  text: string,
+  cfg: DeterministicConfig = DEFAULT_CONFIG
+): LateArrivalAnswer | null {
+  try {
+    const t = (text || "").toLowerCase();
+    if (!/\b(late|reach|arrive|arriving|get\s+there|be\s+there|make\s+it)\b/.test(t)) return null;
+
+    // "the 6.30pm class", "for the 730 class"
+    const clsM = /(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)\s*(?:class|session|slot)/i.exec(t);
+    // "reach at 745", "arrive 8pm", "be there by 7.45"
+    const arrM = /(?:reach|arrive|arriving|get\s+there|be\s+there|in)\s*(?:at|by|around)?\s*(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)/i.exec(t);
+    // "20 minutes late", "fifteen mins late"
+    const words: Record<string, number> = { ten: 10, fifteen: 15, twenty: 20, thirty: 30 };
+    // "…20 minutes late" and "…fifteen minutes after it starts" are the same
+    // statement; the second phrasing was a real round-5 miss.
+    const lateM =
+      /(\d{1,2}|ten|fifteen|twenty|thirty)\s*(?:mins?|minutes?)\s*(?:late|after)/i.exec(t);
+
+    let lateBy: number | null = null;
+    if (lateM) {
+      const v = lateM[1].toLowerCase();
+      lateBy = words[v] ?? parseInt(v, 10);
+    } else if (clsM && arrM) {
+      const start = clockToMinutes(clsM[1]);
+      const arrive = clockToMinutes(arrM[1]);
+      if (start === null || arrive === null) return null;
+      lateBy = arrive - start;
+    }
+    if (lateBy === null || lateBy < 0) return null;
+
+    const c = cfg.copy;
+    if (lateBy < CUTOFF_MINUTES) {
+      return { canJoin: true, messageText: c.lateOk.replace("{mins}", String(lateBy)) };
+    }
+    return { canJoin: false, messageText: c.lateTooLate.replace("{cutoff}", String(CUTOFF_MINUTES)) };
   } catch {
     return null;
   }

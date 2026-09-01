@@ -448,8 +448,23 @@ export function statesAClassTime(reply: string): boolean {
   );
 }
 
+
+// A reply about ARRIVING LATE quotes a clock time without quoting the timetable.
+// Round 5: both times the model got the hard cutoff right — "8pm is more than 15
+// mins past the 7:30pm start, you won't be able to join tonight" — substitution
+// deleted the correct answer and sent a timetable dump instead. Two for two.
+// The escalation exemption did not cover it, because a correct refusal carries
+// no escalation.
+const LATE_ARRIVAL_RE =
+  /\b(late|lateness|buffer|cut[- ]?off|15[- ]?mins?|fifteen\s+mins?|reach|arrive|arriving|make\s+it|in\s+by|too\s+late|lewat|terlambat|迟到|遲到)\b/i;
+
+/** Is this reply about arriving late, rather than about what the timetable is? */
+export function isLateArrivalReply(reply: string): boolean {
+  return LATE_ARRIVAL_RE.test(reply);
+}
+
 /** The canonical days named anywhere in a piece of text, sheet-label style. */
-export function daysNamedIn(text: string): string[] {
+export function daysNamedIn(raw: string, now: Date = new Date()): string[] {
   const map: Record<string, string> = {
     mon: "Mon", tue: "Tue", wed: "Wed", thu: "Thu", fri: "Fri", sat: "Sat", sun: "Sun",
   };
@@ -459,6 +474,14 @@ export function daysNamedIn(text: string): string[] {
   const ms: Record<string, string> = {
     isnin: "Mon", selasa: "Tue", rabu: "Wed", khamis: "Thu", jumaat: "Fri", sabtu: "Sat", ahad: "Sun",
   };
+  // A day RANGE names no single day. "our classes run Mon-Sat" was being read as
+  // Monday, so a customer messaging on a Tuesday got Monday's timetable. Blank
+  // ranges out before scanning rather than letting their endpoints through.
+  const text = raw.replace(
+    /\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)[a-z]*\b[ \t]*(?:[-–—]|to|till|until|hingga|至|到)[ \t]*\b(mon|tue|tues|wed|weds|thu|thur|thurs|fri|sat|sun)[a-z]*\b/gi,
+    (m) => " ".repeat(m.length)
+  );
+
   const out = new Set<string>();
   // exec loops rather than matchAll — the project's TS target predates
   // downlevelIteration, so a RegExpStringIterator cannot be spread here.
@@ -474,6 +497,20 @@ export function daysNamedIn(text: string): string[] {
        (m) => map[m[1].toLowerCase().slice(0, 3)]);
   scan(/[周星期礼拜週]([一二三四五六日天])/g, (m) => zh[m[1]]);
   scan(/\b(isnin|selasa|rabu|khamis|jumaat|sabtu|ahad)\b/gi, (m) => ms[m[1].toLowerCase()]);
+
+  // "can i come today ?" names a day as surely as "Monday" does. Without this,
+  // daysNamedIn returned [] and the substitution asked the customer which day
+  // they meant — the round-4 loop, still firing on the most common phrasing of
+  // all. Resolved in Singapore time, which is also what the model is told to use.
+  const rel = (addDays: number) => {
+    const d = new Date(now.getTime() + addDays * 86400000);
+    const wd = d.toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Singapore" });
+    return wd.slice(0, 3);
+  };
+  if (/\b(today|tonight|hari ini|今天|今晚)\b/i.test(text)) out.add(rel(0));
+  if (/\b(tomorrow|tmr|tmrw|esok|明天|明晚)\b/i.test(text)) out.add(rel(1));
+  if (/\b(yesterday|semalam|昨天)\b/i.test(text)) out.add(rel(-1));
+
   return Array.from(out);
 }
 

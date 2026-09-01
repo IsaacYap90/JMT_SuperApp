@@ -42,4 +42,32 @@ t('en not flagged', !looksNonEnglish("What time is the Wednesday class?"));
 for (const r of ["Our head coach is Melvin Yeoh.", "Drop-in is $42.", "We're at Link@AMK."])
   t(`no trigger: ${r.slice(0,22)}`, !statesAClassTime(r));
 
+
+// ── round-5 regressions (real customer words) ───────────────────────────────
+import { isLateArrivalReply } from "../src/lib/wa/fact-guard.ts";
+import { detectJoinIntent } from "../src/lib/wa/join-intent.ts";
+
+// "today" is a day. Not knowing that was the round-4 loop, still firing.
+t('today resolves to a day', daysNamedIn("can i come today ?").length === 1);
+t('tonight resolves',        daysNamedIn("is there a class tonight").length === 1);
+t('tomorrow resolves',       daysNamedIn("what about tomorrow").length === 1);
+
+// A day RANGE names no single day - this sent Monday's timetable on a Tuesday.
+t('Mon-Sat is not Monday',  daysNamedIn("we run classes Mon-Sat").length === 0);
+t('Mon to Sat is not Monday', daysNamedIn("classes run Mon to Sat evenings").length === 0);
+t('range + real day keeps the real one',
+  JSON.stringify(daysNamedIn("we run Mon-Sat, and Wednesday has an extra class")) === '["Wed"]');
+
+// A correct late-arrival refusal must not be replaced by a timetable dump.
+t('late reply exempted',
+  isLateArrivalReply("8pm is more than 15 mins past the 7:30pm start, you won't be able to join tonight"));
+
+// A clock time is not a promo price. This muted two real customers.
+t('745 is not a price',  detectJoinIntent("oh so if i reach at 745 its ok ?") !== "quoted_promo_price");
+t('645 is not a price',  detectJoinIntent("i'll reach 645 for the 630 class") !== "quoted_promo_price");
+// Still guarded - it trips the OFFER_NOUN branch first, which is equally a
+// handoff. What matters is that it is NOT let through.
+t('252 still guarded',   detectJoinIntent("is the 252 offer still valid?") !== null);
+t('bare 252 still guarded', detectJoinIntent("can i get it for 252") !== null);
+
 console.log(fail === 0 ? "\nALL SUBSTITUTION CASES PASSED" : `\n${fail} FAILED`);

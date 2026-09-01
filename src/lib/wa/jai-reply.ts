@@ -11,6 +11,7 @@ import {
   statesAClassTime,
   daysNamedIn,
   looksNonEnglish,
+  isLateArrivalReply,
   JMT_FACT_GUARD_CONFIG,
   type FactCheckResult,
 } from "./fact-guard";
@@ -516,6 +517,10 @@ export async function generateReply(
         "[jai-reply] timetable claim inside an escalation reply — guarding, not replacing",
         JSON.stringify({ escalation: parsed.escalation.escalation })
       );
+    } else if (isLateArrivalReply(parsed.messageText) || isLateArrivalReply(lastUser)) {
+      // Not a timetable answer — a cutoff answer. Replacing it with a class list
+      // throws away the reply the customer actually needs.
+      console.error("[jai-reply] late-arrival reply — guarding, not replacing");
     } else if (looksNonEnglish(parsed.messageText) || looksNonEnglish(lastUser)) {
       // The canned answers are English. The fact sheet tells JAI to mirror the
       // lead's language, so answering a Chinese enquiry with English copy trades

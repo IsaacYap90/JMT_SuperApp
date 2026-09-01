@@ -13,7 +13,7 @@ import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
 // Layer 2 — class times + prices answered from the fact sheet, never the model.
 // The sheet is passed IN (read live from the DB) so an edit in Supabase changes
 // these answers with no deploy, exactly like the model path.
-import { buildDeterministicAnswer } from "@/lib/wa/deterministic-answers";
+import { buildDeterministicAnswer, lateArrivalAnswer } from "@/lib/wa/deterministic-answers";
 import { getJaiFacts } from "@/lib/wa/jai-facts";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
@@ -344,6 +344,25 @@ export async function POST(req: NextRequest) {
     //  • brand-new contacts — their first message must get the greeting flow.
     //  • known members on a PRICE question — member mode must not quote
     //    new-joiner prices. Schedule is fine for members.
+    // Late arrival is answered from the rule, not the model — it flips a coin on
+    // the 15-minute boundary and got it wrong for a real customer on 31 Aug.
+    // Runs for new contacts too: someone messaging "i'll be 20 mins late" needs
+    // the answer more than they need the greeting.
+    if (!joinHit) {
+      const late = lateArrivalAnswer(text);
+      if (late) {
+        await sb.from("conversations").insert({
+          contact_number: from,
+          contact_name: contactName,
+          role: "assistant",
+          message: late.messageText,
+          via: "bot",
+        });
+        await sendText(from, `*Jai*\n${late.messageText}`);
+        return NextResponse.json({ ok: true });
+      }
+    }
+
     if (!joinHit && !isNewContact) {
       const det = buildDeterministicAnswer(text, await getJaiFacts());
       if (det && !(det.intent === "PRICE" && lead?.is_member)) {

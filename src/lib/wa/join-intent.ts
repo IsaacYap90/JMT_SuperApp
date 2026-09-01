@@ -218,6 +218,24 @@ function strippedForBareScan(t: string): string {
   );
 }
 
+// A bare 3-4 digit number is USUALLY a price here. It is not when the customer
+// is telling us a clock time, and Singaporeans write those without a colon:
+// "oh so if i reach at 745 its ok ?" — Kenneth, 31 Aug, a real customer whose
+// real question never reached the model because 745 read as a promo figure. JAI
+// handed him to Coach Jeremy and muted itself. Same for "645 for the 630 class".
+// So: if it parses as HH:MM and the sentence is about arriving or being late,
+// it is a time, not an offer.
+const ARRIVAL_CTX =
+  /\b(reach|reaching|arrive|arriving|arrival|late|later|come|coming|get\s+there|be\s+there|start|starts|class|by|before|after|tonight|today|tomorrow)\b/i;
+
+function looksLikeClockTime(n: number, t: string): boolean {
+  if (n < 100 || n > 2359) return false;
+  const mins = n % 100;
+  const hrs = Math.floor(n / 100);
+  if (mins > 59 || hrs > 23) return false;
+  return ARRIVAL_CTX.test(t);
+}
+
 function quotesUnknownBareAmount(text: string): boolean {
   const t = strippedForBareScan((text || "").toLowerCase());
   const m = t.match(/\b\d{3,4}\b/g);
@@ -226,6 +244,7 @@ function quotesUnknownBareAmount(text: string): boolean {
     const n = Number(s);
     if (ALLOWED_AMOUNTS.has(n)) return false;
     if (n >= 1900 && n <= 2099) return false; // a year, not a price
+    if (looksLikeClockTime(n, t)) return false; // "reach at 745" is a time
     return true;
   });
 }
