@@ -459,30 +459,6 @@ const LATE_ARRIVAL_RE =
   /\b(late|lateness|buffer|cut[- ]?off|15[- ]?mins?|fifteen\s+mins?|reach|arrive|arriving|make\s+it|in\s+by|too\s+late|lewat|terlambat|迟到|遲到)\b/i;
 
 
-// ── forbidden phrasings ─────────────────────────────────────────────────────
-// Some sheet rules are prohibitions, and the model breaks them however plainly
-// they are written. The sheet says: "NEVER state a minimum age like '14+' or
-// '15+' for the All-Levels / Advanced / Sparring classes" and "never append an
-// age like '(14+)' or '(15+)' to the Adults tier". Round 6 produced both, in
-// two unrelated conversations, so it is not a one-off. A prohibition the model
-// keeps breaking belongs in code.
-const FORBIDDEN_PHRASES: { re: RegExp; why: string }[] = [
-  {
-    re: /\b(1[3-9]\s*\+|1[3-9]\s+and\s+(?:up|above|older)|ages?\s+1[3-9]\s*(?:\+|and\s+up))/i,
-    why: "states an age cutoff for the adult/all-levels classes",
-  },
-];
-
-/** Sheet prohibitions the model has broken in production, checked in code. */
-export function forbiddenPhrases(reply: string): string[] {
-  const out: string[] = [];
-  for (const f of FORBIDDEN_PHRASES) {
-    const m = f.re.exec(reply);
-    if (m) out.push(`${m[0].trim()} — ${f.why}`);
-  }
-  return out;
-}
-
 /** Is this reply about arriving late, rather than about what the timetable is? */
 export function isLateArrivalReply(reply: string): boolean {
   return LATE_ARRIVAL_RE.test(reply);

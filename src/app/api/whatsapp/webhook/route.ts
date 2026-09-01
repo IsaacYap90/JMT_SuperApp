@@ -349,7 +349,9 @@ export async function POST(req: NextRequest) {
     // Runs for new contacts too: someone messaging "i'll be 20 mins late" needs
     // the answer more than they need the greeting.
     if (!joinHit) {
-      const late = lateArrivalAnswer(text);
+      // Recent turns so a class named earlier in the thread is still findable.
+      const recentTurns = (prior || []).slice(-6).map((m) => m.message);
+      const late = lateArrivalAnswer(text, undefined, recentTurns);
       if (late) {
         await sb.from("conversations").insert({
           contact_number: from,

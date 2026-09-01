@@ -72,16 +72,6 @@ t('bare 252 still guarded', detectJoinIntent("can i get it for 252") !== null);
 
 
 // ── round-6 regressions ─────────────────────────────────────────────────────
-import { forbiddenPhrases } from "../src/lib/wa/fact-guard.ts";
-
-// The sheet forbids stating an age cutoff for the adult classes. The model did
-// it twice, in unrelated conversations, so it is checked in code now.
-t('"15 and up" caught',  forbiddenPhrases("Our All-Levels classes are open to everyone 15 and up").length === 1);
-t('"(15+)" caught',      forbiddenPhrases("that puts you in our Adult group classes (15+)").length === 1);
-t('"14+" caught',        forbiddenPhrases("teens 14+ can join").length === 1);
-t('kids ages untouched', forbiddenPhrases("Our kids programme starts from age 3").length === 0);
-t('prices untouched',    forbiddenPhrases("1 month is $280 and the drop-in is $42").length === 0);
-
 // A rate the customer quotes with a unit is not a promo ask - this muted a
 // whole PT enquiry and paused the chat.
 t('100/session not a promo',

@@ -611,7 +611,17 @@ export type LateArrivalAnswer = { messageText: string; canJoin: boolean };
  */
 export function lateArrivalAnswer(
   text: string,
-  cfg: DeterministicConfig = DEFAULT_CONFIG
+  cfg: DeterministicConfig = DEFAULT_CONFIG,
+  /**
+   * Recent turns, newest last. The class time is very often NOT in the message
+   * that states the arrival: Kenneth's real thread ran "can i come today ?" →
+   * "too late" → "oh so if i reach at 745 its ok ?", with the 7:30pm class three
+   * turns back. A single-message parser found no class, returned null, and the
+   * model answered "you're good to join" — the exact thing Coach Jeremy had to
+   * override live. The suite missed it because its test case appends "for the
+   * 730 class", which the real customer never wrote.
+   */
+  context: string[] = []
 ): LateArrivalAnswer | null {
   try {
     const t = (text || "").toLowerCase();
@@ -634,7 +644,16 @@ export function lateArrivalAnswer(
     if (/\btoo\s+late\s+to\s+(sign|join|register|book\s+the|get)\b/.test(t)) return null;
 
     // "the 6.30pm class", "for the 730 class"
-    const clsM = /(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)\s*(?:class|session|slot)/i.exec(t);
+    // The class may have been named earlier in the conversation. Search this
+    // message first, then walk back through recent turns, newest first.
+    const CLASS_RE = /(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)\s*(?:\w+\s+){0,2}(?:class|session|slot)/i;
+    let clsM = CLASS_RE.exec(t);
+    if (!clsM) {
+      for (const prev of [...context].reverse()) {
+        const m = CLASS_RE.exec((prev || "").toLowerCase());
+        if (m) { clsM = m; break; }
+      }
+    }
     // "reach at 745", "arrive 8pm", "be there by 7.45"
     const arrM = /(?:reach|arrive|arriving|get\s+there|be\s+there|in)\s*(?:at|by|around)?\s*(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)/i.exec(t);
     // "20 minutes late", "fifteen mins late"

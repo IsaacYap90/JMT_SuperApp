@@ -1,7 +1,7 @@
 import { lateArrivalAnswer } from "../src/lib/wa/deterministic-answers.ts";
 // Real customer phrasings from the live inbox + round-5 probes.
 const cases = [
-  ["oh so if i reach at 745 its ok ? for the 730 class", false],   // Kenneth, 31 Aug — the live failure
+  ["oh so if i reach at 745 its ok ? for the 730 class", false],   // Kenneth, with the class time added by ME
   ["i'll reach at 645 for the 630 class",                false],   // exactly 15 -> refused
   ["about 10 mins late for the 6.30pm class, ok?",       true ],
   ["i might be 20 minutes late for the 7.30pm class",    false],
@@ -38,4 +38,30 @@ for (const msg of [
 ]) {
   if (lateArrivalAnswer(msg)) { fail++; console.log("FALSE+", msg); } else console.log("ok    no trigger ::", msg);
 }
+
+// ── Kenneth's REAL thread ────────────────────────────────────────────────────
+// Round 7: the case above passes only because I appended "for the 730 class".
+// He never wrote that — the class time is three turns back — so the intercept
+// found no class, returned null, and the model told him "you're good to join".
+// A test that quietly repairs the input is not a test.
+const kennethThread = [
+  "hi",
+  "can i come today ?",
+  "Today's Tuesday, so we've got All-Levels classes at 6:30-7:30pm and 7:30-8:30pm tonight",
+  "too late",
+  "The 7:30pm class starts soon",
+];
+{
+  const a = lateArrivalAnswer("oh so if i reach at 745 its ok ?", undefined, kennethThread);
+  if (!a) { fail++; console.log("MISS   Kenneth's real message (class time in an earlier turn)"); }
+  else if (a.canJoin !== false) { fail++; console.log(`WRONG  Kenneth: want canJoin=false got ${a.canJoin}`); }
+  else console.log("ok    canJoin=false :: Kenneth's real message, class time three turns back");
+}
+{
+  // and it must still not fire when nothing anywhere names a class
+  const a = lateArrivalAnswer("oh so if i reach at 745 its ok ?", undefined, ["hi", "what are your rates?"]);
+  if (a) { fail++; console.log("FALSE+ fired with no class in context"); }
+  else console.log("ok    no trigger :: arrival time but no class anywhere");
+}
+
 console.log(fail === 0 ? "\nALL LATE-ARRIVAL CASES PASSED" : `\n${fail} FAILED`);
