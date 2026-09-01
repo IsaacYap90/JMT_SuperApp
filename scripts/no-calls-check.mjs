@@ -43,6 +43,13 @@ t('"too late to join" is a late reply',
 t('"never too late to start" is not',
   !isLateArrivalReply("It's never too late to start! Tuesday classes are 6:30-7:30pm."));
 
+// Code review, 1 Sep: `call\\s+me` matched JAI's own mandated greeting, so the
+// greeting was binned and Jeremy got a phone escalation for nothing.
+t('"you can call me Jai" is not a call offer',
+  !offersAPhoneCall("Hey! I'm Jai \u2014 you can call me Jai, Coach Jeremy's assistant \ud83e\udd4a"));
+t('"call me back on 8025" is still caught',
+  offersAPhoneCall("Sure, call me back on 8025 5043 later today."));
+
 if (f2) { console.log(`\n${f2} FAILED`); process.exitCode = 1; }
 
 console.log(fail === 0

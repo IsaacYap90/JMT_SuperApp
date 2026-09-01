@@ -646,6 +646,13 @@ export function lateArrivalAnswer(
     if (/\blate\s+(reply|replies|replying|response|responding|answer|notice)\b/.test(t)) return null;
     if (/\bsorry\s+for\s+the\s+late\b/.test(t)) return null;
     if (/\blate\s+(to|for)\s+(work|school|the\s+office|dinner|a\s+meeting)\b/.test(t)) return null;
+    // 3. Topics that carry a MANDATORY escalation of their own. A trial that is
+    //    being missed must still fire TRIAL_CANCEL or the slot stays blocked and
+    //    the reminders keep firing; PT is Jeremy's and always escalates. Answering
+    //    those with the canned class refusal skips the model AND the escalation,
+    //    so hand them back. Deliberately its own short list, not cfg.fallThrough —
+    //    that list exists for a different question and reusing it has bitten once.
+    if (/\b(trial|free\s+class|percubaan|pt|personal\s+training|private\s+class|1-1|one\s+to\s+one)\b|试课|試課|体验课|體驗課/.test(t)) return null;
     // "is it too late to sign up / to join the promo" is a buy question.
     if (/\btoo\s+late\s+to\s+(sign|join|register|book\s+the|get)\b/.test(t)) return null;
 

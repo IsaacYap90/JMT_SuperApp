@@ -361,6 +361,7 @@ export async function POST(req: NextRequest) {
           via: "bot",
         });
         await sendText(from, `*Jai*\n${late.messageText}`);
+        await markHandled(); // reply delivered → safe to dedup retries
         return NextResponse.json({ ok: true });
       }
     }
@@ -382,6 +383,7 @@ export async function POST(req: NextRequest) {
         } else {
           await sendText(from, out);
         }
+        await markHandled(); // reply delivered → safe to dedup retries
         return NextResponse.json({ ok: true });
       }
     }

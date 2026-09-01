@@ -84,4 +84,16 @@ for (const [name, turn] of [["buffer-only reply", kennethTurn4.bufferOnly],
   else console.log("ok    no trigger :: arrival time but no class anywhere");
 }
 
+// Code review, 1 Sep: the intercept answered these with the canned class
+// refusal, skipping the model AND the MANDATORY TRIAL_CANCEL / PT escalation,
+// so a missed trial slot stayed blocked and its reminders kept firing.
+for (const [name, msg] of [
+  ["trial", "hi can my son still do his trial if we reach 20 mins late?"],
+  ["PT", "im gonna be 20 mins late for my PT session with jeremy"],
+]) {
+  if (lateArrivalAnswer(msg, undefined, ["hi"])) {
+    fail++; console.log(`SWALLOW ${name} message answered by the intercept - escalation lost`);
+  } else console.log(`ok    hands back to the model :: ${name} + late`);
+}
+
 console.log(fail === 0 ? "\nALL LATE-ARRIVAL CASES PASSED" : `\n${fail} FAILED`);
