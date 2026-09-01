@@ -34,6 +34,17 @@
 
 // The single line JAI sends on a join / promo signal. Same warm voice as the
 // rest of the persona, one emoji, no price, no negotiation.
+/**
+ * Appended AFTER the answer on a join question — never sent on its own.
+ *
+ * The whole-message version below is now reserved for the case where the reply
+ * itself is untrustworthy (a price outside the rate card), because binning bad
+ * text is different from refusing to answer. Isaac, 2026-09-01, on the bare
+ * handoff: "JAI should have handle it as it was... it was perfectly fine."
+ */
+export const JOIN_HANDOFF_SUFFIX =
+  "I'm getting Coach Jeremy on this too — he'll confirm the details and get you set up 🙏";
+
 export const JOIN_HANDOFF_TEXT =
   "Great — I'm getting Coach Jeremy on this now, he'll sort out the details with you 🙏";
 

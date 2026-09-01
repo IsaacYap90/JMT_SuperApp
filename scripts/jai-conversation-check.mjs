@@ -160,7 +160,10 @@ const check = (name, reply, assertFn) => {
 // one case 1 and 2 are about; JOIN_HANDOFF_TEXT ("I'm getting Coach Jeremy on
 // this now") must NOT be able to satisfy them.
 const ANTI_LOOP_HANDOFF = /sort this out for you directly/i;
-const JOIN_HANDOFF = /getting Coach Jeremy on this now/i;
+// The whole-message handoff — now reserved for a binned reply.
+const BARE_JOIN_HANDOFF = /getting Coach Jeremy on this now/i;
+// The closing line appended AFTER an answer.
+const JOIN_SUFFIX = /getting Coach Jeremy on this too/i;
 
 const SERVER_LOG = "/tmp/jai-harness-server.log";
 writeFileSync(SERVER_LOG, "");
@@ -207,11 +210,36 @@ try {
 
   // ── 3. A brand-new lead gets a real first reply ───────────────────────────
   await wipe();
-  const greeting = await say("Hello 👋 how do I join?");
-  check("a join question reaches Jeremy with the join handoff",
-    greeting, (r) => (!r ? "silence — the commonest first message got nothing"
-      : JOIN_HANDOFF.test(r) ? null
-      : "a buy signal did not produce the join handoff"));
+  // Isaac, 1 Sep: "JAI should have handle it as it was... it was perfectly
+  // fine." The bare handoff must never be the whole message again — the
+  // customer keeps the answer AND Jeremy still gets pinged.
+  const greeting = await say("Hello 👋 how do I join?",
+    "Great question! Our All-Levels class suits complete beginners, and a drop-in is $42. You can book straight from the website.");
+  check("a join question is ANSWERED, then handed over",
+    greeting, (r) => {
+      if (!r) return "silence — the commonest first message got nothing";
+      if (BARE_JOIN_HANDOFF.test(r)) return "handed off INSTEAD of answering — the 30 Jul regression is back";
+      if (!/drop-in|\$42|All-Levels|beginner/i.test(r)) return "no actual answer reached the customer";
+      if (!JOIN_SUFFIX.test(r)) return "answered but Jeremy was never mentioned — the handover is missing";
+      return null;
+    });
+
+  // The one case that must STILL bin the text: a figure outside the rate card.
+  // That is what the 2026-07-29 "$252" incident was actually about.
+  await wipe();
+  await seedOldThread(2, 0);
+  const promo = await say("is the $252 offer still on?",
+    "Yes! The $252 promo is still running this month, happy to sign you up at that rate.");
+  // Either route is correct: the inbound guard can catch the quoted figure
+  // before the model, or the outbound money guard can bin the reply after it.
+  // What must hold is that the number never reaches the customer and Jeremy is
+  // told. Asserting the BARE handoff specifically was too narrow — it failed on
+  // a reply that had already handled this correctly.
+  check("an invented promo price never reaches the customer",
+    promo, (r) => (!r ? "no reply at all"
+      : /252/.test(r) ? "the invented price reached the customer"
+      : (BARE_JOIN_HANDOFF.test(r) || JOIN_SUFFIX.test(r) || /Coach Jeremy/i.test(r)) ? null
+      : "price was dropped but nobody was told"));
 
   // ── 4. Schedule comes from the sheet, not the model ───────────────────────
   await wipe();
@@ -256,13 +284,16 @@ try {
   // Reported, not asserted. A check that fails on a known-and-accepted
   // behaviour trains everyone to ignore a red run, which is how green stopped
   // meaning anything in the first place.
-  if (lead?.ai_paused && !afterJoin) {
-    console.log('KNOWN a join question set ai_paused=true and JAI went silent after it');
-    console.log('      nothing clears the flag, so that lead never hears from JAI again');
-  } else if (!lead?.ai_paused) {
-    console.log("ok    a join question no longer mutes JAI \u2014 delete this block");
+  if (lead?.ai_paused) {
+    fail++;
+    console.log("FAIL  a join question set ai_paused=true again \u2014 that mute never clears");
+  } else if (!afterJoin) {
+    fail++;
+    console.log("FAIL  JAI went silent after a join question even though ai_paused is false");
   } else {
-    console.log("KNOWN ai_paused=true but JAI still replied \u2014 worth a look");
+    console.log("ok    a join question pings Jeremy WITHOUT muting JAI");
+    console.log("      note: Jeremy taking a chat over from the inbox still sets ai_paused,");
+    console.log("      and 28 of 83 leads were still stuck on it as of 1 Sep (ISA-52)");
   }
 
 } finally {

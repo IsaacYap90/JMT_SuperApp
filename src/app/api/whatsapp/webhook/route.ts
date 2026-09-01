@@ -25,6 +25,7 @@ import {
   hasDisallowedPrice,
   hasDeadAdultLink,
   JOIN_HANDOFF_TEXT,
+  JOIN_HANDOFF_SUFFIX,
   PAUSED_ADULT_TRIAL_TEXT,
 } from "@/lib/wa/join-intent";
 import { sessionBotReplyCount } from "@/lib/wa/session-window";
@@ -396,20 +397,34 @@ export async function POST(req: NextRequest) {
     }
 
     const history = [...prior, { role: "user" as const, message: text }];
-    const { messageText, quickReplies, escalation, member } = joinHit
-      ? {
-          messageText: JOIN_HANDOFF_TEXT,
-          quickReplies: [] as string[],
-          escalation: { escalation: "JOIN_INTENT", intent: joinHit, source: "guard" },
-          member: false,
-        }
-      : await generateReply(
-          history,
-          isNewContact,
-          contactName,
-          lead?.is_member ?? false,
-          contactContext
-        );
+    // A join question gets ANSWERED, then handed over — never handed over
+    // INSTEAD of answered.
+    //
+    // The 30 July guard (f6fa386) was right about the danger and wrong about
+    // the cure. It was added the day after JAI invented a "$252 promo", and
+    // Isaac's instruction in that commit was "still quote the standard rate...
+    // dont go quiet on the lead". It did the first half and broke the second:
+    // it replaced the whole reply, so the warmest message a lead can send got
+    // nothing but "Jeremy will sort it out".
+    //
+    // Reading all 96 threads on 1 Sep: the bare handoff fired 9 times, three of
+    // those threads died on the spot, and every one that survived did so only
+    // because a human happened to be free within about fifteen minutes. It even
+    // fired on "Okay thank you", and on a customer asking a class size JAI had
+    // already told them six messages earlier.
+    //
+    // The invented-price danger is still covered, three deep: the fact guard
+    // blocks any time, price or link not in the sheet; hasDisallowedPrice below
+    // bins a reply quoting a figure outside the rate card; and Jeremy is still
+    // pinged with JOIN_INTENT either way. What changes is that the customer now
+    // leaves with the standard rate in hand instead of silence.
+    const { messageText, quickReplies, escalation, member } = await generateReply(
+      history,
+      isNewContact,
+      contactName,
+      lead?.is_member ?? false,
+      contactContext
+    );
 
     // ── Deterministic anti-loop guard ──────────────────────────────────────
     // LLMs ignore "don't repeat" under pressure, so we backstop it in code.
@@ -440,7 +455,16 @@ export async function POST(req: NextRequest) {
           intent: resendingLink ? "loop_break" : "conversation_stuck",
           source: "guard",
         }
-      : escalation;
+      : joinHit
+        ? { escalation: "JOIN_INTENT", intent: joinHit, source: "guard" }
+        : escalation;
+
+    // Jeremy is pinged (above) AND the customer keeps the answer. The handoff
+    // is a closing line now, never the whole message. Skipped when the reply is
+    // already being replaced by a handoff, so we never send it twice.
+    if (joinHit && !forceHandoff) {
+      outText = `${outText}\n\n${JOIN_HANDOFF_SUFFIX}`;
+    }
 
     // ── Money guard (last line of defence) ─────────────────────────────────
     // The fact sheet holds the STANDARD rate card and no promo, but the model
@@ -449,16 +473,30 @@ export async function POST(req: NextRequest) {
     // outside the standard rate card ("$252", "252 dollars", "252 SGD",
     // "252/mo") means the reply is quoting a promo it doesn't have: bin it and
     // hand to Jeremy instead. Standard-card figures pass through untouched.
-    const priceLeak = esc?.escalation !== "JOIN_INTENT" && hasDisallowedPrice(outText);
+    // Checked on EVERY reply now, including a join hit. It used to skip anything
+    // already marked JOIN_INTENT, which was safe only because a join hit never
+    // reached here with model text — it does now, so this is the guard that
+    // makes answering a join question safe.
+    const priceLeak = hasDisallowedPrice(outText);
     if (priceLeak) {
       console.warn("[jai-webhook] blocked price in outbound, escalating instead");
       esc = { escalation: "JOIN_INTENT", intent: "price_blocked", source: "guard" };
-    }
-    const moneyHandoff = esc?.escalation === "JOIN_INTENT";
-    if (moneyHandoff) {
+      // A leaked figure means the TEXT is untrustworthy — bin it. This is the one
+      // case that still replaces rather than appends, and it is the case the
+      // 2026-07-29 "$252" incident was actually about.
       outText = JOIN_HANDOFF_TEXT;
       outQuick = [];
     }
+
+    // Two things used to be one flag, and conflating them is what muted JAI for
+    // 28 of 83 leads (nothing ever clears ai_paused):
+    //   • joinEscalation — Jeremy needs to know. Always, on any join intent.
+    //   • pauseAi — JAI must STOP TALKING. Only when the reply itself was
+    //     untrustworthy, i.e. a price outside the rate card.
+    // A join question is now answered and Jeremy is pinged; it no longer
+    // silences JAI for that customer for good.
+    const joinEscalation = esc?.escalation === "JOIN_INTENT";
+    const pauseAi = priceLeak;
 
     // ── Dead adult-trial-link guard (last line of defence) ─────────────────
     // The adult trial Calendly link was switched OFF on 2026-07-30 and is DEAD —
@@ -525,7 +563,7 @@ export async function POST(req: NextRequest) {
     // ask reaches here. A plain rate question never pauses — it is answered.
     // Jeremy is ALWAYS pinged on Telegram + given a pending item below, so a
     // paused chat is a handoff, never silence.
-    if (moneyHandoff) {
+    if (pauseAi) {
       const { error: pauseErr } = await sb
         .from("leads")
         .update({ ai_paused: true })
@@ -655,7 +693,7 @@ export async function POST(req: NextRequest) {
           // A join/money escalation must never be swallowed by an unrelated
           // open item (e.g. a PT lead from an hour ago) — dedupe it only
           // against other join escalations for the same contact.
-          if (moneyHandoff) taskQuery = taskQuery.ilike("description", `${label}%`);
+          if (joinEscalation) taskQuery = taskQuery.ilike("description", `${label}%`);
           const { data: existingTask } = await taskQuery.limit(1);
           if (!existingTask || existingTask.length === 0) {
             const who = contactName || `+${from}`;
