@@ -1,5 +1,13 @@
 // Exercises the REAL helper the webhook uses — not a copy of its logic.
-import { sessionBotReplyCount } from "../src/lib/wa/session-window.ts";
+import { sessionBotReplyCount as raw } from "../src/lib/wa/session-window.ts";
+
+// Pin "now" to just after each fixture ends; otherwise every fixture is ancient
+// and the whole suite trivially returns 0.
+const GAP = 6 * 60 * 60 * 1000;
+const sessionBotReplyCount = (rows, gap = GAP, now) =>
+  raw(rows, gap, now ?? (rows.length
+    ? new Date(rows[rows.length - 1].created_at ?? Date.now()).getTime() + 60_000
+    : Date.now()));
 
 let fail = 0;
 const t = (name, got, want) => {
@@ -37,6 +45,20 @@ t("empty history", sessionBotReplyCount([]), 0);
 t("single message", sessionBotReplyCount([at("2026-09-01T00:00:00Z", "assistant")]), 1);
 t("null timestamps never split",
   sessionBotReplyCount([{ role: "assistant" }, { role: "assistant", created_at: null }]), 2);
+
+// The hole the conversation harness found: a history that is ENTIRELY old has no
+// internal gap, so walking the array alone reports one long sitting and the
+// customer stays handed off forever. The gap to NOW is what makes it a new
+// conversation.
+{
+  const allOld = Array.from({ length: 18 }, (_, i) =>
+    at(`2026-07-20T12:${String(30 + i).padStart(2, "0")}:00Z`, i % 2 ? "assistant" : "user"));
+  const nowMuchLater = new Date("2026-09-01T10:00:00Z").getTime();
+  t("a history that is entirely old counts as a fresh conversation",
+    raw(allOld, GAP, nowMuchLater), 0);
+  t("...and a sitting still warm does not reset",
+    raw(allOld, GAP, new Date("2026-07-20T13:00:00Z").getTime()), 9);
+}
 
 console.log(fail === 0 ? "\nALL SESSION-WINDOW CASES PASSED" : `\n${fail} FAILED`);
 if (fail) process.exitCode = 1;

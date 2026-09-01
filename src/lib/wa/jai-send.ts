@@ -3,7 +3,20 @@
 const WA_API_BASE = () =>
   `https://graph.facebook.com/v21.0/${process.env.WA_PHONE_NUMBER_ID}`;
 
+import { appendFileSync } from "node:fs";
+import { isDryRun, dryRunLog } from "./harness";
+
 async function waFetch(endpoint: string, body: unknown): Promise<boolean> {
+  // Harness only — never reachable on Vercel (see harness.ts).
+  if (isDryRun()) {
+    try {
+      appendFileSync(dryRunLog(), JSON.stringify({ at: Date.now(), endpoint, body }) + "\n");
+    } catch (err) {
+      console.error("[jai-send] dry-run capture failed", err);
+    }
+    console.error("[jai-send] DRY RUN — message captured, NOT sent to WhatsApp");
+    return true;
+  }
   try {
     const res = await fetch(`${WA_API_BASE()}${endpoint}`, {
       method: "POST",

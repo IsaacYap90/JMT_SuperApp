@@ -20,6 +20,7 @@ import {
   type FactCheckResult,
 } from "./fact-guard";
 import { buildDeterministicAnswer, scheduleAnswerForDay } from "./deterministic-answers";
+import { isStubbedLlm, stubbedLlmReply } from "./harness";
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
 
@@ -366,6 +367,9 @@ const MIN_ATTEMPT_MS = 2_500;
 // apology, so reaching the end of this loop is the thing worth avoiding.
 // EVERY failure falls through to the next tier (see the !res.ok branch below).
 async function completeWithFallback(messages: unknown[]): Promise<string> {
+  // Harness only — never reachable on Vercel (see harness.ts). Everything the
+  // webhook does AROUND the model still runs; only the provider call is faked.
+  if (isStubbedLlm()) return stubbedLlmReply();
   const deadline = Date.now() + CHAIN_BUDGET_MS;
   for (const p of PROVIDERS) {
     if (!p.apiKey) continue;

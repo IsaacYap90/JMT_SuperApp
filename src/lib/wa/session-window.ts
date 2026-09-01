@@ -8,11 +8,21 @@
  *
  * A conversation ends at the first gap of `gapMs` (6h by default). Messages must
  * arrive oldest-first. A row with an unparseable timestamp never opens a gap.
+ *
+ * The gap between the LAST stored message and now counts too. Miss that and a
+ * customer whose whole history is from weeks ago still looks like one long
+ * sitting, because every gap inside the array is small — which is exactly what
+ * the first version of this function did, and the unit test did not catch it
+ * because its fixture put the gap in the middle of the array instead of at the
+ * end. scripts/jai-conversation-check.mjs caught it.
  */
 export function sessionBotReplyCount(
   prior: { role: string; created_at?: string | null }[],
-  gapMs = 6 * 60 * 60 * 1000
+  gapMs = 6 * 60 * 60 * 1000,
+  now = Date.now()
 ): number {
+  const last = prior.length ? new Date(prior[prior.length - 1].created_at ?? "").getTime() : NaN;
+  if (Number.isFinite(last) && now - last >= gapMs) return 0;
   let start = 0;
   for (let i = prior.length - 1; i > 0; i--) {
     const t = new Date(prior[i].created_at ?? "").getTime();
