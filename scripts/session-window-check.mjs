@@ -43,8 +43,18 @@ t("gap of 5h59m does not split", sessionBotReplyCount(gapShort), 2);
 // Degenerate input must never throw or wrongly split.
 t("empty history", sessionBotReplyCount([]), 0);
 t("single message", sessionBotReplyCount([at("2026-09-01T00:00:00Z", "assistant")]), 1);
-t("null timestamps never split",
-  sessionBotReplyCount([{ role: "assistant" }, { role: "assistant", created_at: null }]), 2);
+// created_at is nullable and Postgres orders DESC NULLS FIRST, so a null row
+// arrives LAST in `prior`. The old assertion here pinned "never split", which is
+// exactly the behaviour that would have kept a customer handed off forever the
+// day a null row appeared. Unreadable newest timestamp now means "fresh
+// conversation" — err toward answering the customer.
+t("an unreadable newest timestamp errs toward answering, not handing off",
+  raw([{ role: "assistant" }, { role: "assistant", created_at: null }], GAP, Date.now()), 0);
+t("a mid-array null still does not split a warm sitting",
+  raw([at("2026-09-01T10:00:00Z", "assistant"),
+       { role: "user" },
+       at("2026-09-01T10:05:00Z", "assistant")],
+      GAP, new Date("2026-09-01T10:06:00Z").getTime()), 2);
 
 // The hole the conversation harness found: a history that is ENTIRELY old has no
 // internal gap, so walking the array alone reports one long sitting and the

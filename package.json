@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:jai": "node scripts/validate-facts-check.mjs && node scripts/deterministic-answers-check.mjs && node scripts/day-binding-check.mjs && node scripts/timetable-claim-check.mjs && node scripts/substitution-check.mjs && node scripts/late-arrival-check.mjs && node scripts/no-calls-check.mjs && node scripts/session-window-check.mjs",
+    "test:jai:conversation": "node scripts/jai-conversation-check.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",

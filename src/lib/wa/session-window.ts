@@ -21,8 +21,14 @@ export function sessionBotReplyCount(
   gapMs = 6 * 60 * 60 * 1000,
   now = Date.now()
 ): number {
+  // created_at is nullable, and Postgres orders DESC as NULLS FIRST — so a null
+  // row comes back first and lands LAST here after the reverse. If we cannot
+  // read the newest timestamp we must not conclude "still mid-conversation":
+  // that is precisely how a customer stays handed off forever. Unknown means
+  // treat it as a fresh conversation — the guard still fires on a real sitting,
+  // because that needs 8 replies with readable timestamps.
   const last = prior.length ? new Date(prior[prior.length - 1].created_at ?? "").getTime() : NaN;
-  if (Number.isFinite(last) && now - last >= gapMs) return 0;
+  if (!prior.length || !Number.isFinite(last) || now - last >= gapMs) return 0;
   let start = 0;
   for (let i = prior.length - 1; i > 0; i--) {
     const t = new Date(prior[i].created_at ?? "").getTime();

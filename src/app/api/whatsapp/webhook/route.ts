@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
       .from("conversations")
       .select("role, message, created_at")
       .eq("contact_number", from)
-      .order("created_at", { ascending: false })
+      .order("created_at", { ascending: false, nullsFirst: false })
       .limit(20);
     const prior = (priorDesc || []).slice().reverse();
     const isNewContact = prior.length === 0;

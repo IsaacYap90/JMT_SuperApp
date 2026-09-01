@@ -23,11 +23,13 @@ const TEST_NUMBER = "65999000001";        // reserved; never a real customer
 const PORT = 4477;
 const SECRET = randomBytes(32).toString("hex");   // per run; never committed
 const LOG = "/tmp/jai-harness-sends.jsonl";
+const STUB = "/tmp/jai-harness-stub.json";   // the draft the stubbed model returns
 const BASE = `http://127.0.0.1:${PORT}`;
 
 const env = { ...process.env,
   META_APP_SECRET: SECRET,
   JAI_DRY_RUN: "1", JAI_STUB_LLM: "1", JAI_DRY_RUN_LOG: LOG,
+  JAI_STUB_LLM_REPLY_FILE: STUB,
   WA_PHONE_NUMBER_ID: "harness", WA_ACCESS_TOKEN: "harness",
   VERCEL: "", PORT: String(PORT),
 };
@@ -70,16 +72,18 @@ function payload(text) {
   });
 }
 
+/** @param stubReply what the stubbed model should draft, so the guards have something real to act on */
 async function say(text, stubReply) {
+  writeFileSync(STUB, stubReply ? JSON.stringify({ message: stubReply }) : "");
   try {
-    return await sayOnce(text, stubReply);
+    return await sayOnce(text);
   } catch (err) {
     console.log("\n--- server log ---\n" + readFileSync(SERVER_LOG, "utf8").slice(-2000));
     throw err;
   }
 }
 
-async function sayOnce(text, stubReply) {
+async function sayOnce(text) {
   const before = replies().length;
   const raw = payload(text);
   const res = await fetch(`${BASE}/api/whatsapp/webhook`, {
@@ -87,7 +91,6 @@ async function sayOnce(text, stubReply) {
     headers: {
       "Content-Type": "application/json",
       "x-hub-signature-256": "sha256=" + createHmac("sha256", SECRET).update(raw).digest("hex"),
-      ...(stubReply ? { "x-harness-stub": "1" } : {}),
     },
     body: raw,
   });
@@ -125,7 +128,9 @@ async function wipe() {
 
 async function seedOldThread(botReplies, daysAgo) {
   const rows = [];
-  const base = Date.now() - daysAgo * 24 * 60 * 60 * 1000;
+  // rows run forward from `base`, so start far enough back that the newest
+  // one lands in the past — otherwise "today" seeds sit in the future.
+  const base = Date.now() - daysAgo * 24 * 60 * 60 * 1000 - botReplies * 2 * 60_000;
   for (let i = 0; i < botReplies * 2; i++) {
     rows.push({
       contact_number: TEST_NUMBER, contact_name: "Harness",
@@ -151,7 +156,11 @@ const check = (name, reply, assertFn) => {
   if (problem) { fail++; console.log(`FAIL  ${name}\n      ${problem}\n      got: ${JSON.stringify((reply||"").slice(0,160))}`); }
   else console.log(`ok    ${name}`);
 };
-const HANDOFF = /getting Coach Jeremy|sort this out for you directly/i;
+// Two different handoffs share the word "Jeremy". The anti-loop one is the only
+// one case 1 and 2 are about; JOIN_HANDOFF_TEXT ("I'm getting Coach Jeremy on
+// this now") must NOT be able to satisfy them.
+const ANTI_LOOP_HANDOFF = /sort this out for you directly/i;
+const JOIN_HANDOFF = /getting Coach Jeremy on this now/i;
 
 const SERVER_LOG = "/tmp/jai-harness-server.log";
 writeFileSync(SERVER_LOG, "");
@@ -183,7 +192,7 @@ try {
   const returning = await say("and what about thursday?");
   check("returning customer after 9 old replies still gets answered",
     returning, (r) => (!r ? "no reply at all"
-      : HANDOFF.test(r) ? "handed off to Jeremy instead of answering" : null));
+      : ANTI_LOOP_HANDOFF.test(r) ? "handed off to Jeremy instead of answering" : null));
 
   // ── 2. The guard must still do its job ────────────────────────────────────
   // Nine replies inside ONE sitting is exactly what the anti-loop guard is for.
@@ -191,14 +200,18 @@ try {
   await seedOldThread(9, 0);                        // 9 bot replies, today
   const looping = await say("and what about thursday?");   // identical to case 1
   check("nine replies in one sitting still hands off",
-    looping, (r) => (!r ? "no reply at all" : HANDOFF.test(r) ? null
+    looping, (r) => (!r ? "no reply at all"
+      : ANTI_LOOP_HANDOFF.test(r) ? null
+      : JOIN_HANDOFF.test(r) ? "the JOIN handoff fired, not the anti-loop one — this case proves nothing"
       : "guard did not fire — anti-loop protection is gone"));
 
   // ── 3. A brand-new lead gets a real first reply ───────────────────────────
   await wipe();
   const greeting = await say("Hello 👋 how do I join?");
-  check("new contact asking to join gets a reply",
-    greeting, (r) => (!r ? "silence — the commonest first message got nothing" : null));
+  check("a join question reaches Jeremy with the join handoff",
+    greeting, (r) => (!r ? "silence — the commonest first message got nothing"
+      : JOIN_HANDOFF.test(r) ? null
+      : "a buy signal did not produce the join handoff"));
 
   // ── 4. Schedule comes from the sheet, not the model ───────────────────────
   await wipe();
@@ -221,8 +234,11 @@ try {
   // ── 6. JAI never offers a phone call ──────────────────────────────────────
   await wipe();
   await seedOldThread(2, 0);
-  const call = await say("can you call me instead?");
-  check("asked to be called, JAI does not promise a call",
+  // Pin a draft that DOES offer a call, otherwise this check passes because the
+  // fixture never contained one — it was theatre before this line existed.
+  const call = await say("can you call me instead?",
+    "Sure thing! I'll give you a call this afternoon — what number is best?");
+  check("a draft offering a phone call is intercepted before it is sent",
     call, (r) => (!r ? "silence — and a silent bot passes this check vacuously"
       : /i'?ll call you|give you a call|call me on|call us at/i.test(r)
       ? "offered a phone call" : null));
