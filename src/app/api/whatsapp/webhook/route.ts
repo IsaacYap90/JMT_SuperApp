@@ -10,6 +10,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { generateReply, type Escalation } from "@/lib/wa/jai-reply";
 import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
+// Layer 2 — class times + prices answered from the fact sheet, never the model.
+// The sheet is passed IN (read live from the DB) so an edit in Supabase changes
+// these answers with no deploy, exactly like the model path.
+import { buildDeterministicAnswer } from "@/lib/wa/deterministic-answers";
+import { getJaiFacts } from "@/lib/wa/jai-facts";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { createClient as createSbClient } from "@supabase/supabase-js";
@@ -321,6 +326,44 @@ export async function POST(req: NextRequest) {
     // go quiet on the lead." A plain RATE question is NOT a hit — it returns
     // null here, goes to the model, and gets the standard rate + rates link.
     const joinHit = detectJoinIntent(text);
+
+    // ── LAYER 2 — deterministic schedule / price answers (bypasses the AI) ──
+    // Same idea and same slot as the "Done" branch above: the two questions that
+    // cost money when the model paraphrases them (class TIMES and PRICES) are a
+    // pure lookup, so we answer them from the fact sheet in code. Everything
+    // above still ran — only the DeepSeek call is skipped.
+    // buildDeterministicAnswer returns null whenever it is not confident, or the
+    // sheet is not in a shape it understands, and we fall through to the model.
+    //
+    // Placed AFTER joinHit deliberately: a buy signal outranks a price question.
+    // Isaac, 2026-07-29 — "if anyone say they want to join, ping jeremy right
+    // away" — so a lead saying "how much to sign up today" must reach Jeremy,
+    // not get a price list from a lookup table.
+    //
+    // Two more exclusions:
+    //  • brand-new contacts — their first message must get the greeting flow.
+    //  • known members on a PRICE question — member mode must not quote
+    //    new-joiner prices. Schedule is fine for members.
+    if (!joinHit && !isNewContact) {
+      const det = buildDeterministicAnswer(text, await getJaiFacts());
+      if (det && !(det.intent === "PRICE" && lead?.is_member)) {
+        await sb.from("conversations").insert({
+          contact_number: from,
+          contact_name: contactName,
+          role: "assistant",
+          message: det.messageText,
+          via: "bot",
+        });
+        const out = `*Jai*\n${det.messageText}`;
+        if (det.quickReplies.length > 0 && out.length <= 1000) {
+          const ok = await sendQuickReplies(from, out, det.quickReplies);
+          if (!ok) await sendText(from, out);
+        } else {
+          await sendText(from, out);
+        }
+        return NextResponse.json({ ok: true });
+      }
+    }
 
     const history = [...(prior || []), { role: "user" as const, message: text }];
     const { messageText, quickReplies, escalation, member } = joinHit
