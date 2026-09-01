@@ -466,12 +466,21 @@ export function statesAClassTime(reply: string): boolean {
 // deleted the correct answer and sent a timetable dump instead. Two for two.
 // The escalation exemption did not cover it, because a correct refusal carries
 // no escalation.
+// Narrow on purpose. The first version matched the bare token "reach", and
+// "I'll get Coach Jeremy to reach out" is JAI's commonest sign-off — so an
+// ordinary sales reply counted as a late-arrival reply and switched off the
+// timetable substitution that would have caught an invented 7:15am class.
+// An arrival needs a preposition after it; "reach out" is explicitly excluded.
 const LATE_ARRIVAL_RE =
-  /\b(late|lateness|buffer|cut[- ]?off|15[- ]?mins?|fifteen\s+mins?|reach|arrive|arriving|make\s+it|in\s+by|too\s+late|lewat|terlambat|迟到|遲到)\b/i;
+  /\b(?:late|lateness|buffer|cut[- ]?off|15[- ]?mins?|fifteen\s+mins?|too\s+late|lewat|terlambat|迟到|遲到)\b|\breach(?:ing)?\s+(?:at|by|the|there|around)\b|\barriv(?:e|ing)\s+(?:at|by|around|late)\b/i;
 
 
 /** Is this reply about arriving late, rather than about what the timetable is? */
 export function isLateArrivalReply(reply: string): boolean {
+  // "It's never too late to start!" is encouragement, not a cut-off answer.
+  if (/\bnever\s+too\s+late\b|\btoo\s+late\s+to\s+(?:start|join|sign|register|book)\b/i.test(reply)) {
+    return false;
+  }
   return LATE_ARRIVAL_RE.test(reply);
 }
 
@@ -644,24 +653,8 @@ export function validateReply(
         .split(/[.!?;\n]/)
         .some((seg) => seg.includes(token) && TRUE_NEGATION_RE.test(seg));
 
-    // A late-arrival reply legitimately states a time the sheet never contains:
-    // the cut-off, which is a class start + 15 minutes. Blocking it deflected a
-    // customer to Coach Jeremy for a question the sheet answers ("if i reach at
-    // 745 for the 730 class"). Derive them and allow them, in that context only.
-    const cutoffs = new Set<string>();
-    if (isLateArrivalReply(reply)) {
-      idx.times.forEach((start) => {
-        const [h, m] = start.split(":").map(Number);
-        const mins = h * 60 + m + 15;
-        cutoffs.add(
-          `${String(Math.floor((mins % 1440) / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`
-        );
-      });
-    }
-
     for (const t of extractTimes(reply)) {
       if (idx.times.has(t.norm)) continue;
-      if (cutoffs.has(t.norm)) continue;
       if (echoedCorrection(reply, t.raw, custTimes, t.norm, config.negationCues)) continue;
       if (negatedSegment(t.raw)) continue;
       add("time", t);

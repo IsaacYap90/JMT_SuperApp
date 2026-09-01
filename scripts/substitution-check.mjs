@@ -1,6 +1,6 @@
 // Cases from e2e round 4, which judged the substitution "materially worse".
 import { JAI_FACTS } from "../src/lib/wa/jai-facts.ts";
-import { statesAClassTime, daysNamedIn, looksNonEnglish } from "../src/lib/wa/fact-guard.ts";
+import { statesAClassTime, daysNamedIn, looksNonEnglish, validateReply, JMT_FACT_GUARD_CONFIG } from "../src/lib/wa/fact-guard.ts";
 import { scheduleAnswerForDay } from "../src/lib/wa/deterministic-answers.ts";
 
 let fail = 0;
@@ -106,6 +106,38 @@ import { indexSchedule, checkDayBinding } from "../src/lib/wa/fact-guard.ts";
   t('relative day is bound', checkDayBinding(wrongToday, sched, now).length > 0);
   const rightToday = "Today we run All-Levels at 12:15-1:15pm and 6:30-7:30pm.";
   t('correct relative day passes', checkDayBinding(rightToday, sched, now).length === 0);
+}
+
+
+// ── round-9 regressions ─────────────────────────────────────────────────────
+{
+  // "reach out" is JAI's commonest sign-off. Matching it made an ordinary sales
+  // reply count as a late-arrival reply, which switched OFF timetable
+  // substitution and let an invented 7:15am class ship.
+  const notLate = [
+    "I'll get Coach Jeremy to reach out to you shortly.",
+    "Coach Jeremy will reach out to you shortly.",
+    "We're right by Yio Chu Kang MRT so it's easy to reach.",
+    "Let me know and we'll make it work.",
+    "It's never too late to start! Tuesday classes are 6:30-7:30pm.",
+  ];
+  for (const r of notLate) t(`not a late reply: ${r.slice(0, 34)}`, !isLateArrivalReply(r));
+
+  const isLate = [
+    "8pm is more than 15 mins past the 7:30pm start, you won't be able to join tonight",
+    "if you reach at 7:45 you'd be 15 minutes late",
+    "arriving at 6:45pm is already past the cut-off",
+  ];
+  for (const r of isLate) t(`is a late reply: ${r.slice(0, 34)}`, isLateArrivalReply(r));
+}
+{
+  // The derived cut-off whitelist is REVERTED. It let "arriving at 7:45pm is
+  // just about ok" reach a customer - the exact answer Coach Jeremy had to
+  // override live - because 19:45 is 19:30 + 15 and the guard waved it through.
+  const r = validateReply(
+    "For the 7:30pm class you'd need to be there by 7:45pm latest, so arriving at 7:45pm is just about ok!",
+    JAI_FACTS, { config: JMT_FACT_GUARD_CONFIG });
+  t('7:45pm is blocked again', !r.ok);
 }
 
 console.log(fail === 0 ? "\nALL SUBSTITUTION CASES PASSED" : `\n${fail} FAILED`);
