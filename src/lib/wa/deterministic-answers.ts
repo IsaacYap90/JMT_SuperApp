@@ -612,6 +612,22 @@ export function lateArrivalAnswer(
     const t = (text || "").toLowerCase();
     if (!/\b(late|reach|arrive|arriving|get\s+there|be\s+there|make\s+it)\b/.test(t)) return null;
 
+    // This intercept now runs BEFORE the model and before the greeting, so a
+    // false fire sends a class refusal to someone who never asked about a class.
+    // Two guards:
+    //
+    // 1. Tense. "I was 20 minutes late to work today" carries a number and the
+    //    word late and means nothing about attending. "I'll be 20 minutes late"
+    //    is a question about whether they can still come. Only the second is a
+    //    request for the cutoff rule.
+    if (/\b(was|were|been|got|arrived|reached)\s+(\w+\s+){0,2}late\b/.test(t)) return null;
+    // 2. The phrases where "late" is not about arriving at all.
+    if (/\blate\s+(reply|replies|replying|response|responding|answer|notice)\b/.test(t)) return null;
+    if (/\bsorry\s+for\s+the\s+late\b/.test(t)) return null;
+    if (/\blate\s+(to|for)\s+(work|school|the\s+office|dinner|a\s+meeting)\b/.test(t)) return null;
+    // "is it too late to sign up / to join the promo" is a buy question.
+    if (/\btoo\s+late\s+to\s+(sign|join|register|book\s+the|get)\b/.test(t)) return null;
+
     // "the 6.30pm class", "for the 730 class"
     const clsM = /(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)\s*(?:class|session|slot)/i.exec(t);
     // "reach at 745", "arrive 8pm", "be there by 7.45"
