@@ -416,7 +416,12 @@ export async function generateReply(
   // Facts are pulled live from the DB (with the in-code JAI_FACTS as fallback),
   // so a fact can be edited with no deploy. Injected per-message here, not baked
   // into SYSTEM_PROMPT at import time.
-  let systemPrompt = SYSTEM_PROMPT.replace("__JAI_FACTS__", await getJaiFacts());
+  // Replacement FUNCTION, not a string: the fact sheet is DB-authored free text
+  // full of "$42"/"$280", and String.replace would interpret $& $` $' $$ in a
+  // string replacement — a "$'" typed into the sheet would splice the prompt
+  // into itself. A function replacement disables all of that.
+  const jaiFacts = await getJaiFacts();
+  let systemPrompt = SYSTEM_PROMPT.replace("__JAI_FACTS__", () => jaiFacts);
   // Who JAI is actually talking to (member / returning / new) + any recap, so it
   // greets appropriately instead of defaulting to the brand-new greeting.
   if (contactContext && contactContext.trim()) {

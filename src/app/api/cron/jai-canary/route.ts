@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { generateReply } from "@/lib/wa/jai-reply";
+import { readJaiFacts } from "@/lib/wa/jai-facts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -55,6 +56,12 @@ export async function GET(req: NextRequest) {
   let reason: string | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
+  // Is JAI answering from the EDITABLE fact sheet, or has it silently dropped
+  // back to the sheet baked into the build? Comparing the text proves nothing
+  // (the row was seeded identical), so ask the read itself. A fallback means an
+  // edit Jeremy or Isaac makes in the DB is not reaching customers.
+  const facts = await readJaiFacts();
+
   try {
     const result = await Promise.race([
       generateReply([{ role: "user", message: QUESTION }], false),
@@ -71,13 +78,17 @@ export async function GET(req: NextRequest) {
     if (timer) clearTimeout(timer);
   }
 
+  if (reason === null && facts.source === "fallback") {
+    reason = `fact sheet fell back to the in-code copy (${facts.reason}) — DB edits are NOT live`;
+  }
+
   const healthy = reason === null;
   const message = healthy
-    ? `JAI canary OK — ${reply.replace(/\s+/g, " ").slice(0, 60)}`
+    ? `JAI canary OK — facts from DB — ${reply.replace(/\s+/g, " ").slice(0, 60)}`
     : `JAI CANARY FAILED — ${reason}`;
 
   const dry = req.nextUrl.searchParams.get("dry") === "1";
   const sent = dry ? null : await tg(message);
 
-  return NextResponse.json({ ok: healthy, reason, message, sent });
+  return NextResponse.json({ ok: healthy, reason, message, sent, factsSource: facts.source });
 }

@@ -220,19 +220,53 @@ function jaiFactsClient() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export async function getJaiFacts(): Promise<string> {
-  const sb = jaiFactsClient();
-  if (!sb) return JAI_FACTS;
+// Every fall back to the in-code sheet is LOUD. While the DB row and JAI_FACTS
+// are identical this is invisible, but the moment someone edits the row they
+// diverge — and a silent fallback would then quietly serve the stale sheet to a
+// customer, which is the exact bug this whole change exists to remove. If you
+// see this line in the logs, JAI is answering from the old facts.
+
+// The read sits in front of the webhook's reply budget, so it gets a hard
+// deadline of its own: stale-but-instant beats correct-but-hung, because a hang
+// costs the customer the whole reply.
+const FACTS_TIMEOUT_MS = 1_500;
+
+export type JaiFactsRead = {
+  content: string;
+  /** "db" = the editable row was actually used. "fallback" = the in-code sheet. */
+  source: "db" | "fallback";
+  reason: string | null;
+};
+
+// The richer read. getJaiFacts() below is the convenience wrapper the reply path
+// uses; the canary uses THIS one so it can assert the DB row was really read
+// rather than inferring it from the text (the row and the constant are currently
+// identical, so comparing content proves nothing).
+export async function readJaiFacts(): Promise<JaiFactsRead> {
+  const fell = (reason: string): JaiFactsRead => {
+    console.error(`[jai-facts] FALLBACK to in-code JAI_FACTS — ${reason}`);
+    return { content: JAI_FACTS, source: "fallback", reason };
+  };
   try {
+    const sb = jaiFactsClient();
+    if (!sb) return fell("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set");
     const { data, error } = await sb
       .from("jai_facts")
       .select("content")
       .eq("key", "facts")
+      .abortSignal(AbortSignal.timeout(FACTS_TIMEOUT_MS))
       .maybeSingle();
+    if (error) return fell(`query error: ${error.message}`);
     const content = (data?.content ?? "").trim();
-    if (error || !content) return JAI_FACTS;
-    return content;
-  } catch {
-    return JAI_FACTS;
+    if (!content) return fell("jai_facts row missing or empty");
+    return { content, source: "db", reason: null };
+  } catch (e) {
+    return fell(
+      `read threw or timed out after ${FACTS_TIMEOUT_MS}ms: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
+}
+
+export async function getJaiFacts(): Promise<string> {
+  return (await readJaiFacts()).content;
 }
