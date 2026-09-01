@@ -5,6 +5,12 @@
 // there — this file holds only Jai's voice, rules, and escalation logic.
 
 import { getJaiFacts } from "./jai-facts";
+import {
+  validateReply,
+  describeViolations,
+  JMT_FACT_GUARD_CONFIG,
+  type FactCheckResult,
+} from "./fact-guard";
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
 
@@ -459,10 +465,21 @@ export async function generateReply(
       `Greet them as someone you already know${firstName ? ` — by name ("Hey ${firstName}!")` : ""}, and pick up the conversation naturally.`;
   }
 
-  const messages = [
+  const messages: ChatMsg[] = [
     { role: "system", content: systemPrompt },
     ...history.map((m) => ({ role: m.role, content: m.message })),
   ];
+
+  // What the CUSTOMER themselves wrote (recent turns). A time/price from here
+  // may be echoed back inside a correcting sentence without being blocked —
+  // "we don't have a 7pm class, closest is 6:30-7:30pm" must still be sendable.
+  // Only USER turns are trusted; trusting past assistant turns would let one
+  // bad draft legitimise the next.
+  const lastCustomerMsg = history
+    .filter((m) => m.role === "user")
+    .slice(-5)
+    .map((m) => m.message)
+    .join("\n");
 
   const text = await completeWithFallback(messages);
   if (!text) {
@@ -470,7 +487,57 @@ export async function generateReply(
     return { messageText: APOLOGY_TEXT, escalation: null, quickReplies: [], member: false };
   }
 
-  const parsed = parseResponse(text);
+  let parsed = parseResponse(text);
+
+  // ── FACT GUARD (layer 1) ──────────────────────────────────────────────────
+  // The model is told to quote the fact sheet exactly and has invented class
+  // times twice in production anyway. Check the DRAFT before it goes out.
+  // Validate against `jaiFacts` — the sheet that was actually injected into
+  // this prompt — NOT the in-code constant, or a fact Isaac adds in the DB
+  // would be blocked as invented.
+  let check: FactCheckResult = guard(parsed.messageText, lastCustomerMsg, jaiFacts);
+  if (!check.ok) {
+    console.error(
+      "[jai-reply] FACT GUARD blocked draft 1 —",
+      describeViolations(check.violations),
+      JSON.stringify({ violations: check.violations, reply: parsed.messageText })
+    );
+    // Regenerate ONCE, naming the offending tokens. Retry goes through the same
+    // provider chain, so a guard retry keeps the fallback + budget behaviour.
+    const retryText = await completeWithFallback([
+      ...messages,
+      { role: "assistant", content: text },
+      { role: "user", content: correctionPrompt(check) },
+    ]);
+    if (!retryText) {
+      console.error("[jai-reply] guard retry: all providers failed — sending canned apology");
+      return { messageText: APOLOGY_TEXT, escalation: null, quickReplies: [], member: false };
+    }
+    const retried = parseResponse(retryText);
+    check = guard(retried.messageText, lastCustomerMsg, jaiFacts);
+    if (!check.ok) {
+      console.error(
+        "[jai-reply] FACT GUARD blocked draft 2 (retry) — escalating —",
+        describeViolations(check.violations),
+        JSON.stringify({ violations: check.violations, reply: retried.messageText })
+      );
+      // Never send an invented fact. Hand the customer to Jeremy through the
+      // EXISTING escalation mechanism — the webhook Telegram-alerts on it.
+      return {
+        messageText:
+          "Good question — let me double-check that with Coach Jeremy and get right back to you 🙏",
+        escalation: {
+          escalation: "GENERAL_ESCALATION",
+          intent: "fact_guard_block",
+          source: "whatsapp",
+        },
+        quickReplies: [],
+        member: parsed.member,
+      };
+    }
+    parsed = retried;
+  }
+
   // The provider-level !text.trim() check above sees the RAW text. parseResponse
   // THEN strips the escalation JSON and the [QUICK_REPLIES:…] directive, so a
   // reply made up of ONLY those leaves messageText === "" — and the prompt
@@ -489,4 +556,51 @@ export async function generateReply(
     return { ...parsed, messageText: APOLOGY_TEXT, quickReplies: [] };
   }
   return parsed;
+}
+
+type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
+
+const MODEL_ERROR_REPLY: ParsedReply = {
+  messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏",
+  escalation: null,
+  quickReplies: [],
+  member: false,
+};
+
+// One DeepSeek call. Returns null on a non-OK response (caller sends the safe
+// "having a quick issue" reply, exactly as before).
+async function callModel(messages: ChatMsg[]): Promise<string | null> {
+  const res = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ model: "deepseek-chat", max_tokens: 500, messages }),
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    console.error("[jai-reply] DeepSeek error", res.status, await res.text().catch(() => ""));
+    return null;
+  }
+  const data = await res.json();
+  return (data?.choices?.[0]?.message?.content ?? "") as string;
+}
+
+// The guard itself fails open (see fact-guard.ts) — this only binds JMT's
+// fact sheet + tenant config to it.
+function guard(draft: string, customerText: string, facts: string): FactCheckResult {
+  return validateReply(draft, facts, { customerText, config: JMT_FACT_GUARD_CONFIG });
+}
+
+function correctionPrompt(check: FactCheckResult): string {
+  const bad = check.violations.map((v) => `"${v.token}" (${v.kind})`).join(", ");
+  return (
+    `SYSTEM CORRECTION — your last reply was NOT sent. It contained ${bad}, ` +
+    `which does not appear anywhere in the FACT SHEET. Rewrite the reply now. ` +
+    `Every time, price and link you state must be COPIED CHARACTER-FOR-CHARACTER ` +
+    `from the FACT SHEET. If the fact sheet does not contain what they asked for, ` +
+    `do not approximate it — say you'll check with Coach Jeremy and include the ` +
+    `escalation JSON block. Reply with the customer-facing message only.`
+  );
 }
