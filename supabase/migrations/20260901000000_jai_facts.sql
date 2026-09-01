@@ -17,12 +17,19 @@ create table if not exists public.jai_facts (
 -- access is prompt-injection access. Only the service role may touch it; anon
 -- and authenticated get nothing. RLS is belt-and-braces: with no policy it fails
 -- closed, so a future blanket "grant ... to anon" cannot silently open it.
+-- Present on the hand-created prod table and not in the create above, so a
+-- rebuilt environment would otherwise drift from prod. Unused by src/ today.
+alter table public.jai_facts add column if not exists label text;
+
 alter table public.jai_facts enable row level security;
 
 revoke all on public.jai_facts from anon, authenticated;
 grant select, insert, update, delete on public.jai_facts to service_role;
 
--- Seed only if absent. Never clobbers the live sheet.
-insert into public.jai_facts (key, content)
-select 'facts', '(seed placeholder — the live sheet is edited in Supabase)'
-where not exists (select 1 from public.jai_facts where key = 'facts');
+-- DELIBERATELY NO SEED. An earlier draft inserted a placeholder row when none
+-- existed, which quietly defeated the whole point: on a fresh DB (local, a
+-- preview branch, a restore) readJaiFacts() would return source="db" with a
+-- 56-character fact sheet, the canary would report "facts from DB" and PASS,
+-- and JAI would answer customers with the placeholder. An ABSENT row is the
+-- correct empty state — getJaiFacts() falls back to the in-code JAI_FACTS and
+-- says so loudly in the logs, which is exactly the behaviour we want.
