@@ -249,7 +249,7 @@ export async function readJaiFacts(): Promise<JaiFactsRead> {
   };
   try {
     const sb = jaiFactsClient();
-    if (!sb) return fell("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set");
+    if (!sb) return fell("supabase url/service-role env not configured");
     const { data, error } = await sb
       .from("jai_facts")
       .select("content")
