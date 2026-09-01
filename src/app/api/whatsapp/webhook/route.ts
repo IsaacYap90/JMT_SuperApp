@@ -27,6 +27,7 @@ import {
   JOIN_HANDOFF_TEXT,
   PAUSED_ADULT_TRIAL_TEXT,
 } from "@/lib/wa/join-intent";
+import { sessionBotReplyCount } from "@/lib/wa/session-window";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -127,13 +128,19 @@ export async function POST(req: NextRequest) {
     }
 
     // History BEFORE this message → tells us if it's a brand-new contact.
-    const { data: prior } = await sb
+    //
+    // ORDER MATTERS, and it was wrong: `ascending: true` + `limit(20)` returns
+    // the OLDEST twenty messages, so a returning customer's context was their
+    // conversation from weeks ago and nothing recent. Fetch newest-first, then
+    // reverse back to chronological for everything downstream.
+    const { data: priorDesc } = await sb
       .from("conversations")
-      .select("role, message")
+      .select("role, message, created_at")
       .eq("contact_number", from)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(20);
-    const isNewContact = !prior || prior.length === 0;
+    const prior = (priorDesc || []).slice().reverse();
+    const isNewContact = prior.length === 0;
 
     // Log the inbound message.
     await sb.from("conversations").insert({
@@ -224,7 +231,7 @@ export async function POST(req: NextRequest) {
     // customer's answer to our "different name or phone number?" question.
     const isDoneTap = text.trim().toLowerCase() === "done";
     const lastAssistant =
-      [...(prior || [])].reverse().find((m) => m.role === "assistant")?.message || "";
+      [...prior].reverse().find((m) => m.role === "assistant")?.message || "";
     const awaitingHint = lastAssistant.includes(BOOKING_HINT_MARKER);
 
     if (isDoneTap || awaitingHint) {
@@ -313,7 +320,7 @@ export async function POST(req: NextRequest) {
       isMember: lead?.is_member ?? false,
       contactName: lead?.contact_name ?? contactName,
       memberNotes,
-      history: prior || [],
+      history: prior,
     });
 
     // ── Join / promo intent — deterministic, runs BEFORE the model ─────────
@@ -350,7 +357,7 @@ export async function POST(req: NextRequest) {
     // the answer more than they need the greeting.
     if (!joinHit) {
       // Recent turns so a class named earlier in the thread is still findable.
-      const recentTurns = (prior || []).slice(-6).map((m) => m.message);
+      const recentTurns = prior.slice(-6).map((m) => m.message);
       const late = lateArrivalAnswer(text, undefined, recentTurns);
       if (late) {
         await sb.from("conversations").insert({
@@ -388,7 +395,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const history = [...(prior || []), { role: "user" as const, message: text }];
+    const history = [...prior, { role: "user" as const, message: text }];
     const { messageText, quickReplies, escalation, member } = joinHit
       ? {
           messageText: JOIN_HANDOFF_TEXT,
@@ -409,11 +416,16 @@ export async function POST(req: NextRequest) {
     // If JAI is about to resend a booking link it just sent, or the chat has
     // dragged on with no resolution, hand to Coach Jeremy and go quiet instead
     // of looping the same reply (the 2026-07-09 "looked dumb" failure).
-    const priorBot = (prior || []).filter((m) => m.role === "assistant");
+    const priorBot = prior.filter((m) => m.role === "assistant");
     const prevBotMsg = [...priorBot].reverse()[0]?.message || "";
+
+    // "This conversation" ends at the first gap of 6h or more — see
+    // sessionBotReplyCount. Counting for all time meant a returning customer was
+    // permanently handed off.
+    const sessionBotCount = sessionBotReplyCount(prior);
     const resendingLink =
       /calendly\.com\//i.test(messageText) && /calendly\.com\//i.test(prevBotMsg);
-    const dragging = priorBot.length >= 8;
+    const dragging = sessionBotCount >= 8;
     const forceHandoff =
       (resendingLink || dragging) &&
       (!escalation || escalation.escalation === "GENERAL_ESCALATION");
