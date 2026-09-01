@@ -83,7 +83,7 @@ NEVER state a minimum age like "14+" or "15+" for the All-Levels / Advanced / Sp
 === CLASS SCHEDULE (Mon–Sat; AL = All Levels) ===
 - Mon: 7:00–8:00am AL · 12:15–1:15pm AL · 6:30–7:30pm AL · 7:30–8:30pm AL
 - Tue: 12:15–1:15pm AL · 4:30–5:15pm Kids · 5:15–6:00pm Pre-Teen · 6:30–7:30pm AL · 7:30–8:30pm AL · 8:30–9:30pm Advanced
-- Wed: 7:00–8:00am AL · 12:15–1:15pm AL · 6:30–7:30pm AL · 7:30–8:30pm Advanced
+- Wed: 7:00–8:00am AL · 12:15–1:15pm AL · 6:30–7:30pm AL · 7:30–8:30pm AL
 - Thu: 12:15–1:15pm AL · 4:30–5:15pm Kids · 5:15–6:00pm Pre-Teen · 6:30–7:30pm AL · 7:30–8:30pm AL · 8:30–9:30pm Advanced
 - Fri: 7:00–8:00am AL · 12:15–1:15pm AL · 6:30–7:30pm AL · 7:30–8:30pm AL · 8:30–9:30pm Sparring
 - Sat: 10:00–10:45am Kids · 10:45–11:30am Pre-Teen · 11:30am–12:30pm AL

@@ -72,7 +72,7 @@ check(
 console.log("\n[2] Must intercept");
 const hits = [
   { msg: "what time is the monday class?", intent: "SCHEDULE", must: ["6:30–7:30pm", "7:30–8:30pm"], mustNot: ["7:00–8:00pm"] },
-  { msg: "Wednesday what time ah", intent: "SCHEDULE", must: ["7:30–8:30pm Advanced"], mustNot: ["8:30–9:30pm"] },
+  { msg: "Wednesday what time ah", intent: "SCHEDULE", must: ["7:30–8:30pm All Levels"], mustNot: ["8:30–9:30pm"] },
   { msg: "timetable for saturday", intent: "SCHEDULE", must: ["10:00–10:45am", "11:30am–12:30pm"] },
   { msg: "jadual kelas hari jumaat", intent: "SCHEDULE", must: ["8:30–9:30pm Sparring"] },
   { msg: "星期二几点上课", intent: "SCHEDULE", must: ["4:30–5:15pm"] },
