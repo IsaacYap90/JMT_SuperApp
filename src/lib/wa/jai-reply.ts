@@ -12,6 +12,8 @@ import {
   daysNamedIn,
   looksNonEnglish,
   isLateArrivalReply,
+  checkDayBinding,
+  indexSchedule,
   JMT_FACT_GUARD_CONFIG,
   type FactCheckResult,
 } from "./fact-guard";
@@ -526,6 +528,20 @@ export async function generateReply(
       // lead's language, so answering a Chinese enquiry with English copy trades
       // one wrong answer for another. Guard it instead.
       console.error("[jai-reply] non-English timetable claim — guarding, not replacing");
+    } else if (checkDayBinding(parsed.messageText, indexSchedule(jaiFacts)).length === 0) {
+      // Every day/time pair the draft asserts checks out against the sheet, so
+      // there is nothing to correct — keep the model's own words.
+      //
+      // Replacing unconditionally was costing the front desk more than it
+      // protected. Round 7: a correct whole-week answer was swapped for
+      // Monday's list on a Tuesday, and a customer who had just answered JAI's
+      // own question ("Me | 30") was asked which day they meant. The customer
+      // does not care that the facts were verified; they notice that their
+      // question went unanswered.
+      //
+      // Substitution stays for the case it was built for — a draft whose times
+      // do NOT check out — so an invented class can still never be sent.
+      console.error("[jai-reply] timetable claim verified against the sheet — keeping the reply");
     } else {
       // Prefer the day the conversation ALREADY names — the draft first, then
       // the customer's own words. Only ask when nothing anywhere names a day.

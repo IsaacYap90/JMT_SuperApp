@@ -80,4 +80,18 @@ t('80/session not a promo',
   detectJoinIntent("is PT 80/session?") !== "quoted_promo_price");
 t('bare 252 still guarded (again)', detectJoinIntent("can i get it for 252") !== null);
 
+
+// ── round-7: a verified timetable claim keeps the model's own words ──────────
+import { indexSchedule, checkDayBinding } from "../src/lib/wa/fact-guard.ts";
+{
+  const sched = indexSchedule(JAI_FACTS);
+  // A correct whole-week answer must NOT be replaced. Round 7 swapped exactly
+  // this for Monday's list, on a Tuesday, and dropped the price answer with it.
+  const correct = "Mon and Wed we run 7:00-8:00am, and Tuesday has 8:30-9:30pm Advanced.";
+  t('correct multi-day draft verifies', checkDayBinding(correct, sched).length === 0);
+  // A wrong one must still fail, so substitution still fires where it should.
+  const wrong = "Wednesday has an 8:30pm class.";
+  t('wrong day claim still fails', checkDayBinding(wrong, sched).length > 0);
+}
+
 console.log(fail === 0 ? "\nALL SUBSTITUTION CASES PASSED" : `\n${fail} FAILED`);
