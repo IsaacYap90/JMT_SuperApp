@@ -371,6 +371,12 @@ function dayLabelNow(cfg: DeterministicConfig, addDays: number): string | undefi
  * no fall-through topic in it. Everything else → null → the AI.
  */
 export function detectIntent(text: string, cfg: DeterministicConfig = DEFAULT_CONFIG): Detection {
+  // "who takes the wednesday evening class?" is a question about a PERSON. It
+  // contains a day and the word class, so SCHEDULE scored it and answered with
+  // a timetable — the customer's actual question never reached the model.
+  if (/\b(who|which\s+coach|whose|what.{0,12}\bname\b)\b/i.test(text)) {
+    return { intent: null, score: 0, reason: "asks who, not when" };
+  }
   const raw = text.trim();
   const lower = raw.toLowerCase();
   const padded = norm(raw);
@@ -646,7 +652,15 @@ export function lateArrivalAnswer(
     // "the 6.30pm class", "for the 730 class"
     // The class may have been named earlier in the conversation. Search this
     // message first, then walk back through recent turns, newest first.
-    const CLASS_RE = /(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)\s*(?:\w+\s+){0,2}(?:class|session|slot)/i;
+    // [\w-] not \w: JAI writes "7:30pm All-Levels class", and \w+ cannot match
+    // the hyphen, so this pattern found nothing in the bot's own words. The
+    // round-7 suite hid it because the fixture was my hand-written "The 7:30pm
+    // class starts soon" rather than what JAI actually says.
+    // [\w-] not \w — JAI writes "7:30pm All-Levels class" and \w cannot match the
+    // hyphen, so this found nothing in the bot's own words. Kept at TWO filler
+    // words: widening to three let "reach at 645 for the 630 class" capture the
+    // ARRIVAL time as the class, and the lateness came out as zero.
+    const CLASS_RE = /(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)\s*(?:[\w-]+\s+){0,2}(?:class|session|slot)/i;
     let clsM = CLASS_RE.exec(t);
     if (!clsM) {
       for (const prev of [...context].reverse()) {

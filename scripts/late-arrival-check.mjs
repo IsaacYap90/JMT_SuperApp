@@ -44,12 +44,18 @@ for (const msg of [
 // He never wrote that — the class time is three turns back — so the intercept
 // found no class, returned null, and the model told him "you're good to join".
 // A test that quietly repairs the input is not a test.
+// JAI's ACTUAL wording, copied from the live thread. The previous fixture said
+// "The 7:30pm class starts soon" — words I wrote, not words the bot says — and
+// it hid a dead regex for two rounds: CLASS_RE used \w+, which cannot match the
+// hyphen in "All-Levels", so the context search never found a class time in
+// JAI's own replies. A fixture that is not what the system produces is not a
+// test of the system.
 const kennethThread = [
   "hi",
   "can i come today ?",
-  "Today's Tuesday, so we've got All-Levels classes at 6:30-7:30pm and 7:30-8:30pm tonight",
+  "Hey Kenneth! 👋 Today's Tuesday, so we've got All-Levels classes at 6:30\u20137:30pm and 7:30\u20138:30pm tonight 😄",
   "too late",
-  "The 7:30pm class starts soon",
+  "No worries at all! 😄 The 7:30pm All-Levels class starts in about 15 mins, so if you're nearby you might just make it.",
 ];
 {
   const a = lateArrivalAnswer("oh so if i reach at 745 its ok ?", undefined, kennethThread);

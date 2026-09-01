@@ -94,4 +94,18 @@ import { indexSchedule, checkDayBinding } from "../src/lib/wa/fact-guard.ts";
   t('wrong day claim still fails', checkDayBinding(wrong, sched).length > 0);
 }
 
+
+// ── round-8 regressions ─────────────────────────────────────────────────────
+{
+  const sched = indexSchedule(JAI_FACTS);
+  // "Today" must bind. Round 8: a relative-day claim bound to nothing, so
+  // checkDayBinding returned [] and the caller logged "verified against the
+  // sheet" having verified nothing - on the commonest schedule question there is.
+  const now = new Date("2026-09-01T08:00:00Z");           // a Tuesday in SGT
+  const wrongToday = "Today we run All-Levels at 7:00-8:00am and 12:15-1:15pm.";
+  t('relative day is bound', checkDayBinding(wrongToday, sched, now).length > 0);
+  const rightToday = "Today we run All-Levels at 12:15-1:15pm and 6:30-7:30pm.";
+  t('correct relative day passes', checkDayBinding(rightToday, sched, now).length === 0);
+}
+
 console.log(fail === 0 ? "\nALL SUBSTITUTION CASES PASSED" : `\n${fail} FAILED`);

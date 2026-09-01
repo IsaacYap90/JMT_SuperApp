@@ -320,9 +320,20 @@ export function indexSchedule(facts: string): DaySchedule {
  * Segments that negate, or that use a day RANGE, are skipped: the first is the
  * assistant correcting the customer, the second is too coarse to bind.
  */
-export function checkDayBinding(reply: string, sched: DaySchedule): Token[] {
+export function checkDayBinding(reply: string, sched: DaySchedule, now: Date = new Date()): Token[] {
   const bad: Token[] = [];
   if (sched.size === 0) return bad;
+  // "Today we run All-Levels at 7:00-8:00am" names a day as surely as "Tuesday"
+  // does. Binding only literal weekday names meant a relative-day claim bound to
+  // nothing, returned no violations, and the caller logged "verified against the
+  // sheet" having verified nothing — on the commonest schedule question there is.
+  const rel = (addDays: number) =>
+    new Date(now.getTime() + addDays * 86400000)
+      .toLocaleDateString("en-US", { weekday: "short", timeZone: "Asia/Singapore" })
+      .slice(0, 3);
+  reply = reply
+    .replace(/\b(today|tonight|hari ini|今天|今晚)\b/gi, rel(0))
+    .replace(/\b(tomorrow|tmr|tmrw|esok|明天|明晚)\b/gi, rel(1));
   // Contrastive conjunctions start a new clause and a new subject: in "On
   // weekdays we start at 7am but Saturday starts at 10am" the 7am belongs to the
   // unnamed weekdays, not to the Saturday that follows it. Without this split
@@ -633,8 +644,24 @@ export function validateReply(
         .split(/[.!?;\n]/)
         .some((seg) => seg.includes(token) && TRUE_NEGATION_RE.test(seg));
 
+    // A late-arrival reply legitimately states a time the sheet never contains:
+    // the cut-off, which is a class start + 15 minutes. Blocking it deflected a
+    // customer to Coach Jeremy for a question the sheet answers ("if i reach at
+    // 745 for the 730 class"). Derive them and allow them, in that context only.
+    const cutoffs = new Set<string>();
+    if (isLateArrivalReply(reply)) {
+      idx.times.forEach((start) => {
+        const [h, m] = start.split(":").map(Number);
+        const mins = h * 60 + m + 15;
+        cutoffs.add(
+          `${String(Math.floor((mins % 1440) / 60)).padStart(2, "0")}:${String(mins % 60).padStart(2, "0")}`
+        );
+      });
+    }
+
     for (const t of extractTimes(reply)) {
       if (idx.times.has(t.norm)) continue;
+      if (cutoffs.has(t.norm)) continue;
       if (echoedCorrection(reply, t.raw, custTimes, t.norm, config.negationCues)) continue;
       if (negatedSegment(t.raw)) continue;
       add("time", t);

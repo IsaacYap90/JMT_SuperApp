@@ -660,6 +660,40 @@ export async function generateReply(
     console.error("[jai-reply] model reply was only directives — sending canned apology");
     return { ...parsed, messageText: APOLOGY_TEXT, quickReplies: [] };
   }
+  // A promise that Jeremy will make contact, with no escalation, means nobody
+  // is told to make it. Round 8: a parent with a 20-year-old and a 15-year-old
+  // was told "He'll reach out to you shortly 🙏" and Jeremy never heard.
+  //
+  // Round 6's version of this fired on JAI's own mandated greeting ("I'm Jai,
+  // Coach Jeremy's assistant… I don't have your details on hand"), so it is
+  // scoped now: Jeremy must be the SUBJECT of a future contact verb, not merely
+  // named. "Coach Jeremy founded the gym" and "on hand" no longer match.
+  const promisesContact =
+    /\b(?:coach\s+)?jeremy\b[^.!?]{0,40}\b(?:will|'ll|is going to|can)\b[^.!?]{0,40}\b(?:reach out|contact|call|text|message|get back|follow up|be in touch|come down|sort (?:this|that) out)\b/i.test(
+      parsed.messageText
+    ) ||
+    /\b(?:i'?ll|let me|going to)\b[^.!?]{0,30}\b(?:get|pass|hand|flag|send)\b[^.!?]{0,30}\b(?:to\s+)?(?:coach\s+)?jeremy\b/i.test(
+      parsed.messageText
+    ) ||
+    // "…with Coach Jeremy. He'll reach out to you shortly" — the promise lands
+    // in the next sentence with a pronoun subject, so the two patterns above
+    // both miss it. This was the exact wording that lost the F lead.
+    (/\bjeremy\b/i.test(parsed.messageText) &&
+      /\b(?:he|she|they)\b[^.!?]{0,25}\b(?:will|'ll|is going to)\b[^.!?]{0,30}\b(?:reach out|contact|call|text|message|get back|follow up|be in touch|come down)\b/i.test(
+        parsed.messageText
+      ));
+  if (!parsed.escalation && promisesContact) {
+    console.error("[jai-reply] contact promised with no escalation — attaching one");
+    parsed = {
+      ...parsed,
+      escalation: {
+        escalation: "GENERAL_ESCALATION",
+        intent: "promised_contact",
+        source: "guard",
+      },
+    };
+  }
+
   return parsed;
 }
 
