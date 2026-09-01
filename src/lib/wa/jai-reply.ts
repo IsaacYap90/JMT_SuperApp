@@ -13,6 +13,7 @@ import {
   looksNonEnglish,
   isLateArrivalReply,
   offersAPhoneCall,
+  claimsACutoffTime,
   checkDayBinding,
   indexSchedule,
   JMT_FACT_GUARD_CONFIG,
@@ -594,6 +595,33 @@ export async function generateReply(
     return {
       messageText:
         "I can't make or take calls myself \u2014 but Coach Jeremy can give you a ring 🙏 What's it about, so I can pass it to him with the details?",
+      // This reply PROMISES a call, so it must raise one. Carrying the draft's
+      // escalation through meant null on a call-offering draft: the one path
+      // built to stop "warmest lead of the day and nobody was told" ended in
+      // exactly that.
+      escalation: parsed.escalation ?? {
+        escalation: "GENERAL_ESCALATION",
+        intent: "call_requested",
+        source: "guard",
+      },
+      quickReplies: [],
+      member: parsed.member,
+    };
+  }
+
+  // The model does not get to do cut-off arithmetic in prose. It has stated the
+  // boundary backwards twice now, most recently telling a customer "the latest
+  // you can join is 6:45pm" for a 6:30pm class. The rule itself is short and
+  // unambiguous, so state it and let the deterministic intercept handle a
+  // specific arrival time.
+  if (claimsACutoffTime(parsed.messageText)) {
+    console.error(
+      "[jai-reply] prose cut-off claim — replacing —",
+      JSON.stringify({ draft: parsed.messageText })
+    );
+    return {
+      messageText:
+        "We hold a hard 15-minute cut-off \u2014 if you're less than 15 minutes late you can still join, but 15 minutes or more and we'd have to get you into another class 🙏 Tell me the class and what time you'd arrive and I'll check it for you.",
       escalation: parsed.escalation,
       quickReplies: [],
       member: parsed.member,

@@ -489,10 +489,34 @@ export function offersAPhoneCall(reply: string): boolean {
   return OFFERS_A_CALL_RE.test(reply);
 }
 
+
+// ── cut-off claims ──────────────────────────────────────────────────────────
+// The model keeps stating the boundary in prose and keeps getting it backwards:
+// "for the 6:30pm class, the latest you can join is 6:45pm" reached a customer
+// on round 10. It survived because 6:45pm DOES appear in the sheet - inside the
+// worked example written to forbid it - with no negation cue, so the allow-list
+// contains it. The sheet's own cautionary example is what authorised the error.
+//
+// The deterministic intercept answers this correctly every time it fires, so
+// the model has nothing to add here. Any prose cut-off claim is replaced.
+const CUTOFF_CLAIM_RE =
+  /\b(?:latest\s+you\s+can\s+(?:join|come|arrive)|need\s+to\s+be\s+(?:there|in)\s+by|have\s+to\s+be\s+in\s+by|cut[- ]?off\s+is|buffer\s+means|as\s+long\s+as\s+you(?:'re| are)\s+(?:in|there)\s+(?:with)?in)\b/i;
+
+/** Is the reply doing cut-off arithmetic in prose? That is not the model's job. */
+export function claimsACutoffTime(reply: string): boolean {
+  if (!CUTOFF_CLAIM_RE.test(reply)) return false;
+  // Only when it actually names a clock time - "we hold a 15-minute cut-off"
+  // with no time is the rule stated correctly and may stand.
+  return extractTimes(reply).length > 0;
+}
+
 /** Is this reply about arriving late, rather than about what the timetable is? */
 export function isLateArrivalReply(reply: string): boolean {
   // "It's never too late to start!" is encouragement, not a cut-off answer.
-  if (/\bnever\s+too\s+late\b|\btoo\s+late\s+to\s+(?:start|join|sign|register|book)\b/i.test(reply)) {
+  // "too late to JOIN" is the commonest wording of a correct refusal — the
+  // exemption written to spare "it's never too late to start" was swallowing
+  // the very replies this function exists to recognise.
+  if (/\bnever\s+too\s+late\b|\btoo\s+late\s+to\s+(?:start|sign\s*up|register)\b/i.test(reply)) {
     return false;
   }
   return LATE_ARRIVAL_RE.test(reply);
