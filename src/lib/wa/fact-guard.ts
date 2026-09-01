@@ -475,6 +475,20 @@ const LATE_ARRIVAL_RE =
   /\b(?:late|lateness|buffer|cut[- ]?off|15[- ]?mins?|fifteen\s+mins?|too\s+late|lewat|terlambat|迟到|遲到)\b|\breach(?:ing)?\s+(?:at|by|the|there|around)\b|\barriv(?:e|ing)\s+(?:at|by|around|late)\b/i;
 
 
+
+// ── JAI never offers a phone call ───────────────────────────────────────────
+// Isaac, 2026-09-01: "JAI cannot call or accept call at all." The sheet says so
+// too, but a sheet rule is exactly what failed on 1 Sep — a lead wrote "Call me"
+// and JAI handed her the gym number to dial herself, with no escalation. She was
+// the warmest lead of the day and nobody was told. So it is checked in code.
+const OFFERS_A_CALL_RE =
+  /\b(?:i(?:'ll| will| can)?\s+(?:give\s+you\s+a\s+)?call(?:\s+you)?|call\s+me|give\s+(?:us|me)\s+a\s+(?:call|ring)|ring\s+(?:us|me)|(?:you\s+can\s+)?(?:call|phone|dial)\s+us|feel\s+free\s+to\s+call|reach\s+us\s+(?:at|on)\s*\+?\d)/i;
+
+/** Is JAI offering to call, or telling the customer to call in? Neither is allowed. */
+export function offersAPhoneCall(reply: string): boolean {
+  return OFFERS_A_CALL_RE.test(reply);
+}
+
 /** Is this reply about arriving late, rather than about what the timetable is? */
 export function isLateArrivalReply(reply: string): boolean {
   // "It's never too late to start!" is encouragement, not a cut-off answer.

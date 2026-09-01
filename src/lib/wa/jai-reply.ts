@@ -12,6 +12,7 @@ import {
   daysNamedIn,
   looksNonEnglish,
   isLateArrivalReply,
+  offersAPhoneCall,
   checkDayBinding,
   indexSchedule,
   JMT_FACT_GUARD_CONFIG,
@@ -579,6 +580,24 @@ export async function generateReply(
         member: parsed.member,
       };
     }
+  }
+
+  // JAI has no phone. A reply that offers a call, or tells the customer to ring
+  // in, is replaced outright — the sheet already forbade this and the model did
+  // it anyway on 1 Sep, handing the warmest lead of the day a number to dial
+  // herself. Ask what it is about first, so Coach Jeremy is not calling blind.
+  if (offersAPhoneCall(parsed.messageText)) {
+    console.error(
+      "[jai-reply] reply offered a phone call — replacing —",
+      JSON.stringify({ draft: parsed.messageText })
+    );
+    return {
+      messageText:
+        "I can't make or take calls myself \u2014 but Coach Jeremy can give you a ring 🙏 What's it about, so I can pass it to him with the details?",
+      escalation: parsed.escalation,
+      quickReplies: [],
+      member: parsed.member,
+    };
   }
 
   // ── FACT GUARD (layer 1) ──────────────────────────────────────────────────
