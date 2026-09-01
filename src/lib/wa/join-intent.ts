@@ -245,6 +245,15 @@ function quotesUnknownBareAmount(text: string): boolean {
     if (ALLOWED_AMOUNTS.has(n)) return false;
     if (n >= 1900 && n <= 2099) return false; // a year, not a price
     if (looksLikeClockTime(n, t)) return false; // "reach at 745" is a time
+    // A rate the customer attaches to a unit is them QUOTING our own pricing
+    // back at us, not asking after a promo. "what's the difference between the
+    // assistant coach 80/session and senior coach 100/session" muted the whole
+    // PT enquiry: JAI sent the handoff line and paused the chat, and the
+    // timings half of the question was never answered. PT still routes to
+    // Jeremy through the PT rules; it just should not silence JAI.
+    if (new RegExp(`\\b${n}\\s*(?:/|per\\s+)\\s*(?:session|class|pax|person|head|hour|hr)\\b`).test(t)) {
+      return false;
+    }
     return true;
   });
 }

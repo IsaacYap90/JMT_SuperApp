@@ -8,6 +8,13 @@ const cases = [
   ["i might only reach fifteen minutes after it starts", false],
   ["i booked the 730pm class but i'll only reach at 8pm", false],
   ["i'll be 5 mins late",                                 true ],
+  // Morning classes are real (Mon/Wed/Fri 7:00-8:00am). Round 6: a bare arrival
+  // hour was forced to PM, so 7.05 vs a 7am class read as 725 minutes late and
+  // a member got a confident refusal.
+  ["i'll reach at 7.05 for the 7am class",                true ],
+  ["coming for the 7am class, will reach 7.10",           true ],
+  ["reach at 7.20 for the 7am class",                     false],
+  ["i'll reach 7.05am for the 7.00am class",              true ],
 ];
 let fail = 0;
 for (const [msg, canJoin] of cases) {

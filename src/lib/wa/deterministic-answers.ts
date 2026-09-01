@@ -578,7 +578,7 @@ export function scheduleAnswerForDay(
 const CUTOFF_MINUTES = 15;
 
 /** "745", "7.45pm", "7:45 pm", "8pm" -> minutes since midnight, or null. */
-function clockToMinutes(raw: string): number | null {
+function clockToMinutes(raw: string): { mins: number; bare: boolean } | null {
   const m = /^(\d{1,2})[:.]?(\d{2})?\s*(am|pm)?$/i.exec(raw.trim());
   if (!m) return null;
   let h = parseInt(m[1], 10);
@@ -592,9 +592,14 @@ function clockToMinutes(raw: string): number | null {
   const mer = m[3]?.toLowerCase();
   if (mer === "pm" && h < 12) h += 12;
   if (mer === "am" && h === 12) h = 0;
-  // Gym hours: a bare 7 or 8 with no meridiem means the evening class.
-  if (!mer && h >= 1 && h <= 9) h += 12;
-  return h * 60 + min;
+  // A bare hour has no half of the day. Defaulting 1-9 to PM was right for the
+  // evening classes and catastrophically wrong for the morning ones: "i'll reach
+  // at 7.05 for the 7am class" became 19:05 against a 07:00 start, i.e. 725
+  // minutes late, and a real member got a confident deterministic refusal that
+  // no later layer could correct. The caller passes the class's own meridiem so
+  // a bare arrival inherits it.
+  if (!mer && h >= 1 && h <= 9) return { mins: h * 60 + min, bare: true };
+  return { mins: h * 60 + min, bare: false };
 }
 
 export type LateArrivalAnswer = { messageText: string; canJoin: boolean };
@@ -647,7 +652,18 @@ export function lateArrivalAnswer(
       const start = clockToMinutes(clsM[1]);
       const arrive = clockToMinutes(arrM[1]);
       if (start === null || arrive === null) return null;
-      lateBy = arrive - start;
+      let s0 = start.mins;
+      let a0 = arrive.mins;
+      // Resolve bare hours against whichever side DID carry a meridiem. If
+      // neither did, they are in the same half of the day as each other, which
+      // is all the difference needs.
+      if (start.bare && !arrive.bare && a0 >= 12 * 60) s0 += 12 * 60;
+      if (arrive.bare && !start.bare && s0 >= 12 * 60) a0 += 12 * 60;
+      lateBy = a0 - s0;
+      // A negative gap means we guessed the halves wrong (e.g. "7.05" vs "7am"
+      // read as 19:05 vs 07:00 would give +725, and the reverse gives -725).
+      // Anything beyond a plausible lateness is a parse we should not act on.
+      if (lateBy < 0 || lateBy > 180) return null;
     }
     if (lateBy === null || lateBy < 0) return null;
 

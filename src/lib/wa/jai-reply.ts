@@ -12,6 +12,7 @@ import {
   daysNamedIn,
   looksNonEnglish,
   isLateArrivalReply,
+  forbiddenPhrases,
   JMT_FACT_GUARD_CONFIG,
   type FactCheckResult,
 } from "./fact-guard";
@@ -572,6 +573,16 @@ export async function generateReply(
   // this prompt — NOT the in-code constant, or a fact Isaac adds in the DB
   // would be blocked as invented.
   let check: FactCheckResult = guard(parsed.messageText, lastCustomerMsg, jaiFacts);
+  // Sheet prohibitions the model keeps breaking (age cutoffs on the adult
+  // classes) ride the same block/retry/escalate path as an invented fact.
+  const banned = forbiddenPhrases(parsed.messageText);
+  if (banned.length > 0) {
+    console.error("[jai-reply] FORBIDDEN PHRASE —", JSON.stringify(banned));
+    check = {
+      ok: false,
+      violations: banned.map((b) => ({ kind: "day" as const, token: b, normalised: b })),
+    };
+  }
   if (!check.ok) {
     console.error(
       "[jai-reply] FACT GUARD blocked draft 1 —",
@@ -644,6 +655,21 @@ export async function generateReply(
     console.error("[jai-reply] model reply was only directives — sending canned apology");
     return { ...parsed, messageText: APOLOGY_TEXT, quickReplies: [] };
   }
+  // "let me get Coach Jeremy on this" with escalation:null means the customer
+  // is promised a callback that nobody is told to make. Round 6 caught it twice.
+  if (!parsed.escalation && /\b(coach\s+jeremy|jeremy)\b/i.test(parsed.messageText) &&
+      /\b(get|pass|hand|check\s+with|reach\s+out|sort\s+(?:this|that)|look\s+into|come\s+back|revert)\b/i.test(parsed.messageText)) {
+    console.error("[jai-reply] handoff promised with no escalation — attaching one");
+    parsed = {
+      ...parsed,
+      escalation: {
+        escalation: "GENERAL_ESCALATION",
+        intent: "promised_handoff",
+        source: "guard",
+      },
+    };
+  }
+
   return parsed;
 }
 

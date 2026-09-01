@@ -70,4 +70,24 @@ t('645 is not a price',  detectJoinIntent("i'll reach 645 for the 630 class") !=
 t('252 still guarded',   detectJoinIntent("is the 252 offer still valid?") !== null);
 t('bare 252 still guarded', detectJoinIntent("can i get it for 252") !== null);
 
+
+// ── round-6 regressions ─────────────────────────────────────────────────────
+import { forbiddenPhrases } from "../src/lib/wa/fact-guard.ts";
+
+// The sheet forbids stating an age cutoff for the adult classes. The model did
+// it twice, in unrelated conversations, so it is checked in code now.
+t('"15 and up" caught',  forbiddenPhrases("Our All-Levels classes are open to everyone 15 and up").length === 1);
+t('"(15+)" caught',      forbiddenPhrases("that puts you in our Adult group classes (15+)").length === 1);
+t('"14+" caught',        forbiddenPhrases("teens 14+ can join").length === 1);
+t('kids ages untouched', forbiddenPhrases("Our kids programme starts from age 3").length === 0);
+t('prices untouched',    forbiddenPhrases("1 month is $280 and the drop-in is $42").length === 0);
+
+// A rate the customer quotes with a unit is not a promo ask - this muted a
+// whole PT enquiry and paused the chat.
+t('100/session not a promo',
+  detectJoinIntent("what's the difference between the assistant coach 80/session and senior coach 100/ session?") !== "quoted_promo_price");
+t('80/session not a promo',
+  detectJoinIntent("is PT 80/session?") !== "quoted_promo_price");
+t('bare 252 still guarded (again)', detectJoinIntent("can i get it for 252") !== null);
+
 console.log(fail === 0 ? "\nALL SUBSTITUTION CASES PASSED" : `\n${fail} FAILED`);
