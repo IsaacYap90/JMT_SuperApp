@@ -449,20 +449,46 @@ export async function POST(req: NextRequest) {
       ? "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly."
       : messageText;
     let outQuick = forceHandoff ? [] : quickReplies;
-    let esc: Escalation | null = forceHandoff
-      ? {
-          escalation: "GENERAL_ESCALATION",
-          intent: resendingLink ? "loop_break" : "conversation_stuck",
-          source: "guard",
-        }
-      : joinHit
-        ? { escalation: "JOIN_INTENT", intent: joinHit, source: "guard" }
+    // A buy signal outranks the anti-loop guard. Before the split this was
+    // structurally impossible — a join hit never reached here — so forceHandoff
+    // could not downgrade one to GENERAL_ESCALATION, lose its priority and skip
+    // the join-specific dedupe. It can now, unless join wins.
+    let esc: Escalation | null = joinHit
+      ? { escalation: "JOIN_INTENT", intent: joinHit, source: "guard" }
+      : forceHandoff
+        ? {
+            escalation: "GENERAL_ESCALATION",
+            intent: resendingLink ? "loop_break" : "conversation_stuck",
+            source: "guard",
+          }
         : escalation;
 
     // Jeremy is pinged (above) AND the customer keeps the answer. The handoff
     // is a closing line now, never the whole message. Skipped when the reply is
     // already being replaced by a handoff, so we never send it twice.
-    if (joinHit && !forceHandoff) {
+    // ONLY a genuine "I want to join" is answered. A promo ask is not, and the
+    // difference is the whole 2026-07-29 incident:
+    //
+    //   customer: "is the $252 offer still on?"
+    //   model:    "I believe that's the 3-month rate at $250/month"   ← ships
+    //   model:    "Yes, that rate is still valid"                     ← ships
+    //
+    // Both outbound guards only test whether a figure is ON the rate card. 250
+    // is, and the second reply has no digits at all, so neither guard can see
+    // either one. join-intent.ts:209 wrote that prediction down months ago; the
+    // inbound classifier is the only thing that catches it, and it only works
+    // if promo_ask / quoted_promo_price never reach the model. So they keep the
+    // whole-message handoff. wants_to_join — a rate question, a "how do I
+    // start" — is answered, which is what Isaac asked for.
+    const answerableJoin = joinHit === "wants_to_join";
+    if (joinHit && !answerableJoin) {
+      outText = JOIN_HANDOFF_TEXT;
+      outQuick = [];
+    } else if (answerableJoin && !forceHandoff) {
+      // A model-authored button is text nobody guards — hasDisallowedPrice only
+      // ever inspects outText. Clearing them was the fourth thing the old
+      // moneyHandoff flag did, and it belongs on this side of the split.
+      outQuick = [];
       outText = `${outText}\n\n${JOIN_HANDOFF_SUFFIX}`;
     }
 
@@ -496,7 +522,12 @@ export async function POST(req: NextRequest) {
     // A join question is now answered and Jeremy is pinged; it no longer
     // silences JAI for that customer for good.
     const joinEscalation = esc?.escalation === "JOIN_INTENT";
-    const pauseAi = priceLeak;
+    // The rule is: whenever JAI REFUSES and hands over, it stops talking;
+    // whenever it ANSWERS, it keeps talking. So a promo ask and a binned reply
+    // both pause — JAI must not be pressed into guessing a figure it does not
+    // have while Jeremy is closing — and an answered "how do I join" does not.
+    // That is the case that was muting the warmest leads for good.
+    const pauseAi = priceLeak || (!!joinHit && !answerableJoin);
 
     // ── Dead adult-trial-link guard (last line of defence) ─────────────────
     // The adult trial Calendly link was switched OFF on 2026-07-30 and is DEAD —
@@ -595,7 +626,13 @@ export async function POST(req: NextRequest) {
         const { data: admins } = await pub.from("users").select("id").eq("role", "master_admin");
         const labels: Record<string, string> = {
           PT_LEAD: "PT lead 🥊",
-          JOIN_INTENT: "Wants to join / asked about a promo 💰 — JAI paused, take over",
+          // Not "JAI paused" any more: a join question is answered and JAI keeps
+          // talking, so telling Jeremy to take over makes him reply on top of an
+          // answer the customer already has. Only price_blocked still pauses.
+          JOIN_INTENT:
+            esc?.intent === "price_blocked"
+              ? "Quoted a price we don't have 💰 — reply binned, JAI paused, take over"
+              : "Wants to join / asked about a promo 💰 — JAI answered, please confirm",
           CORPORATE: "Corporate / group enquiry",
           COMPLAINT: "Complaint / issue ⚠️",
           TRIAL_BOOKED: "Trial booked ✅",

@@ -205,7 +205,7 @@ try {
   check("nine replies in one sitting still hands off",
     looping, (r) => (!r ? "no reply at all"
       : ANTI_LOOP_HANDOFF.test(r) ? null
-      : JOIN_HANDOFF.test(r) ? "the JOIN handoff fired, not the anti-loop one — this case proves nothing"
+      : BARE_JOIN_HANDOFF.test(r) ? "the JOIN handoff fired, not the anti-loop one — this case proves nothing"
       : "guard did not fire — anti-loop protection is gone"));
 
   // ── 3. A brand-new lead gets a real first reply ───────────────────────────
@@ -228,18 +228,30 @@ try {
   // That is what the 2026-07-29 "$252" incident was actually about.
   await wipe();
   await seedOldThread(2, 0);
+  // Deliberately a draft that BOTH outbound guards pass: no forbidden figure,
+  // and "250" is on the rate card. Only refusing to run the model catches this.
   const promo = await say("is the $252 offer still on?",
-    "Yes! The $252 promo is still running this month, happy to sign you up at that rate.");
-  // Either route is correct: the inbound guard can catch the quoted figure
-  // before the model, or the outbound money guard can bin the reply after it.
-  // What must hold is that the number never reaches the customer and Jeremy is
-  // told. Asserting the BARE handoff specifically was too narrow — it failed on
-  // a reply that had already handled this correctly.
-  check("an invented promo price never reaches the customer",
-    promo, (r) => (!r ? "no reply at all"
-      : /252/.test(r) ? "the invented price reached the customer"
-      : (BARE_JOIN_HANDOFF.test(r) || JOIN_SUFFIX.test(r) || /Coach Jeremy/i.test(r)) ? null
-      : "price was dropped but nobody was told"));
+    "Yes, that rate is still valid — I believe that's the 3-month rate at $250/month.");
+  // I widened this assertion once to make it pass, and the code review proved
+  // it would then go GREEN on the literal 2026-07-29 incident text — "I believe
+  // that's the 3-month rate at $250/month" — because 250 is on the rate card,
+  // and on a digit-free "Yes, that rate is still valid". Loosening a test to
+  // accommodate behaviour is how the incident gets shipped twice.
+  //
+  // What must be true: the model's draft is BINNED, not garnished. Asserted on
+  // the wire AND in the database, not inferred from a suffix that is always
+  // present anyway.
+  const { data: promoLead } = await sb.from("leads").select("ai_paused")
+    .eq("contact_number", TEST_NUMBER).maybeSingle();
+  check("a promo ask never reaches the model's draft",
+    promo, (r) => {
+      if (!r) return "no reply at all";
+      if (/252|250\s*\/?\s*(month|mo)|still (on|valid|running)/i.test(r))
+        return "the promo draft reached the customer — this is the 2026-07-29 incident";
+      if (!BARE_JOIN_HANDOFF.test(r)) return "the draft was not binned, only decorated";
+      if (!promoLead?.ai_paused) return "reply was binned but JAI was not paused for Jeremy";
+      return null;
+    });
 
   // ── 4. Schedule comes from the sheet, not the model ───────────────────────
   await wipe();
