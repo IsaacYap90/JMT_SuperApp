@@ -560,33 +560,6 @@ export async function generateReply(
 
 type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
 
-const MODEL_ERROR_REPLY: ParsedReply = {
-  messageText: "Hey! Sorry, having a quick issue. Bear with me 🙏",
-  escalation: null,
-  quickReplies: [],
-  member: false,
-};
-
-// One DeepSeek call. Returns null on a non-OK response (caller sends the safe
-// "having a quick issue" reply, exactly as before).
-async function callModel(messages: ChatMsg[]): Promise<string | null> {
-  const res = await fetch("https://api.deepseek.com/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ model: "deepseek-chat", max_tokens: 500, messages }),
-    cache: "no-store",
-  });
-  if (!res.ok) {
-    console.error("[jai-reply] DeepSeek error", res.status, await res.text().catch(() => ""));
-    return null;
-  }
-  const data = await res.json();
-  return (data?.choices?.[0]?.message?.content ?? "") as string;
-}
-
 // The guard itself fails open (see fact-guard.ts) — this only binds JMT's
 // fact sheet + tenant config to it.
 function guard(draft: string, customerText: string, facts: string): FactCheckResult {
