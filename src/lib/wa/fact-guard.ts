@@ -141,16 +141,30 @@ export function extractTimes(text: string): Token[] {
  * were a class start and rejected.
  */
 export function extractTimeParts(text: string): {
-  ranges: { start: Token; end: Token }[];
-  singles: Token[];
+  ranges: { start: Token; end: Token; at: number }[];
+  singles: (Token & { at: number })[];
 } {
-  const ranges: { start: Token; end: Token }[] = [];
-  const masked = text.replace(TIME_RANGE_RE, (full: string) => {
+  const ranges: { start: Token; end: Token; at: number }[] = [];
+  // `raw` is REBUILT from the parsed parts ("4:30pm"), so it often does not
+  // appear literally in the text ("4:30-5:15pm"). Searching for it returned -1
+  // and bound every time to the first day in the sentence. Take the offset from
+  // the match itself.
+  const masked = text.replace(TIME_RANGE_RE, (full: string, ...rest: unknown[]) => {
+    const at = rest[rest.length - 2] as number;
     const both = extractTimes(full);
-    if (both.length === 2) ranges.push({ start: both[0], end: both[1] });
+    if (both.length === 2) ranges.push({ start: both[0], end: both[1], at });
     return " ".repeat(full.length);
   });
-  return { ranges, singles: extractTimes(masked) };
+  // Parse the match directly. Calling extractTimes() in here would reset the
+  // lastIndex of this same global regex and spin forever.
+  const singles: (Token & { at: number })[] = [];
+  let m: RegExpExecArray | null;
+  TIME_SINGLE_RE.lastIndex = 0;
+  while ((m = TIME_SINGLE_RE.exec(masked)) !== null) {
+    const mins = toMinutes(m[1], m[2], m[3]);
+    if (mins !== null) singles.push({ raw: m[0].trim(), norm: hhmm(mins), at: m.index });
+  }
+  return { ranges, singles };
 }
 
 // ── price extraction ────────────────────────────────────────────────────────
@@ -233,14 +247,44 @@ const DAY_NAMES: Record<string, string> = {
   thurs: "thu", thursday: "thu", fri: "fri", friday: "fri", sat: "sat",
   saturday: "sat", sun: "sun", sunday: "sun",
 };
-const DAY_ORDER = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-const DAY_WORD_RE = new RegExp(`\\b(${Object.keys(DAY_NAMES).join("|")})\\b`, "gi");
+// The trailing "s?" is load-bearing: without it "Wednesdays" matched nothing,
+// daysIn() returned empty, and the whole segment skipped the day check. The
+// live model writes plurals unprompted, so every "on Wednesdays" claim was
+// going unchecked.
+const DAY_WORD_RE = new RegExp(`\\b(${Object.keys(DAY_NAMES).join("|")})s?\\b`, "gi");
 // "Mon-Fri", "Monday to Saturday" — too coarse to bind a specific time to, so a
 // segment containing one is skipped rather than guessed at.
 const DAY_RANGE_RE = new RegExp(
   `\\b(${Object.keys(DAY_NAMES).join("|")})\\b[ \\t]*(?:[-–—]|to)[ \\t]*\\b(${Object.keys(DAY_NAMES).join("|")})\\b`,
   "i"
 );
+
+// A day plus a time only constrains the timetable when the sentence is talking
+// about classes at all.
+const CLASS_CONTEXT_RE =
+  /\b(class|classes|session|sessions|train|training|timetable|schedule|runs?|start|starts|kids|pre-?teen|advanced|sparring|all[- ]levels|open|slot)\b/i;
+
+/** Runs of day names joined only by list punctuation — "Tue & Thu", "Tue, Wed and Fri". */
+function dayGroups(seg: string): { days: string[]; start: number; end: number }[] {
+  const hits: { day: string; start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  DAY_WORD_RE.lastIndex = 0;
+  while ((m = DAY_WORD_RE.exec(seg)) !== null) {
+    const day = DAY_NAMES[m[1].toLowerCase()];
+    if (day) hits.push({ day, start: m.index, end: m.index + m[0].length });
+  }
+  const groups: { days: string[]; start: number; end: number }[] = [];
+  for (const h of hits) {
+    const prev = groups[groups.length - 1];
+    if (prev && /^[\s,/&]*(and|or|\+)?[\s,/&]*$/i.test(seg.slice(prev.end, h.start))) {
+      prev.days.push(h.day);
+      prev.end = h.end;
+    } else {
+      groups.push({ days: [h.day], start: h.start, end: h.end });
+    }
+  }
+  return groups;
+}
 
 export type DaySchedule = Map<string, { starts: Set<string>; ends: Set<string>; ranges: Set<string> }>;
 
@@ -269,13 +313,6 @@ export function indexSchedule(facts: string): DaySchedule {
   return out;
 }
 
-function daysIn(seg: string): string[] {
-  const found = new Set<string>();
-  let m: RegExpExecArray | null;
-  DAY_WORD_RE.lastIndex = 0;
-  while ((m = DAY_WORD_RE.exec(seg)) !== null) found.add(DAY_NAMES[m[1].toLowerCase()]);
-  return DAY_ORDER.filter((d) => found.has(d));
-}
 
 /**
  * Every (day, time) the reply asserts must hold for EVERY day named in that
@@ -286,31 +323,70 @@ function daysIn(seg: string): string[] {
 export function checkDayBinding(reply: string, sched: DaySchedule): Token[] {
   const bad: Token[] = [];
   if (sched.size === 0) return bad;
-  for (const seg of reply.split(/[.!?;\n]|\u00b7/)) {
-    if (!seg.trim() || TRUE_NEGATION_RE.test(seg) || DAY_RANGE_RE.test(seg)) continue;
-    const days = daysIn(seg);
-    if (days.length === 0) continue;
+  // Contrastive conjunctions start a new clause and a new subject: in "On
+  // weekdays we start at 7am but Saturday starts at 10am" the 7am belongs to the
+  // unnamed weekdays, not to the Saturday that follows it. Without this split
+  // the nearest-day rule bound 7am to Saturday and blocked a correct reply.
+  for (const seg of reply.split(/[.!?;\n]|\u00b7|\b(?:but|whereas|although|though)\b/i)) {
+    if (!seg || !seg.trim() || TRUE_NEGATION_RE.test(seg) || DAY_RANGE_RE.test(seg)) continue;
+    // Only bind times when the sentence is actually about classes. "I'll get
+    // Coach Jeremy to call you Monday around 6pm" names a day and a time but
+    // asserts nothing about the timetable, and blocking it would escalate a
+    // perfectly good reply.
+    if (!CLASS_CONTEXT_RE.test(seg)) continue;
+    const groups = dayGroups(seg);
+    if (groups.length === 0) continue;
     const { ranges, singles } = extractTimeParts(seg);
     if (ranges.length === 0 && singles.length === 0) continue;
-    // Ranges as UNITS — a merged span fails here even though its halves are real.
+    const endsCue = /\b(end|ends|ending|finish|finishes|finishing|until|till|til|through)\b/i.test(seg);
+
+    // Bind each time to the NEAREST group of day names, not to every day in the
+    // sentence. "Kids are Tue & Thu 4:30-5:15pm, and Sat 10:00-10:45am" is one
+    // segment naming three days; the cross-product asserted 10am on Tuesday and
+    // 4:30pm on Saturday and blocked a factually perfect reply. Twice, on real
+    // model output.
+    // Beyond this many characters the association is a guess, not a claim.
+    // "On weekdays we start at 7am but Saturday starts at 10am" names only
+    // Saturday, and 7am belongs to the unnamed "weekdays" — binding it to the
+    // far-away Saturday blocked a correct reply.
+    const MAX_BIND_DISTANCE = 40;
+    const bind = (at: number): string[] => {
+      if (at < 0) return [];
+      let best: { days: string[]; start: number; end: number } | null = null;
+      let bestDist = Infinity;
+      for (const g of groups) {
+        const d = at < g.start ? g.start - at : at > g.end ? at - g.end : 0;
+        if (d < bestDist) { bestDist = d; best = g; }
+      }
+      return best && bestDist <= MAX_BIND_DISTANCE ? best.days : [];
+    };
+    // A day the sheet lists with no classes (Sunday: "no group classes, PT
+    // only"). A PT time on that day is legitimate and unlisted; a GROUP CLASS
+    // on it is a fabrication.
+    const ptContext = /\b(pt|personal training|one[- ]to[- ]one|1[- ]to[- ]1|private|appointment|arrange)\b/i.test(seg);
+
     for (const r of ranges) {
-      const span = `${r.start.norm}-${r.end.norm}`;
-      for (const d of days) {
+      for (const d of bind(r.at)) {
         const e = sched.get(d);
-        if (e && !e.ranges.has(span)) {
+        if (!e) continue;
+        if (e.ranges.size === 0) {
+          if (!ptContext) bad.push({ raw: `${r.start.raw}-${r.end.raw} on ${d}`, norm: `${r.start.norm}-${r.end.norm}@${d}` });
+          continue;
+        }
+        const span = `${r.start.norm}-${r.end.norm}`;
+        if (!e.ranges.has(span)) {
           bad.push({ raw: `${r.start.raw}-${r.end.raw} on ${d}`, norm: `${span}@${d}` });
         }
       }
     }
-    // A class "at 8:30pm" must START at 8:30pm. On Wednesday 8:30pm is only ever
-    // the END of the 7:30pm class, which is exactly how the live model produced a
-    // Wednesday class that does not exist. An end time is therefore accepted only
-    // when the sentence is actually talking about an ending.
-    const endsCue = /\b(end|ends|ending|finish|finishes|finishing|until|till|til|through)\b/i.test(seg);
     for (const t of singles) {
-      for (const d of days) {
+      for (const d of bind(t.at)) {
         const e = sched.get(d);
         if (!e) continue;
+        if (e.ranges.size === 0) {
+          if (!ptContext) bad.push({ raw: `${t.raw} on ${d}`, norm: `${t.norm}@${d}` });
+          continue;
+        }
         if (e.starts.has(t.norm)) continue;
         if (endsCue && e.ends.has(t.norm)) continue;
         bad.push({ raw: `${t.raw} on ${d}`, norm: `${t.norm}@${d}` });

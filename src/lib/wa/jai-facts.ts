@@ -229,7 +229,9 @@ function jaiFactsClient() {
 // The read sits in front of the webhook's reply budget, so it gets a hard
 // deadline of its own: stale-but-instant beats correct-but-hung, because a hang
 // costs the customer the whole reply.
-const FACTS_TIMEOUT_MS = 1_500;
+// 1.5s tripped on a real Supabase read during e2e and silently served the
+// in-code sheet. Still far inside the webhook budget.
+const FACTS_TIMEOUT_MS = 2_500;
 
 export type JaiFactsRead = {
   content: string;
