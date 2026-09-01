@@ -14,14 +14,14 @@
 // Uses the LIVE Supabase (it must — the fact sheet is the source of truth) with
 // a reserved test number, and deletes its own rows on the way out.
 
-import { createHmac } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFileSync, writeFileSync, appendFileSync, existsSync, unlinkSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
 
 const TEST_NUMBER = "65999000001";        // reserved; never a real customer
 const PORT = 4477;
-const SECRET = "harness-only-not-a-real-secret";
+const SECRET = randomBytes(32).toString("hex");   // per run; never committed
 const LOG = "/tmp/jai-harness-sends.jsonl";
 const BASE = `http://127.0.0.1:${PORT}`;
 
@@ -109,6 +109,9 @@ async function sayOnce(text, stubReply) {
 }
 
 async function wipe() {
+  if (!/^65999000001$/.test(TEST_NUMBER)) {
+    throw new Error(`refusing to wipe a number that is not the reserved test one: ${TEST_NUMBER}`);
+  }
   // The lead row matters as much as the messages: a JOIN_INTENT sets
   // ai_paused=true and the webhook then answers NOTHING for that contact. This
   // delete used to name a "phone" column that does not exist, and the error was
@@ -152,7 +155,7 @@ const HANDOFF = /getting Coach Jeremy|sort this out for you directly/i;
 
 const SERVER_LOG = "/tmp/jai-harness-server.log";
 writeFileSync(SERVER_LOG, "");
-const server = spawn("./node_modules/.bin/next", ["start", "-p", String(PORT)],
+const server = spawn("./node_modules/.bin/next", ["start", "-H", "127.0.0.1", "-p", String(PORT)],
   { env, stdio: ["ignore", "pipe", "pipe"], detached: true });
 const tee = (d) => { try { appendFileSync(SERVER_LOG, d.toString()); } catch {} };
 server.stdout.on("data", tee);
@@ -248,6 +251,7 @@ try {
 
 } finally {
   await wipe();
+  try { if (existsSync(LOG)) unlinkSync(LOG); } catch {}
   try { process.kill(-server.pid, "SIGTERM"); } catch {}
   await sleep(700);
   try { process.kill(-server.pid, "SIGKILL"); } catch {}
