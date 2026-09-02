@@ -140,8 +140,18 @@ async function wipe() {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
     { auth: { persistSession: false } }
   );
-  await pub.from("admin_pending_items").delete().like("link", `%contact=${TEST_NUMBER}`);
-  await pub.from("processed_messages").delete().like("wa_message_id", "wamid.harness.%");
+  // NOTE THE SCHEMAS: admin_pending_items is public, processed_messages is jai.
+  // The first version used the public client for both, so the processed_messages
+  // delete silently removed nothing and left 227 rows behind. Errors are
+  // surfaced now, for the same reason the loop above surfaces its own.
+  const clean = [
+    [pub, "admin_pending_items", "link", `%contact=${TEST_NUMBER}`],
+    [sb, "processed_messages", "wa_message_id", "wamid.harness.%"],
+  ];
+  for (const [client, table, col, pattern] of clean) {
+    const { error } = await client.from(table).delete().like(col, pattern);
+    if (error) throw new Error(`wipe ${table} failed: ${error.message}`);
+  }
 }
 
 async function seedOldThread(botReplies, daysAgo) {

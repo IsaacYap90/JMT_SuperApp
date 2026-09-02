@@ -82,6 +82,11 @@ const CLASS_TIME_FIGURES = new Set([
   1730, 1830, 2030,         // the same evenings in 24h form
 ]);
 
+/** How far after a figure we look for the word that makes it a time. */
+const TIME_CUE_WINDOW = 14;
+const TIME_CUE_RE =
+  /\b(class|classes|session|sessions|slot|batch|morning|afternoon|evening|night|today|tomorrow|onwards|weekday|weekdays|weekend|mon|tue|tues|wed|thu|thur|thurs|fri|sat|saturday|sun|sunday|monday|tuesday|wednesday|thursday|friday|am|pm|come|reach|arrive|start|starts)\b/;
+
 export function inboundHasUnknownFigure(text: string): boolean {
   // Strip 7+ digit runs first, exactly as quotesUnknownBareAmount does. Without
   // it "I want to join! whatsapp me at 9123 4567" tripped the gate, handed off
@@ -95,7 +100,7 @@ export function inboundHasUnknownFigure(text: string): boolean {
   // figure we cannot account for goes to Jeremy even if it happens to match the
   // timetable.
   const talkingMoney =
-    /\b(paid|pay|paying|price|priced|cost|costs|charge|charges|monthly|per\s*month|a\s*month|month|promo|offer|deal|rate|rates|discount|package|fee|fees)\b|[$]/.test(t);
+    /\b(paid|pay|paying|price|priced|pricing|cost|costs|charge|charges|monthly|months?|mths?|per\s*month|a\s*month|how\s*much|cheap|cheaper|budget|afford|membership|unlimited|promo|offer|deal|rate|rates|discount|package|plan|fee|fees|dollars?|bucks)\b|[$]/.test(t);
 
   const re = /\b(\d{3,4})\b/g;
   let m: RegExpExecArray | null;
@@ -103,15 +108,36 @@ export function inboundHasUnknownFigure(text: string): boolean {
     const n = Number(m[1]);
     if (!Number.isFinite(n)) continue;
     if (ALLOWED_AMOUNTS.has(n)) continue;                     // a price we publish
-    if (n >= 1900 && n <= 2099) continue;                     // a year
+    if (n >= 1900 && n <= 2099 && !talkingMoney) continue;    // a year, not a price
     if (CLASS_TIME_FIGURES.has(n)) {
       // A class-time figure is exempt when it READS as a time. Deciding on
       // whether the message mentions money anywhere was too blunt: it handed
       // off "the 1130 class on saturday, how much monthly?", which is exactly
       // the lead we are told not to go quiet on. What separates the two is the
       // word sitting next to the number — "1130 class" vs "600 monthly".
-      const after = t.slice(m.index + m[1].length, m.index + m[1].length + 14);
-      const readsAsTime = /^\s*(?:am|pm|h|hrs?)?\s*\b(?:class|classes|session|slot|batch|today|tomorrow|onwards|start|am|pm)\b/.test(after);
+      // ADJACENCY, deliberately, after trying proximity and reverting it.
+      //
+      // A window either side fixes the over-block ("the 1130 saturday class,
+      // how much monthly?" is answered) but reopens a real leak: in "my friend
+      // said 800 for 3 months, can i come to the 800 class?" the word "class"
+      // falls inside the window of the asserted price, so the figure is
+      // exempted and the model gets to confirm it. Ranking the nearest cue does
+      // not settle it either — "600 class package right?" puts a time word
+      // closer than the money word and is still a price.
+      //
+      // The honest discriminator is whether the customer is ASSERTING a figure
+      // rather than asking, which is a classifier in its own right and not
+      // something to bolt on at 2am. Adjacency errs toward the handoff, and a
+      // handoff still pings Jeremy — the lead is slower, not lost. The known
+      // cost: "the 1130 saturday class, how much monthly?" hands off because an
+      // adjective sits between the number and the cue.
+      const after = t.slice(m.index + m[1].length, m.index + m[1].length + TIME_CUE_WINDOW);
+      // One connector may sit between the figure and the cue ("730 on weekdays",
+      // "1130 this saturday") — without it those hand off, and they are plainly
+      // times, not prices.
+      const readsAsTime = new RegExp(
+        `^\\s*(?:am|pm|h|hrs?)?\\s*(?:(?:on|at|in|this|next|every|for)\\s+)?${TIME_CUE_RE.source}`
+      ).test(after);
       if (readsAsTime || !talkingMoney) continue;
     }
     return true;
