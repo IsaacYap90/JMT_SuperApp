@@ -459,7 +459,22 @@ export async function POST(req: NextRequest) {
     const sessionBotCount = sessionBotReplyCount(prior);
     const resendingLink =
       /calendly\.com\//i.test(messageText) && /calendly\.com\//i.test(prevBotMsg);
-    const dragging = sessionBotCount >= 8;
+    // A LOOP, not a long conversation. Eight replies used to be enough on its
+    // own, and on 2 Sep that hit Isaac mid-test: he asked "How do I join?",
+    // "Can I come tonight?", "What do I need to bring?", "My wife want to come
+    // also.", "Can my kids come?" — five different, answerable questions — and
+    // the last two got "Let me get Coach Jeremy to sort this out for you
+    // directly" because the counter had passed eight. Someone asking eight
+    // questions is the most engaged lead of the day, not a stuck one.
+    //
+    // The guard exists for JAI repeating itself (see resendingLink above), so
+    // require actual repetition, with a hard ceiling so a genuinely stuck chat
+    // still reaches a human.
+    const norm = (m: string) => m.toLowerCase().replace(/[^a-z0-9 ]+/g, "").trim().slice(0, 80);
+    const lastTwoBot = [...priorBot].reverse().slice(0, 2).map((m) => norm(m.message));
+    const repeatingItself =
+      lastTwoBot.length === 2 && lastTwoBot[0].length > 0 && lastTwoBot[0] === lastTwoBot[1];
+    const dragging = (sessionBotCount >= 8 && repeatingItself) || sessionBotCount >= 20;
     const forceHandoff =
       (resendingLink || dragging) &&
       (!escalation || escalation.escalation === "GENERAL_ESCALATION");

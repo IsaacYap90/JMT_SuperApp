@@ -154,7 +154,7 @@ async function wipe() {
   }
 }
 
-async function seedOldThread(botReplies, daysAgo) {
+async function seedOldThread(botReplies, daysAgo, { repeatLast = false } = {}) {
   const rows = [];
   // rows run forward from `base`, so start far enough back that the newest
   // one lands in the past — otherwise "today" seeds sit in the future.
@@ -163,7 +163,9 @@ async function seedOldThread(botReplies, daysAgo) {
     rows.push({
       contact_number: TEST_NUMBER, contact_name: "Harness",
       role: i % 2 ? "assistant" : "user",
-      message: i % 2 ? `old reply ${i}` : `old question ${i}`,
+      message: i % 2
+        ? (repeatLast && i >= botReplies * 2 - 3 ? "same canned reply" : `old reply ${i}`)
+        : `old question ${i}`,
       created_at: new Date(base + i * 60_000).toISOString(),
       ...(i % 2 ? { via: "bot" } : {}),
     });
@@ -227,10 +229,23 @@ try {
 
   // ── 2. The guard must still do its job ────────────────────────────────────
   // Nine replies inside ONE sitting is exactly what the anti-loop guard is for.
+  // A LONG conversation is not a loop. Isaac asked five different answerable
+  // questions on 2 Sep and the last two were handed off because the counter had
+  // passed eight. Someone asking eight questions is the most engaged lead of
+  // the day.
   await wipe();
-  await seedOldThread(9, 0);                        // 9 bot replies, today
-  const looping = await say("and what about thursday?");   // identical to case 1
-  check("nine replies in one sitting still hands off",
+  await seedOldThread(9, 0);                        // 9 DIFFERENT replies, today
+  const busy = await say("and what about thursday?");      // identical to case 1
+  check("nine DIFFERENT replies in one sitting keep getting answered",
+    busy, (r) => (!r ? "no reply at all"
+      : ANTI_LOOP_HANDOFF.test(r) ? "handed off a productive conversation — this is the 2 Sep bug"
+      : null));
+
+  // An actual loop still reaches a human.
+  await wipe();
+  await seedOldThread(9, 0, { repeatLast: true });   // JAI repeating itself
+  const looping = await say("and what about thursday?");
+  check("JAI repeating itself still hands off",
     looping, (r) => (!r ? "no reply at all"
       : ANTI_LOOP_HANDOFF.test(r) ? null
       : BARE_JOIN_HANDOFF.test(r) ? "the JOIN handoff fired, not the anti-loop one — this case proves nothing"
