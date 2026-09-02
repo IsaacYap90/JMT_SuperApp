@@ -326,6 +326,42 @@ try {
       : /i'?ll call you|give you a call|call me on|call us at/i.test(r)
       ? "offered a phone call" : null));
 
+  // ── 2c. The guard must not feed itself ────────────────────────────────────
+  // Shipped 02:20 on 2 Sep and made things worse: once the anti-loop guard had
+  // fired twice, JAI's last two messages were both the handoff line, so
+  // "repeating itself" stayed true and every later question got the same
+  // deflection. Isaac watched three in a row. The guard must not count its own
+  // output as JAI looping.
+  await wipe();
+  {
+    const base = Date.now() - 20 * 60_000;
+    const rows = [];
+    for (let i = 0; i < 16; i++) {
+      rows.push({
+        contact_number: TEST_NUMBER, contact_name: "Harness",
+        role: i % 2 ? "assistant" : "user",
+        message: i % 2 ? `old reply ${i}` : `old question ${i}`,
+        created_at: new Date(base + i * 30_000).toISOString(),
+        ...(i % 2 ? { via: "bot" } : {}),
+      });
+    }
+    // ...ending on two handoffs, exactly as Isaac's thread did.
+    for (let k = 0; k < 2; k++) {
+      rows.push({ contact_number: TEST_NUMBER, contact_name: "Harness", role: "user",
+        message: `another question ${k}`, created_at: new Date(base + (16 + k * 2) * 30_000).toISOString() });
+      rows.push({ contact_number: TEST_NUMBER, contact_name: "Harness", role: "assistant", via: "bot",
+        message: "Let me get Coach Jeremy to sort this out for you directly \ud83d\ude4f He'll reach out to you shortly.",
+        created_at: new Date(base + (17 + k * 2) * 30_000).toISOString() });
+    }
+    const { error } = await sb.from("conversations").insert(rows);
+    if (error) throw new Error(`seed failed: ${error.message}`);
+  }
+  const afterHandoffs = await say("can my wife come along?");
+  check("two handoffs in a row do not make every later question a handoff",
+    afterHandoffs, (r) => (!r ? "no reply at all"
+      : ANTI_LOOP_HANDOFF.test(r) ? "the guard is feeding itself — this is the 2 Sep 02:47 bug"
+      : null));
+
   // ── 3c. The handoff must never be said twice ──────────────────────────────
   // This reached a real customer on 2 Sep. Every test was green because the
   // stubbed model returns a helpful draft — but the FACT SHEET still told the

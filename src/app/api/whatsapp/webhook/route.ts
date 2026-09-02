@@ -30,6 +30,11 @@ import {
   PAUSED_ADULT_TRIAL_TEXT,
 } from "@/lib/wa/join-intent";
 import { sessionBotReplyCount } from "@/lib/wa/session-window";
+
+/** What the anti-loop guard says. Named because the guard must be able to
+ *  recognise its OWN output and not mistake it for JAI repeating itself. */
+const ANTI_LOOP_HANDOFF_TEXT =
+  "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly.";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -470,18 +475,26 @@ export async function POST(req: NextRequest) {
     // The guard exists for JAI repeating itself (see resendingLink above), so
     // require actual repetition, with a hard ceiling so a genuinely stuck chat
     // still reaches a human.
+    // THE GUARD MUST NOT COUNT ITS OWN OUTPUT. First version of this shipped at
+    // 02:20 on 2 Sep and made things worse: once it had fired twice, JAI's last
+    // two messages were both the handoff line, so "repeating itself" was true
+    // forever and every later question got the same deflection. Isaac watched
+    // it happen three times in a row. Ignore the handoff when judging
+    // repetition — that is the guard looping, not JAI.
     const norm = (m: string) => m.toLowerCase().replace(/[^a-z0-9 ]+/g, "").trim().slice(0, 80);
-    const lastTwoBot = [...priorBot].reverse().slice(0, 2).map((m) => norm(m.message));
-    const repeatingItself =
-      lastTwoBot.length === 2 && lastTwoBot[0].length > 0 && lastTwoBot[0] === lastTwoBot[1];
+    const ownOutput = norm(ANTI_LOOP_HANDOFF_TEXT);
+    const lastTwoBot = [...priorBot]
+      .reverse()
+      .map((m) => norm(m.message))
+      .filter((m) => m.length > 0 && m !== ownOutput)
+      .slice(0, 2);
+    const repeatingItself = lastTwoBot.length === 2 && lastTwoBot[0] === lastTwoBot[1];
     const dragging = (sessionBotCount >= 8 && repeatingItself) || sessionBotCount >= 20;
     const forceHandoff =
       (resendingLink || dragging) &&
       (!escalation || escalation.escalation === "GENERAL_ESCALATION");
 
-    let outText = forceHandoff
-      ? "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly."
-      : messageText;
+    let outText = forceHandoff ? ANTI_LOOP_HANDOFF_TEXT : messageText;
     let outQuick = forceHandoff ? [] : quickReplies;
     // A buy signal outranks the anti-loop guard. Before the split this was
     // structurally impossible — a join hit never reached here — so forceHandoff
