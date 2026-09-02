@@ -1,5 +1,7 @@
 {
-  "regions": ["sin1"],
+  "regions": [
+    "sin1"
+  ],
   "crons": [
     {
       "path": "/api/cron/jmt-am-briefing",
@@ -36,6 +38,10 @@
     {
       "path": "/api/cron/jai-canary",
       "schedule": "15 1 * * *"
+    },
+    {
+      "path": "/api/cron/lead-followup",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

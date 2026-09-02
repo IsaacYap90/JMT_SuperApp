@@ -90,7 +90,15 @@ export function decideNudge(i: NudgeInput): NudgeDecision {
 }
 
 // ── Message drafts ───────────────────────────────────────────────────────────
-// DRAFTS — written 2026-09-02, NOT approved. Isaac signs off anything a
+// APPROVED by Isaac verbatim, 2026-09-02 ("4. use them."). Do not reword
+// without asking him — these go out in his name. Written 2026-09-02.
+//
+// The "Already booked? Ignore this" line in nudge 2 is load-bearing, not
+// politeness: public.bookings and public.payments are EMPTY, drop-in purchases
+// happen on the marketing site and never reach this database, so we cannot tell
+// whether the person already paid. Until a webhook from the booking site exists,
+// the message has to read sensibly to someone who has.
+// (original note: DRAFTS — Isaac signs off anything a
 // customer reads. Both are deliberately safe for someone who has already booked
 // on the website: nothing in this database records a drop-in purchase, so the
 // cron cannot know.
