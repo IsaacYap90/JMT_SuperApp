@@ -1,69 +1,83 @@
-// Silent-lead follow-up.
+// Silent-lead follow-up — rebuilt 2026-09-02 for the $42 DROP-IN path.
 //
-// ⚠ PAUSED 2026-07-30 on Isaac's instruction — NOT scheduled, does not fire.
-// Why: adult trials are paused, and the nudge-1 fallback booking link below
-// ("https://calendly.com/jaimuaythaisg/muay-thai-trial-class", used when no
-// calendly URL is found in the lead's history) is a DEAD Calendly event — so
-// this cron could WhatsApp an adult lead a broken booking link.
-// How it is off: its entry was removed from `crons` in vercel.json. The route
-// and all its logic are intact and still callable by an authorized cron caller.
-// To RE-ENABLE (one step): add back to vercel.json ->
+// WHAT WAS BROKEN
+// The previous version was bolted to the adult free-trial Calendly event:
+//   • the webhook only armed the funnel when the bot's reply matched
+//     /calendly\.com\//, so a lead sent the drop-in link was never armed;
+//   • nudge 1 fell back to a hardcoded, now-dead Calendly URL;
+//   • the route was removed from vercel.json on 2026-07-30, so none of it ran.
+// Nothing has chased a silent lead since 27 July. 22 drop-in links have gone
+// out since; 6 of those leads went quiet and were never messaged again.
+//
+// WHAT THIS DOES
+// Arms off the drop-in booking link in the conversation history itself (no
+// webhook change needed, and it cannot be disarmed by a link we stopped
+// sending). Nudge 1 at +1h, nudge 2 at +22h — see NUDGE2_AFTER_H in
+// followup-dropin.ts for why 22 and not 24 (Meta's customer-service window).
+// Two nudges per link-send, ever, then silence.
+//
+// Idempotency: jai.leads.silent_nudge1_sent_at / silent_nudge2_sent_at. Those
+// two columns existed but were never written by any code (0 rows) — the old
+// funnel used followup1_sent_at / followup2_sent_at, which the webhook still
+// clears on inbound. Keeping the pairs separate means this cron and the
+// Calendly-era webhook logic cannot tread on each other. A stamp older than the
+// link belongs to a previous arming, so a returning lead re-arms with no clear
+// step and a double-run lands on "done" instead of sending twice.
+//
+// Safety: never nudge someone who replied after the link, is ai_paused (Jeremy
+// has the chat), is a member, or has an upcoming trial booking. Never during
+// quiet hours (21:00–09:00 SGT).
+//
+// NOT SCHEDULED YET. To enable, add to vercel.json:
 //   { "path": "/api/cron/lead-followup", "schedule": "*/30 * * * *" }
-// Before re-enabling, confirm the fallback Calendly link on line ~131 is live.
+// Do that only once Isaac has approved the two message drafts.
 //
-// Behaviour when running:
-//
-// When the bot sends a booking link and the lead goes quiet, nudge exactly
-// twice (Jeremy-approved 2026-07-02), then go cold:
-//   Nudge 1: ≥1h after the link, no reply, no booking.
-//   Nudge 2: ≥19h after nudge 1 — final, low pressure. Only sent while the
-//            lead's last message is <23h old (inside WhatsApp's 24h reply
-//            window); if the window has closed, the lead is marked cold
-//            silently and just shows in the WA INBOX.
-// Safety: never nudge someone with a booking (some book without tapping
-// Done), never during quiet hours (21:00–09:00 SGT), never members, never
-// chats Jeremy has taken over (ai_paused).
+// ?dry=1 — plan the run and return it, sending nothing and writing nothing.
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createClient as createSbClient } from "@supabase/supabase-js";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { firstNameFrom } from "@/lib/wa/jai-reply";
-import { sendQuickReplies } from "@/lib/wa/jai-send";
+import { sendText } from "@/lib/wa/jai-send";
 import { findBookingsByPhone } from "@/lib/wa/trial-verify";
+import {
+  DROPIN_BOOKING_URL,
+  decideNudge,
+  dropinNudge1,
+  dropinNudge2,
+} from "@/lib/wa/followup-dropin";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const HOUR = 3600e3;
+// Only links recent enough to still be inside the sequence. Nudge 2 is due at
+// +22h and given up on at +30h, so three days is generous cover for a cron
+// outage without dragging the whole history in.
+const LOOKBACK_MS = 3 * 24 * 3600e3;
 
-function nudge1(first: string, link: string): string {
-  return (
-    `Hey${first ? ` ${first}` : ""}! Still saving you a spot 🥊 Want me to hold one for this week?\n\n` +
-    `Booking takes 1 min: ${link}\n\n` +
-    `Rather chat first? Just reply here — happy to help.`
-  );
-}
-
-function nudge2(first: string): string {
-  return (
-    `Last check${first ? `, ${first}` : ""} — still keen to try a class? 🙂\n\n` +
-    `If now's not the right time, no stress at all. Reply anytime and I'll sort you out 🙏`
-  );
-}
+type Plan = {
+  to: string;
+  stage: string;
+  reason?: string;
+  sent?: boolean;
+};
 
 export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const dry = req.nextUrl.searchParams.get("dry") === "1";
+
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json({ error: "Supabase env vars missing" }, { status: 500 });
   }
-  if (!process.env.WA_PHONE_NUMBER_ID || !process.env.WA_ACCESS_TOKEN) {
+  if (!dry && !(process.env.WA_PHONE_NUMBER_ID && process.env.WA_ACCESS_TOKEN)) {
     return NextResponse.json({ error: "WA env vars missing" }, { status: 500 });
   }
 
-  // Quiet hours: 21:00–09:00 SGT — a nudge due at 11pm goes out after 9am.
+  // Quiet hours: 21:00–09:00 SGT. A nudge due at 11pm goes out after 9am — or,
+  // if that pushes it outside the 24h window, not at all (decideNudge → cold).
   const sg = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Singapore" }));
   const hour = sg.getHours();
   if (hour < 9 || hour >= 21) {
@@ -75,34 +89,62 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+  const now = Date.now();
+
+  // Arm: the most recent drop-in booking link we sent each contact.
+  const { data: linkRows } = await jai
+    .from("conversations")
+    .select("contact_number, created_at")
+    .eq("role", "assistant")
+    .ilike("message", `%${DROPIN_BOOKING_URL}%`)
+    .gte("created_at", new Date(now - LOOKBACK_MS).toISOString())
+    .order("created_at", { ascending: false });
+
+  const linkAtByContact = new Map<string, number>();
+  for (const r of linkRows || []) {
+    // Rows arrive newest-first, so the first one per contact is the latest.
+    if (!linkAtByContact.has(r.contact_number)) {
+      linkAtByContact.set(r.contact_number, new Date(r.created_at).getTime());
+    }
+  }
+  const numbers = Array.from(linkAtByContact.keys());
+  if (numbers.length === 0) {
+    return NextResponse.json({ ok: true, dry, candidates: 0, plans: [] });
+  }
 
   const { data: leads } = await jai
     .from("leads")
-    .select("contact_number, contact_name, booking_link_sent_at, followup1_sent_at, is_member, ai_paused")
-    .not("booking_link_sent_at", "is", null)
-    .is("followup2_sent_at", null)
-    .eq("ai_paused", false);
+    .select(
+      "contact_number, contact_name, is_member, ai_paused, silent_nudge1_sent_at, silent_nudge2_sent_at"
+    )
+    .in("contact_number", numbers);
+  const leadByNumber = new Map((leads || []).map((l) => [l.contact_number as string, l]));
 
-  const now = Date.now();
+  const plans: Plan[] = [];
   let nudged1 = 0;
   let nudged2 = 0;
-  let cleared = 0;
-  let wentCold = 0;
+  let cold = 0;
+  let failed = 0;
 
-  for (const lead of leads || []) {
-    if (lead.is_member) continue;
-    const to = lead.contact_number as string;
-    const armedAt = new Date(lead.booking_link_sent_at as string).getTime();
-
-    // Booked already (possibly without tapping Done) → funnel done, clear.
-    const booked = await findBookingsByPhone(pub, to);
-    if (booked.length > 0) {
-      await jai.from("leads").update({ booking_link_sent_at: null, followup1_sent_at: null }).eq("contact_number", to);
-      cleared++;
+  for (const to of numbers) {
+    const linkAt = linkAtByContact.get(to)!;
+    const lead = leadByNumber.get(to);
+    // No lead row means no way to check ai_paused or is_member — don't guess.
+    if (!lead) {
+      plans.push({ to, stage: "skip", reason: "no lead row" });
+      continue;
+    }
+    if (lead.is_member) {
+      plans.push({ to, stage: "skip", reason: "member" });
+      continue;
+    }
+    if (lead.ai_paused) {
+      plans.push({ to, stage: "skip", reason: "ai_paused (Jeremy has the chat)" });
       continue;
     }
 
-    // Safety net: any reply after the link (webhook also clears on inbound).
+    // Their last inbound: both the "have they replied since?" test and the
+    // clock Meta's 24h customer-service window actually runs on.
     const { data: lastUserRows } = await jai
       .from("conversations")
       .select("created_at")
@@ -111,67 +153,96 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(1);
     const lastUserAt = lastUserRows?.[0] ? new Date(lastUserRows[0].created_at).getTime() : 0;
-    if (lastUserAt > armedAt) {
-      await jai.from("leads").update({ booking_link_sent_at: null, followup1_sent_at: null }).eq("contact_number", to);
-      cleared++;
+
+    const decision = decideNudge({
+      now,
+      linkAt,
+      lastUserAt,
+      nudge1At: lead.silent_nudge1_sent_at ? new Date(lead.silent_nudge1_sent_at).getTime() : null,
+      nudge2At: lead.silent_nudge2_sent_at ? new Date(lead.silent_nudge2_sent_at).getTime() : null,
+    });
+
+    if (decision.stage === "wait" || decision.stage === "done") {
+      plans.push({ to, stage: decision.stage, reason: decision.reason });
+      continue;
+    }
+
+    // A trial booking (kids trials still run on Calendly) means the funnel is
+    // finished. Note: a $42 drop-in bought on the website is NOT recorded in
+    // this database at all, so it cannot be checked — which is why both drafts
+    // read safely for someone who has already booked.
+    const booked = await findBookingsByPhone(pub, to);
+    if (booked.length > 0) {
+      plans.push({ to, stage: "skip", reason: "has a booking" });
+      continue;
+    }
+
+    if (decision.stage === "cold") {
+      // Stamp nudge 2 so the sequence is closed and no future run retries.
+      // Nothing is sent — the lead simply shows in the WA INBOX for Jeremy.
+      if (!dry) {
+        await jai
+          .from("leads")
+          .update({ silent_nudge2_sent_at: new Date().toISOString() })
+          .eq("contact_number", to);
+      }
+      cold++;
+      plans.push({ to, stage: "cold", reason: decision.reason });
       continue;
     }
 
     const first = firstNameFrom(lead.contact_name);
+    const isFirst = decision.stage === "nudge1";
+    const text = isFirst ? dropinNudge1(first) : dropinNudge2(first);
 
-    if (!lead.followup1_sent_at) {
-      if (now - armedAt < 1 * HOUR) continue; // not due yet
-      // Reuse the exact booking link the bot sent them.
-      const { data: linkRows } = await jai
-        .from("conversations")
-        .select("message")
-        .eq("contact_number", to)
-        .eq("role", "assistant")
-        .ilike("message", "%calendly.com%")
-        .order("created_at", { ascending: false })
-        .limit(1);
-      const link =
-        linkRows?.[0]?.message.match(/https:\/\/calendly\.com\/\S+/)?.[0] ||
-        "https://calendly.com/jaimuaythaisg/muay-thai-trial-class";
-      const text = nudge1(first, link);
-      const ok = await sendQuickReplies(to, `*Jai*\n${text}`, ["Done"]);
-      if (ok) {
-        await jai.from("conversations").insert({
-          contact_number: to,
-          contact_name: lead.contact_name,
-          role: "assistant",
-          message: text,
-          via: "bot",
-        });
-        await jai.from("leads").update({ followup1_sent_at: new Date().toISOString() }).eq("contact_number", to);
-        nudged1++;
-      }
+    if (dry) {
+      plans.push({ to, stage: decision.stage, reason: "dry run — not sent" });
       continue;
     }
 
-    // Nudge 2: ≥19h after nudge 1, only inside the 24h reply window.
-    const f1At = new Date(lead.followup1_sent_at as string).getTime();
-    if (now - f1At < 19 * HOUR) continue;
-    if (lastUserAt && now - lastUserAt < 23 * HOUR) {
-      const text = nudge2(first);
-      const ok = await sendQuickReplies(to, `*Jai*\n${text}`, ["Done"]);
-      if (ok) {
-        await jai.from("conversations").insert({
-          contact_number: to,
-          contact_name: lead.contact_name,
-          role: "assistant",
-          message: text,
-          via: "bot",
-        });
-        await jai.from("leads").update({ followup2_sent_at: new Date().toISOString() }).eq("contact_number", to);
-        nudged2++;
-        continue;
-      }
+    // Freeform, not a template: both nudges are inside the customer-service
+    // window by construction (decideNudge refuses to send outside it).
+    const ok = await sendText(to, `*Jai*\n${text}`);
+    if (!ok) {
+      // sendText already logged the Meta error. Do NOT stamp — a failed send
+      // must not burn one of the two nudges; the next run retries while the
+      // window is still open, and closes the sequence when it isn't.
+      failed++;
+      plans.push({ to, stage: decision.stage, sent: false, reason: "send failed" });
+      continue;
     }
-    // Window closed (or send failed) → mark cold quietly; visible in WA INBOX.
-    await jai.from("leads").update({ followup2_sent_at: new Date().toISOString() }).eq("contact_number", to);
-    wentCold++;
+
+    // Mirror into the WA INBOX thread. Never let a mirror failure lose the
+    // stamp — an unstamped successful send is a double-send next run.
+    try {
+      await jai.from("conversations").insert({
+        contact_number: to,
+        contact_name: lead.contact_name,
+        role: "assistant",
+        message: text,
+        via: "bot",
+      });
+    } catch (e) {
+      console.error("[lead-followup] WA INBOX mirror failed", e);
+    }
+    await jai
+      .from("leads")
+      .update({ [isFirst ? "silent_nudge1_sent_at" : "silent_nudge2_sent_at"]: new Date().toISOString() })
+      .eq("contact_number", to);
+
+    if (isFirst) nudged1++;
+    else nudged2++;
+    plans.push({ to, stage: decision.stage, sent: true });
   }
 
-  return NextResponse.json({ ok: true, candidates: (leads || []).length, nudged1, nudged2, cleared, wentCold });
+  return NextResponse.json({
+    ok: true,
+    dry,
+    candidates: numbers.length,
+    nudged1,
+    nudged2,
+    cold,
+    failed,
+    plans,
+  });
 }
