@@ -99,10 +99,13 @@ export async function fetchAllDMs(): Promise<IngestedDM[]> {
 
 // Send an approved reply into a conversation. Both FB + IG use the Page's
 // /messages edge with the recipient's PSID/IGSID. Subject to the 24h window.
+// `code` is Meta's numeric error code (10 / 100 / 190 / 551 / 613 …) — added so
+// the Instagram webhook can tell a missing permission apart from a closed 24h
+// window instead of logging a bare `false`. Existing callers read only ok/error.
 export async function postDmReply(
   recipientId: string,
   message: string
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; code?: number }> {
   const body = JSON.stringify({
     recipient: { id: recipientId },
     messaging_type: "RESPONSE",
@@ -115,7 +118,11 @@ export async function postDmReply(
     );
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data?.error) {
-      return { ok: false, error: data?.error?.message || `HTTP ${res.status}` };
+      return {
+        ok: false,
+        error: data?.error?.message || `HTTP ${res.status}`,
+        code: typeof data?.error?.code === "number" ? data.error.code : undefined,
+      };
     }
     return { ok: true };
   } catch (err) {
