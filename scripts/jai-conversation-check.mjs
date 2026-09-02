@@ -33,7 +33,14 @@ const env = { ...process.env,
   WA_PHONE_NUMBER_ID: "harness", WA_ACCESS_TOKEN: "harness",
   VERCEL: "", PORT: String(PORT),
 };
-delete env.TELEGRAM_BOT_TOKEN;   // nothing in a test run should reach Telegram
+// Nothing in a test run may reach Telegram. The var that matters is
+// JMT_TELEGRAM_BOT_TOKEN — every path in src/lib/telegram-alert.ts reads that
+// one, and deleting only TELEGRAM_BOT_TOKEN was a no-op that happened to be
+// harmless solely because the real token is absent from .env.local. After a
+// `vercel env pull` this harness would have DMed the real master_admins about a
+// customer called "Harness". Found by the /predeploy security lane.
+delete env.JMT_TELEGRAM_BOT_TOKEN;
+delete env.TELEGRAM_BOT_TOKEN;
 delete env.TELEGRAM_CHAT_ID;
 
 const sb = createClient(

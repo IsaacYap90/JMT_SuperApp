@@ -418,13 +418,26 @@ export async function POST(req: NextRequest) {
     // bins a reply quoting a figure outside the rate card; and Jeremy is still
     // pinged with JOIN_INTENT either way. What changes is that the customer now
     // leaves with the standard rate in hand instead of silence.
-    const { messageText, quickReplies, escalation, member } = await generateReply(
-      history,
-      isNewContact,
-      contactName,
-      lead?.is_member ?? false,
-      contactContext
-    );
+    // A promo ask is answered by the canned handoff, so there is nothing for the
+    // model to contribute — don't call it. Hoisting this above the branch cost
+    // 1-2 provider calls per promo ask and, worse, made "a promo ask never
+    // reaches the model" untrue in the one place someone would check.
+    const answerableJoin = joinHit === "wants_to_join";
+    const promoHandoff = !!joinHit && !answerableJoin;
+    const { messageText, quickReplies, escalation, member } = promoHandoff
+      ? {
+          messageText: JOIN_HANDOFF_TEXT,
+          quickReplies: [] as string[],
+          escalation: null,
+          member: false,
+        }
+      : await generateReply(
+          history,
+          isNewContact,
+          contactName,
+          lead?.is_member ?? false,
+          contactContext
+        );
 
     // ── Deterministic anti-loop guard ──────────────────────────────────────
     // LLMs ignore "don't repeat" under pressure, so we backstop it in code.
@@ -480,9 +493,7 @@ export async function POST(req: NextRequest) {
     // if promo_ask / quoted_promo_price never reach the model. So they keep the
     // whole-message handoff. wants_to_join — a rate question, a "how do I
     // start" — is answered, which is what Isaac asked for.
-    const answerableJoin = joinHit === "wants_to_join";
-    if (joinHit && !answerableJoin) {
-      outText = JOIN_HANDOFF_TEXT;
+    if (promoHandoff) {
       outQuick = [];
     } else if (answerableJoin && !forceHandoff) {
       // A model-authored button is text nobody guards — hasDisallowedPrice only
@@ -527,7 +538,7 @@ export async function POST(req: NextRequest) {
     // both pause — JAI must not be pressed into guessing a figure it does not
     // have while Jeremy is closing — and an answered "how do I join" does not.
     // That is the case that was muting the warmest leads for good.
-    const pauseAi = priceLeak || (!!joinHit && !answerableJoin);
+    const pauseAi = priceLeak || promoHandoff;
 
     // ── Dead adult-trial-link guard (last line of defence) ─────────────────
     // The adult trial Calendly link was switched OFF on 2026-07-30 and is DEAD —
