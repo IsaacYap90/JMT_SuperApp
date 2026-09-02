@@ -114,25 +114,46 @@ export async function findBookingsByPhone(
 }
 
 // Second chance: the customer told us the name or number they booked with.
+//
+// SECURITY (2026-09-02): this used to filter EVERY upcoming booking by the
+// attacker-supplied hint alone, with no tie to the sender — any WhatsApp number
+// could tap Done, answer with a 3-letter name or any 7-digit number, and get a
+// stranger's name, class, date and time read back to them by confirmationText.
+// The hint may only CORROBORATE the sender, never replace them:
+//   • phone form → the number they name must BE their own WhatsApp number;
+//   • name  form → the booking's own phone must already match the sender
+//     (the real case this exists for: booked under a kid's name, parent's phone).
+// Anything else returns nothing and falls through to stillNotFoundText(), which
+// already pages Jeremy — a human still picks it up. Deliberately capped at ONE
+// booking: the "I also see:" list must never leak a second person's row.
 export async function findBookingsByHint(
   db: SupabaseClient,
+  waFrom: string,
   hint: string
 ): Promise<VerifiedBooking[]> {
-  const digits = hint.replace(/\D/g, "");
+  const sender = tail8(waFrom);
+  if (sender.length < 8) return [];
   const rows = await upcomingBooked(db);
+  // The only rows this function may ever return: bookings already tied to the
+  // sender's own number.
+  const own = rows.filter(
+    (r) => r.phone && !r.phone.includes("@") && tail8(r.phone) === sender
+  );
+  const digits = hint.replace(/\D/g, "");
   let matches: BookingRow[];
   if (digits.length >= 7) {
-    const t = digits.slice(-8);
-    matches = rows.filter((r) => r.phone && tail8(r.phone) === t);
+    matches = digits.slice(-8) === sender ? own : [];
   } else {
     const needle = hint.trim().toLowerCase();
-    matches = rows.filter(
-      (r) =>
-        needle.length >= 3 &&
-        (r.name.toLowerCase().includes(needle) || needle.includes(r.name.toLowerCase()))
-    );
+    matches =
+      needle.length >= 3
+        ? own.filter(
+            (r) =>
+              r.name.toLowerCase().includes(needle) || needle.includes(r.name.toLowerCase())
+          )
+        : [];
   }
-  return withClassNames(db, matches);
+  return withClassNames(db, matches.slice(0, 1));
 }
 
 export function confirmationText(bookings: VerifiedBooking[]): string {

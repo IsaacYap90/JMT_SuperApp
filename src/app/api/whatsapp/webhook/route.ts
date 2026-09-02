@@ -30,6 +30,7 @@ import {
   PAUSED_ADULT_TRIAL_TEXT,
 } from "@/lib/wa/join-intent";
 import { sessionBotReplyCount } from "@/lib/wa/session-window";
+import { pauseIsStale } from "@/lib/wa/pause-stale";
 
 /** What the anti-loop guard says. Named because the guard must be able to
  *  recognise its OWN output and not mistake it for JAI repeating itself. */
@@ -182,6 +183,29 @@ export async function POST(req: NextRequest) {
       .eq("contact_number", from)
       .maybeSingle();
 
+    // A pause is a HANDOFF, not a permanent mute. Nothing has ever cleared
+    // ai_paused, so 28 of 83 leads were silently muted for good (2026-09-02).
+    // If no human has replied in this thread for 24h Jeremy is not on it, so
+    // JAI takes the chat back and answers normally from here down. If he
+    // replied inside 24h the chat stays his. pauseIsStale fails closed.
+    let paused = lead?.ai_paused === true;
+    if (paused && (await pauseIsStale(sb, from))) {
+      const { error: resumeErr } = await sb
+        .from("leads")
+        .update({ ai_paused: false })
+        .eq("contact_number", from);
+      if (resumeErr) {
+        // Could not clear the flag — stay quiet rather than reply while the
+        // inbox still shows the chat as Jeremy's.
+        console.error("[jai-webhook] auto-resume update failed, staying paused", resumeErr);
+      } else {
+        paused = false;
+        console.log(
+          `[jai-webhook] auto-resumed ai_paused for +${from} — no human reply in 24h`
+        );
+      }
+    }
+
     // Ping the master_admin(s) on Telegram at the start of each conversation
     // burst (first inbound after 30+ quiet minutes) so WA INBOX messages never
     // have to be discovered by opening the app. Runs for paused chats too —
@@ -200,7 +224,7 @@ export async function POST(req: NextRequest) {
       if (quietMin > 30) {
         const who = contactName ? `${contactName} (+${from})` : `+${from}`;
         const preview = text.length > 120 ? text.slice(0, 117) + "..." : text;
-        const status = lead?.ai_paused
+        const status = paused
           ? "JAI is off for this chat - it's waiting for you."
           : isNewContact
             ? "New enquiry - JAI is replying."
@@ -226,9 +250,10 @@ export async function POST(req: NextRequest) {
       console.error("[jai-webhook] wa-inbox notify failed", e);
     }
 
-    if (lead?.ai_paused) {
+    if (paused) {
       // Handling is complete: logged + intentional silence (Jeremy owns this
-      // chat). No reply is owed, so it's safe to mark handled and dedup retries.
+      // chat and replied within the last 24h). No reply is owed, so it's safe
+      // to mark handled and dedup retries.
       await markHandled();
       return NextResponse.json({ ok: true });
     }
@@ -302,7 +327,7 @@ export async function POST(req: NextRequest) {
       if (!looksLikeHint) {
         // fall through to the normal AI flow below
       } else {
-      const bookings = await findBookingsByHint(pub, text);
+      const bookings = await findBookingsByHint(pub, from, text);
       if (bookings.length > 0) {
         await reply(confirmationText(bookings));
         const b = bookings[0];

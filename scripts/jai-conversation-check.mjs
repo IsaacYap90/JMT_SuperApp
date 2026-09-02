@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync, appendFileSync, existsSync, unlinkSync } f
 import { createClient } from "@supabase/supabase-js";
 
 const TEST_NUMBER = "65999000001";        // reserved; never a real customer
+const OTHER_NUMBER = "65999000002";       // a DIFFERENT reserved number = "someone else"
 const PORT = 4477;
 const SECRET = randomBytes(32).toString("hex");   // per run; never committed
 const LOG = "/tmp/jai-harness-sends.jsonl";
@@ -47,6 +48,12 @@ const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   { db: { schema: "jai" }, auth: { persistSession: false } }
+);
+
+const pub = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY,
+  { auth: { persistSession: false } }
 );
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -79,18 +86,21 @@ function payload(text) {
   });
 }
 
-/** @param stubReply what the stubbed model should draft, so the guards have something real to act on */
-async function say(text, stubReply) {
+/** @param stubReply what the stubbed model should draft, so the guards have something real to act on
+ *  @param opts.maxWaitMs how long to wait for a first reply. Only lower it when
+ *         the EXPECTED outcome is silence — a short budget on a case that should
+ *         reply turns a real regression into a flake. */
+async function say(text, stubReply, opts = {}) {
   writeFileSync(STUB, stubReply ? JSON.stringify({ message: stubReply }) : "");
   try {
-    return await sayOnce(text);
+    return await sayOnce(text, opts.maxWaitMs ?? 60000);
   } catch (err) {
     console.log("\n--- server log ---\n" + readFileSync(SERVER_LOG, "utf8").slice(-2000));
     throw err;
   }
 }
 
-async function sayOnce(text) {
+async function sayOnce(text, maxWaitMs = 60000) {
   const before = replies().length;
   const raw = payload(text);
   const res = await fetch(`${BASE}/api/whatsapp/webhook`, {
@@ -104,7 +114,7 @@ async function sayOnce(text) {
   if (!res.ok) throw new Error(`webhook returned ${res.status}`);
   const count = () => replies().length;
   let seen = before;
-  for (let i = 0; i < 240; i++) {          // up to 60s for the first reply
+  for (let i = 0; i < Math.ceil(maxWaitMs / 250); i++) {   // wait for the first reply
     const n = count();
     if (n > before) { seen = n; break; }
     await sleep(250);
@@ -135,11 +145,6 @@ async function wipe() {
   // left every run's escalations sitting on Jeremy's real board as open,
   // priority:high leads from a customer called "Harness". Found by the
   // /predeploy security lane.
-  const pub = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
-    { auth: { persistSession: false } }
-  );
   // NOTE THE SCHEMAS: admin_pending_items is public, processed_messages is jai.
   // The first version used the public client for both, so the processed_messages
   // delete silently removed nothing and left 227 rows behind. Errors are
@@ -152,7 +157,59 @@ async function wipe() {
     const { error } = await client.from(table).delete().like(col, pattern);
     if (error) throw new Error(`wipe ${table} failed: ${error.message}`);
   }
+  // Trial bookings are PUBLIC schema and show on Jeremy's Trial Management
+  // board. Seeded rows must never outlive the run. Keyed on the two reserved
+  // numbers only — never on the name, which a real customer could share.
+  {
+    const { error } = await pub
+      .from("trial_bookings")
+      .delete()
+      .in("phone", [TEST_NUMBER, OTHER_NUMBER]);
+    if (error) throw new Error(`wipe trial_bookings failed: ${error.message}`);
+  }
 }
+
+/**
+ * Seed one upcoming trial booking. Dated +30 days ON PURPOSE: the live
+ * trial-reminder crons read this same table and fire on a 24h / 1h window, so a
+ * booking for today or tomorrow could make PRODUCTION message a fake number
+ * mid-run. Far-future is still "upcoming" to trial-verify and invisible to them.
+ */
+async function seedBooking(name, phone) {
+  const { data: cls, error: clsErr } = await pub.from("classes").select("id").limit(1);
+  if (clsErr || !cls?.length) throw new Error(`no class to seed against: ${clsErr?.message}`);
+  const when = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const { error } = await pub.from("trial_bookings").insert({
+    name, phone, programme: "Harness", class_id: cls[0].id,
+    booking_date: when, time_slot: "07:00", status: "booked", source: "manual",
+  });
+  if (error) throw new Error(`seed booking failed: ${error.message}`);
+}
+
+/** Put the contact in the state Jeremy leaves it in: paused, with the last
+ *  assistant message written BY A HUMAN from the inbox `hoursAgo` ago. */
+async function seedPausedByHuman(hoursAgo) {
+  const t = (h) => new Date(Date.now() - h * 60 * 60 * 1000).toISOString();
+  const { error: cErr } = await sb.from("conversations").insert([
+    { contact_number: TEST_NUMBER, contact_name: "Harness", role: "user",
+      message: "i want to sign up", created_at: t(hoursAgo + 1) },
+    { contact_number: TEST_NUMBER, contact_name: "Harness", role: "assistant", via: "human",
+      message: "Hi! Jeremy here, let me sort this out for you.", created_at: t(hoursAgo) },
+  ]);
+  if (cErr) throw new Error(`seed paused thread failed: ${cErr.message}`);
+  const { error: lErr } = await sb.from("leads").upsert(
+    { contact_number: TEST_NUMBER, contact_name: "Harness", ai_paused: true },
+    { onConflict: "contact_number" }
+  );
+  if (lErr) throw new Error(`seed pause flag failed: ${lErr.message}`);
+}
+
+const aiPaused = async () => {
+  const { data, error } = await sb.from("leads").select("ai_paused")
+    .eq("contact_number", TEST_NUMBER).maybeSingle();
+  if (error) throw new Error(`could not read ai_paused back: ${error.message}`);
+  return data?.ai_paused === true;
+};
 
 async function seedOldThread(botReplies, daysAgo, { repeatLast = false } = {}) {
   const rows = [];
@@ -444,9 +501,73 @@ try {
     console.log("FAIL  JAI went silent after a join question even though ai_paused is false");
   } else {
     console.log("ok    a join question pings Jeremy WITHOUT muting JAI");
-    console.log("      note: Jeremy taking a chat over from the inbox still sets ai_paused,");
-    console.log("      and 28 of 83 leads were still stuck on it as of 1 Sep (ISA-52)");
+    console.log("      note: Jeremy taking a chat over from the inbox still sets ai_paused —");
+    console.log("      as of 2026-09-02 that pause lifts itself after 24h with no human");
+    console.log("      reply (case 9 below), so it is a handoff, not a permanent mute.");
   }
+
+  // ── 8. A stranger's booking must not be readable ──────────────────────────
+  // LIVE HOLE (fixed 2026-09-02): findBookingsByHint filtered EVERY upcoming
+  // booking by the customer's answer alone, with no tie to the sender. Any
+  // WhatsApp number could tap Done and answer with a 3+ character name — or any
+  // 7+ digit number — and confirmationText read a stranger's name, class, date
+  // and time straight back. Both forms of the hint are exercised.
+  await wipe();
+  await seedBooking("Zephyrine Quartzwood", OTHER_NUMBER);   // somebody else's
+  const noneOfMine = await say("done");
+  check("Done with no booking on your own number asks the hint question",
+    noneOfMine, (r) => (!r ? "no reply at all"
+      : /different name or phone number/i.test(r) ? null
+      : "did not reach the hint question — the leak cases below would be vacuous"));
+  const byName = await say("Zephyrine");
+  check("a stranger's booking is NOT returned for their name",
+    byName, (r) => (!r ? "no reply at all"
+      : /Zephyrine|Confirmed/i.test(r) ? "leaked someone else's booking"
+      : /Coach Jeremy/i.test(r) ? null
+      : "neither leaked nor handed to Jeremy — unexpected"));
+
+  await wipe();
+  await seedBooking("Zephyrine Quartzwood", OTHER_NUMBER);
+  await say("done");                                   // re-arm the hint prompt
+  const byPhone = await say(OTHER_NUMBER.slice(-8));   // "their" number, not mine
+  check("a stranger's booking is NOT returned for their phone number",
+    byPhone, (r) => (!r ? "no reply at all"
+      : /Zephyrine|Confirmed/i.test(r) ? "leaked someone else's booking by phone tail"
+      : /Coach Jeremy/i.test(r) ? null
+      : "neither leaked nor handed to Jeremy — unexpected"));
+
+  // ...and the legitimate case still works: booked under a different NAME (the
+  // kid's), on the sender's own number, landing from Calendly a beat late.
+  await wipe();
+  await say("done");                                   // nothing there yet
+  await seedBooking("Harnessina Kiddo", TEST_NUMBER);  // Calendly webhook lands
+  const mine = await say("Harnessina");
+  check("your own booking under a different name is still confirmed",
+    mine, (r) => (!r ? "no reply at all"
+      : /Confirmed/i.test(r) && /Harnessina/i.test(r) ? null
+      : "the fix also blocked the legitimate case"));
+
+  // ── 9. A stale pause lifts itself ─────────────────────────────────────────
+  // ai_paused had no way back off, so 28 of 83 leads were muted for good.
+  // Isaac, 2026-09-02: auto-resume after 24h with no reply from Jeremy.
+  await wipe();
+  await seedPausedByHuman(25);                         // Jeremy last spoke 25h ago
+  const resumed = await say("what time is the monday evening class?");
+  const stillPaused = await aiPaused();
+  check("a pause with no human reply for 24h resumes and the lead is answered",
+    resumed, (r) => (!r ? "still silent — the 28 muted leads stay muted"
+      : stillPaused ? "replied but ai_paused was never cleared"
+      : null));
+
+  // ...but a chat Jeremy is ACTIVELY handling stays his.
+  await wipe();
+  await seedPausedByHuman(1);                          // Jeremy replied an hour ago
+  const stillQuiet = await say("and what about thursday?", null, { maxWaitMs: 10000 });
+  const heldPause = await aiPaused();
+  check("a pause Jeremy replied to within 24h is left alone",
+    stillQuiet, (r) => (r ? "JAI talked over Jeremy mid-handover"
+      : !heldPause ? "ai_paused was cleared while Jeremy was still on the chat"
+      : null));
 
 } finally {
   await wipe();
