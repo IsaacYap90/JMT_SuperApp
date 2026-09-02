@@ -290,6 +290,46 @@ try {
       : /i'?ll call you|give you a call|call me on|call us at/i.test(r)
       ? "offered a phone call" : null));
 
+  // ── 6b. A promo figure smuggled in on a buy signal ────────────────────────
+  // The intent split alone did not stop this: 252 parses as the clock time 2:52,
+  // so the classifier called it wants_to_join and it reached the model. The
+  // outbound guard cannot help — it needs a currency marker, and the model
+  // echoes the figure bare because the customer wrote it bare.
+  await wipe();
+  await seedOldThread(2, 0);
+  const smuggled = await say(
+    "I want to join, my friend paid 252 monthly for the class, same for me?",
+    "Yes 252 is correct for the 3-month plan — happy to get you signed up at that.");
+  check("a bare promo figure on a buy signal is handed over, not answered",
+    smuggled, (r) => (!r ? "no reply at all"
+      : /252/.test(r) ? "the figure was confirmed to the customer"
+      : BARE_JOIN_HANDOFF.test(r) ? null
+      : "neither answered safely nor handed over"));
+
+  // ── 6c. The outbound money guard, actually exercised ──────────────────────
+  // Every other scenario runs on a digit-free draft, so priceLeak — the branch
+  // that BINS the text and pauses JAI — was never once under test.
+  await wipe();
+  await seedOldThread(2, 0);
+  const leaked = await say("what do you charge for unlimited?",
+    "Our unlimited membership is $252/month with the promo.");
+  // Observed: the FACT GUARD catches this first and produces its own deflection
+  // ("let me double-check that with Coach Jeremy"), so `priceLeak` never fires.
+  // That is worth stating plainly rather than contriving a case to reach it:
+  // anything hasDisallowedPrice would catch, the fact guard has already caught,
+  // because the guard rejects any price not in the sheet while hasDisallowedPrice
+  // only rejects those not on the rate card. priceLeak is a backstop BEHIND it,
+  // and its unreachability here is defence in depth working, not a gap.
+  //
+  // So assert what actually matters, and keep it strict: the figure must not
+  // reach the customer, and the customer must be pointed at Jeremy. A confident
+  // answer, or any reply containing 252, still fails.
+  check("an off-card price never reaches the customer",
+    leaked, (r) => (!r ? "no reply at all"
+      : /252/.test(r) ? "the off-card price reached the customer"
+      : /coach jeremy/i.test(r) ? null
+      : "price dropped but the customer was not pointed at Jeremy"));
+
   // ── 7. The mute that never lifts ──────────────────────────────────────────
   // "how do I join" is the hottest message a lead can send, and it sets
   // ai_paused=true. Nothing ever clears it, so JAI goes silent for that person
@@ -298,8 +338,12 @@ try {
   await wipe();
   await say("Hello 👋 how do I join?");
   const afterJoin = await say("actually what time is the monday evening class?");
-  const { data: lead } = await sb.from("leads").select("ai_paused")
+  const { data: lead, error: leadErr } = await sb.from("leads").select("ai_paused")
     .eq("contact_number", TEST_NUMBER).maybeSingle();
+  // Fail CLOSED. Discarding this error made a failed or permission-denied read
+  // look like a pass, which is the same class of thing as a test that cannot
+  // fail. (/predeploy code-review lane, 2026-09-02.)
+  if (leadErr) { fail++; console.log(`FAIL  could not read ai_paused back: ${leadErr.message}`); }
   // Reported, not asserted. A check that fails on a known-and-accepted
   // behaviour trains everyone to ignore a red run, which is how green stopped
   // meaning anything in the first place.

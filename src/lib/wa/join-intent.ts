@@ -42,6 +42,47 @@
  * text is different from refusing to answer. Isaac, 2026-09-01, on the bare
  * handoff: "JAI should have handle it as it was... it was perfectly fine."
  */
+/**
+ * Does the CUSTOMER's message carry a 3-4 digit figure we cannot account for?
+ *
+ * `quotesUnknownBareAmount` deliberately exempts anything that looks like a
+ * clock time, so "reach at 745" does not read as a promo. That exemption is
+ * right for classification and wrong as a licence to ANSWER: 252 parses as
+ * 2:52, and one ambient word like "class" or "today" is enough, so
+ *
+ *   "i want to join, my friend paid 252 monthly for the class"
+ *
+ * classified as wants_to_join, reached the model, and "yes, 252 is correct for
+ * the 3-month plan" sailed past hasDisallowedPrice — which needs a currency
+ * marker or /mo and has neither to work with. On the pre-2026-09-02 build every
+ * phrasing of that was replaced wholesale by the handoff. Found by the
+ * /predeploy code-review lane and reproduced against the real classifier.
+ *
+ * So the clock-time escape is granted only to figures that match a time we
+ * actually teach. Everything else 3-4 digits that is not on the rate card means
+ * hand it to Jeremy rather than answer around it.
+ */
+const CLASS_TIME_FIGURES = new Set([
+  700, 715, 730, 745, 800, 815, 830, 845, 900, 930,
+  1200, 1215, 1230, 1245, 1300, 1315,
+  430, 445, 500, 515, 530, 600, 615, 630, 645,
+]);
+
+export function inboundHasUnknownFigure(text: string): boolean {
+  const t = (text || "").toLowerCase();
+  const re = /\b(\d{3,4})\b/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const n = Number(m[1]);
+    if (!Number.isFinite(n)) continue;
+    if (ALLOWED_AMOUNTS.has(n)) continue;          // a price we publish
+    if (n >= 1900 && n <= 2099) continue;          // a year
+    if (CLASS_TIME_FIGURES.has(n)) continue;       // a class time we teach
+    return true;
+  }
+  return false;
+}
+
 export const JOIN_HANDOFF_SUFFIX =
   "I'm getting Coach Jeremy on this too — he'll confirm the details and get you set up 🙏";
 

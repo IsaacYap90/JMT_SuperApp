@@ -26,6 +26,7 @@ import {
   hasDeadAdultLink,
   JOIN_HANDOFF_TEXT,
   JOIN_HANDOFF_SUFFIX,
+  inboundHasUnknownFigure,
   PAUSED_ADULT_TRIAL_TEXT,
 } from "@/lib/wa/join-intent";
 import { sessionBotReplyCount } from "@/lib/wa/session-window";
@@ -422,7 +423,12 @@ export async function POST(req: NextRequest) {
     // model to contribute — don't call it. Hoisting this above the branch cost
     // 1-2 provider calls per promo ask and, worse, made "a promo ask never
     // reaches the model" untrue in the one place someone would check.
-    const answerableJoin = joinHit === "wants_to_join";
+    // A buy signal is answerable only if the customer's own message carries no
+    // figure we cannot account for. The intent split alone was not enough: the
+    // clock-time exemption inside the classifier let a bare promo number ride
+    // in on a join question. See inboundHasUnknownFigure.
+    const answerableJoin =
+      joinHit === "wants_to_join" && !inboundHasUnknownFigure(text);
     const promoHandoff = !!joinHit && !answerableJoin;
     const { messageText, quickReplies, escalation, member } = promoHandoff
       ? {
