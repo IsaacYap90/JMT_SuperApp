@@ -131,6 +131,17 @@ async function wipe() {
     const { error } = await sb.from(table).delete().eq(col, TEST_NUMBER);
     if (error) throw new Error(`wipe ${table} failed: ${error.message}`);
   }
+  // The WEBHOOK writes these, not the harness, so wiping only its own two tables
+  // left every run's escalations sitting on Jeremy's real board as open,
+  // priority:high leads from a customer called "Harness". Found by the
+  // /predeploy security lane.
+  const pub = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { persistSession: false } }
+  );
+  await pub.from("admin_pending_items").delete().like("link", `%contact=${TEST_NUMBER}`);
+  await pub.from("processed_messages").delete().like("wa_message_id", "wamid.harness.%");
 }
 
 async function seedOldThread(botReplies, daysAgo) {

@@ -63,21 +63,57 @@
  * hand it to Jeremy rather than answer around it.
  */
 const CLASS_TIME_FIGURES = new Set([
-  700, 715, 730, 745, 800, 815, 830, 845, 900, 930,
-  1200, 1215, 1230, 1245, 1300, 1315,
-  430, 445, 500, 515, 530, 600, 615, 630, 645,
+  // Every real class, as a customer would type it without a colon: start, end,
+  // and the +15 cut-off they are allowed to arrive by. Checked against the live
+  // jai_facts timetable on 2026-09-02, because the first version of this set was
+  // wrong in both directions — it carried 500, 900, 1200 and 1300, none of which
+  // are class times and all of which are plausible promo figures, and it was
+  // missing every Saturday time so a Saturday join question handed off.
+  700, 715, 800,            // Mon/Wed/Fri 7:00-8:00am
+  1215, 1230, 115,          // daily 12:15-1:15pm
+  630, 645, 730,            // 6:30-7:30pm
+  745, 830,                 // 7:30-8:30pm
+  845, 930,                 // 8:30-9:30pm
+  430, 445, 515,            // Tue/Thu Kids 4:30-5:15pm
+  530, 600,                 // Tue/Thu Pre-Teen 5:15-6:00pm
+  1000, 1015, 1045,         // Sat Kids 10:00-10:45am
+  1100, 1130,               // Sat Pre-Teen 10:45-11:30am
+  1145,                     // Sat All-Levels 11:30am-12:30pm
+  1730, 1830, 2030,         // the same evenings in 24h form
 ]);
 
 export function inboundHasUnknownFigure(text: string): boolean {
-  const t = (text || "").toLowerCase();
+  // Strip 7+ digit runs first, exactly as quotesUnknownBareAmount does. Without
+  // it "I want to join! whatsapp me at 9123 4567" tripped the gate, handed off
+  // and set ai_paused — which nothing clears. The two functions are meant to
+  // differ ONLY in the clock-time exemption.
+  const t = strippedForBareScan((text || "").toLowerCase());
+  // Some figures are BOTH a real class time and a plausible price — 600 is the
+  // pre-teen class end and also "paid 600 monthly"; so are 800, 715, 530. The
+  // deciding factor is not the number, it is what the customer is talking about.
+  // If they are talking money, the class-time exemption does not apply: a
+  // figure we cannot account for goes to Jeremy even if it happens to match the
+  // timetable.
+  const talkingMoney =
+    /\b(paid|pay|paying|price|priced|cost|costs|charge|charges|monthly|per\s*month|a\s*month|month|promo|offer|deal|rate|rates|discount|package|fee|fees)\b|[$]/.test(t);
+
   const re = /\b(\d{3,4})\b/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(t)) !== null) {
     const n = Number(m[1]);
     if (!Number.isFinite(n)) continue;
-    if (ALLOWED_AMOUNTS.has(n)) continue;          // a price we publish
-    if (n >= 1900 && n <= 2099) continue;          // a year
-    if (CLASS_TIME_FIGURES.has(n)) continue;       // a class time we teach
+    if (ALLOWED_AMOUNTS.has(n)) continue;                     // a price we publish
+    if (n >= 1900 && n <= 2099) continue;                     // a year
+    if (CLASS_TIME_FIGURES.has(n)) {
+      // A class-time figure is exempt when it READS as a time. Deciding on
+      // whether the message mentions money anywhere was too blunt: it handed
+      // off "the 1130 class on saturday, how much monthly?", which is exactly
+      // the lead we are told not to go quiet on. What separates the two is the
+      // word sitting next to the number — "1130 class" vs "600 monthly".
+      const after = t.slice(m.index + m[1].length, m.index + m[1].length + 14);
+      const readsAsTime = /^\s*(?:am|pm|h|hrs?)?\s*\b(?:class|classes|session|slot|batch|today|tomorrow|onwards|start|am|pm)\b/.test(after);
+      if (readsAsTime || !talkingMoney) continue;
+    }
     return true;
   }
   return false;
