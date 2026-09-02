@@ -501,12 +501,19 @@ export async function POST(req: NextRequest) {
     // start" — is answered, which is what Isaac asked for.
     if (promoHandoff) {
       outQuick = [];
-    } else if (answerableJoin && !forceHandoff) {
+    } else if (answerableJoin && !forceHandoff && !/getting Coach Jeremy|Coach Jeremy will (?:be in touch|reach)/i.test(outText)) {
       // A model-authored button is text nobody guards — hasDisallowedPrice only
       // ever inspects outText. Clearing them was the fourth thing the old
       // moneyHandoff flag did, and it belongs on this side of the split.
       outQuick = [];
       outText = `${outText}\n\n${JOIN_HANDOFF_SUFFIX}`;
+    } else if (answerableJoin) {
+      // The draft already promises Jeremy, so appending the suffix would say it
+      // twice. That reached a real customer on 2 Sep: the fact sheet still told
+      // the model to reply with the handoff line and nothing else, so it wrote
+      // "Great — I'm getting Coach Jeremy on this now" and the suffix landed on
+      // top. The sheet is fixed; this makes it structurally impossible.
+      outQuick = [];
     }
 
     // ── Money guard (last line of defence) ─────────────────────────────────

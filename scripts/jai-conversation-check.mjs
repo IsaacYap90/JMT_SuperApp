@@ -311,6 +311,23 @@ try {
       : /i'?ll call you|give you a call|call me on|call us at/i.test(r)
       ? "offered a phone call" : null));
 
+  // ── 3c. The handoff must never be said twice ──────────────────────────────
+  // This reached a real customer on 2 Sep. Every test was green because the
+  // stubbed model returns a helpful draft — but the FACT SHEET still told the
+  // real model to reply with the handoff line and nothing else, so it did, and
+  // the suffix landed on top of it. A stubbed model cannot test an instruction.
+  // Pinning the draft the real model actually produced is the closest this
+  // suite can get.
+  await wipe();
+  const doubled = await say("How do I join?",
+    "Great \u2014 I'm getting Coach Jeremy on this now, he'll sort out the details with you \ud83d\ude4f");
+  check("the handoff is never said twice",
+    doubled, (r) => {
+      if (!r) return "no reply at all";
+      const mentions = (r.match(/getting Coach Jeremy/gi) || []).length;
+      return mentions > 1 ? `said the handoff ${mentions} times in one message` : null;
+    });
+
   // ── 6b. A promo figure smuggled in on a buy signal ────────────────────────
   // The intent split alone did not stop this: 252 parses as the clock time 2:52,
   // so the classifier called it wants_to_join and it reached the model. The
