@@ -79,7 +79,24 @@ const CLASS_TIME_FIGURES = new Set([
   1000, 1015, 1045,         // Sat Kids 10:00-10:45am
   1100, 1130,               // Sat Pre-Teen 10:45-11:30am
   1145,                     // Sat All-Levels 11:30am-12:30pm
-  1730, 1830, 2030,         // the same evenings in 24h form
+  // ── 24-hour forms ────────────────────────────────────────────────────────
+  // 2026-09-07: a customer asked "adults can't book the kids session right?
+  // the timing 1630 is just nice for me" and JAI handed off instead of
+  // answering, because 1630 was not here — only its 12-hour twin 430 was. She
+  // replied "Nvm maybe I try to join 1215 next time" and left.
+  //
+  // The previous pass added 1730/1830/2030 and called them "the same evenings",
+  // which is exactly the shape of the miss: the afternoon and late-evening
+  // classes never got theirs. Every class in the live jai_facts timetable is
+  // now listed in BOTH forms — start, end and the +15 arrival cut-off — because
+  // a customer copying a time off our own schedule must never trip the
+  // unknown-figure guard.
+  1315,                     // 12:15-1:15pm AL, end
+  1630, 1645, 1715,         // Tue/Thu Kids 4:30-5:15pm
+  1730, 1800,               // Tue/Thu Pre-Teen 5:15-6:00pm
+  1830, 1845, 1930,         // 6:30-7:30pm AL
+  1945, 2030,               // 7:30-8:30pm AL
+  2045, 2130,               // 8:30-9:30pm Advanced / Fri Sparring
 ]);
 
 /** How far after a figure we look for the word that makes it a time. */

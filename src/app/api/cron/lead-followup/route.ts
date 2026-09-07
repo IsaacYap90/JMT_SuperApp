@@ -45,7 +45,10 @@ import {
   decideNudge,
   dropinNudge1,
   dropinNudge2,
+  silentNudge1,
+  silentNudge2,
 } from "@/lib/wa/followup-dropin";
+import { JOIN_HANDOFF_TEXT, JOIN_HANDOFF_SUFFIX } from "@/lib/wa/join-intent";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -107,7 +110,51 @@ export async function GET(req: NextRequest) {
       linkAtByContact.set(r.contact_number, new Date(r.created_at).getTime());
     }
   }
-  const numbers = Array.from(linkAtByContact.keys());
+
+  // ── Second source: answered, then silence (2026-09-07) ────────────────────
+  // Arming on the booking link alone means we only ever chase people we tried
+  // to sell to. A parent asked about her 15-year-old on 7 Sep, got a good
+  // answer ending in a question, and was never followed up — she had no link,
+  // so `numbers` was empty for her and the route returned before it even read
+  // her lead row.
+  //
+  // So: also arm on JAI's most recent answer. The anchor is the same shape as
+  // linkAt — the moment we last spoke and they went quiet — so decideNudge()
+  // needs no change.
+  //
+  // Excluded on purpose:
+  //   • messages carrying the booking link — the link source already owns those
+  //     and its wording is the right one.
+  //   • the join/price handoff lines — those mean Jeremy is taking it over, and
+  //     escalation deliberately does NOT set ai_paused, so without this test we
+  //     would nudge over the top of him.
+  const { data: answerRows } = await jai
+    .from("conversations")
+    .select("contact_number, created_at, message")
+    .eq("role", "assistant")
+    .eq("via", "bot")
+    .gte("created_at", new Date(now - LOOKBACK_MS).toISOString())
+    .order("created_at", { ascending: false });
+
+  const answerAtByContact = new Map<string, number>();
+  for (const r of answerRows || []) {
+    const to = r.contact_number as string;
+    if (answerAtByContact.has(to) || linkAtByContact.has(to)) continue;
+    const body = String(r.message ?? "");
+    if (body.includes(DROPIN_BOOKING_URL)) continue;
+    if (body.includes(JOIN_HANDOFF_TEXT) || body.includes(JOIN_HANDOFF_SUFFIX)) continue;
+    answerAtByContact.set(to, new Date(r.created_at).getTime());
+  }
+
+  // One map, one loop. `armedBy` only decides which wording is used; every
+  // guard below — member, ai_paused, replied-since, already booked, the 22h
+  // window — applies identically to both sources.
+  const armAtByContact = new Map(linkAtByContact);
+  // forEach, not for-of: this repo's tsconfig target predates Map iteration.
+  answerAtByContact.forEach((v, k) => armAtByContact.set(k, v));
+  const armedBy = (to: string) => (linkAtByContact.has(to) ? "link" : "silent");
+
+  const numbers = Array.from(armAtByContact.keys());
   if (numbers.length === 0) {
     return NextResponse.json({ ok: true, dry, candidates: 0, plans: [] });
   }
@@ -127,7 +174,7 @@ export async function GET(req: NextRequest) {
   let failed = 0;
 
   for (const to of numbers) {
-    const linkAt = linkAtByContact.get(to)!;
+    const armAt = armAtByContact.get(to)!;
     const lead = leadByNumber.get(to);
     // No lead row means no way to check ai_paused or is_member — don't guess.
     if (!lead) {
@@ -156,7 +203,7 @@ export async function GET(req: NextRequest) {
 
     const decision = decideNudge({
       now,
-      linkAt,
+      linkAt: armAt,
       lastUserAt,
       nudge1At: lead.silent_nudge1_sent_at ? new Date(lead.silent_nudge1_sent_at).getTime() : null,
       nudge2At: lead.silent_nudge2_sent_at ? new Date(lead.silent_nudge2_sent_at).getTime() : null,
@@ -193,7 +240,17 @@ export async function GET(req: NextRequest) {
 
     const first = firstNameFrom(lead.contact_name);
     const isFirst = decision.stage === "nudge1";
-    const text = isFirst ? dropinNudge1(first) : dropinNudge2(first);
+    // Two nudges per lead in total, whichever source armed them — the stamps
+    // are shared columns, deliberately. Someone who was answered and then later
+    // sent a link should get two messages from us, not four.
+    const text =
+      armedBy(to) === "link"
+        ? isFirst
+          ? dropinNudge1(first)
+          : dropinNudge2(first)
+        : isFirst
+          ? silentNudge1(first)
+          : silentNudge2(first);
 
     if (dry) {
       plans.push({ to, stage: decision.stage, reason: "dry run — not sent" });
@@ -232,7 +289,7 @@ export async function GET(req: NextRequest) {
 
     if (isFirst) nudged1++;
     else nudged2++;
-    plans.push({ to, stage: decision.stage, sent: true });
+    plans.push({ to, stage: decision.stage, sent: true, reason: armedBy(to) });
   }
 
   return NextResponse.json({

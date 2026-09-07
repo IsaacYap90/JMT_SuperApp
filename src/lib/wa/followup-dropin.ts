@@ -119,3 +119,29 @@ export function dropinNudge2(first: string): string {
     `Already booked? Ignore this and see you at the gym 🙏 If now's not the right time, no stress at all.`
   );
 }
+
+// ── Silent-answer nudges (added 2026-09-07) ─────────────────────────────────
+// The arming above only ever finds people we sent the booking link to. On
+// 7 Sep a parent asked whether her 15-year-old could join, got a genuinely good
+// answer ending in "want me to check another day?", and was never messaged
+// again — because JAI had answered rather than linked, so she was invisible to
+// this cron. She is exactly the lead worth chasing.
+//
+// These two are for that case. They must NOT read like the drop-in nudges:
+// "did you manage to book?" is nonsense to someone who was never sent a link.
+// They reference the conversation, not a purchase, and both are safe for
+// someone who has since decided against it.
+export function silentNudge1(first: string): string {
+  return (
+    `Hey${first ? ` ${first}` : ""} — just checking that answered what you needed? 🙂\n\n` +
+    `Happy to look up another day or time if that one doesn't suit.`
+  );
+}
+
+export function silentNudge2(first: string): string {
+  return (
+    `Last one from me${first ? `, ${first}` : ""} 🙏\n\n` +
+    `If you'd still like to come try a class, just tell me which day works and I'll sort it. ` +
+    `If the timing isn't right, no stress at all — we're here when you are.`
+  );
+}
