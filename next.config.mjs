@@ -35,7 +35,10 @@ const securityHeaders = [
 ];
 
 const nextConfig = {
-  allowedDevOrigins: ["*.trycloudflare.com"],
+  // Dev only, ignored by `next build`. Isaac reviews previews over BOTH a
+  // cloudflare tunnel and the tailnet; without the host here Next 15 blocks the
+  // server actions the dashboard runs on and returns EMPTY data with no error.
+  allowedDevOrigins: ["*.trycloudflare.com", "homepc.bumblebee-burbot.ts.net"],
   poweredByHeader: false,
   env: {
     NEXT_PUBLIC_BUILD_SHA: buildSha,

@@ -1,6 +1,35 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// request.nextUrl carries the address the SERVER was reached on. Behind a proxy
+// — a tailscale serve or a cloudflare tunnel in front of `next dev` — that is
+// the internal one, so cloning it sent Isaac a 307 to https://localhost:3013 and
+// his laptop, not the box, tried to answer it (10 Sep 2026). The forwarded
+// headers carry the address the BROWSER actually used, so prefer them.
+// No-op on Vercel, which sets x-forwarded-host to the real host already.
+function externalUrl(request: NextRequest, pathname: string): URL {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  // Take whichever header actually carries a port, because the two proxies
+  // differ: tailscale serve puts the browser's host:3013 in `host` and a bare
+  // hostname in `x-forwarded-host`, while a cloudflare tunnel is on 443 and
+  // carries no port at all. Preferring one blindly broke the other.
+  const fwd = request.headers.get("x-forwarded-host");
+  const raw = request.headers.get("host");
+  const host = fwd?.includes(":") ? fwd : raw?.includes(":") ? raw : fwd || raw;
+  if (host) {
+    if (host.includes(":")) {
+      url.host = host;
+    } else {
+      url.hostname = host;
+      url.port = "";
+    }
+  }
+  const proto = request.headers.get("x-forwarded-proto");
+  if (proto) url.protocol = `${proto.split(",")[0].trim()}:`;
+  return url;
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -47,15 +76,11 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith("/api/meta") &&
     !request.nextUrl.pathname.startsWith("/api/whatsapp")
   ) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(externalUrl(request, "/login"));
   }
 
   if (user && request.nextUrl.pathname.startsWith("/login")) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(externalUrl(request, "/"));
   }
 
   return supabaseResponse;
