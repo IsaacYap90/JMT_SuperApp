@@ -10,8 +10,9 @@ import { DatePickerSheet } from "@/components/date-picker-sheet";
 import { showToast } from "@/components/toast";
 import { haptic } from "@/lib/haptic";
 
-const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 30;
+// 15-minute slots, 6:00am–10:00pm. Duplicated in pt-page-client.tsx — keep in step.
+const TIME_SLOTS = Array.from({ length: 65 }, (_, i) => {
+  const totalMinutes = 6 * 60 + i * 15;
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   const value = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;

@@ -7,9 +7,11 @@ import { User, PtPackage, PtSession, isAdmin } from "@/lib/types/database";
 import { PullToRefresh } from "./pull-to-refresh";
 import { Button } from "./ui/button";
 
-// 30-minute time slots from 6:00am to 10:00pm for PT scheduling
-const TIME_SLOTS = Array.from({ length: 33 }, (_, i) => {
-  const totalMinutes = 6 * 60 + i * 30;
+// 15-minute time slots from 6:00am to 10:00pm for PT scheduling (Jeremy asked
+// for quarter-hour starts on 2026-09-11; it was half-hourly). The same list is
+// duplicated in pt-card.tsx — change both together.
+const TIME_SLOTS = Array.from({ length: 65 }, (_, i) => {
+  const totalMinutes = 6 * 60 + i * 15;
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   const value = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;

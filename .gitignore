@@ -49,3 +49,6 @@ supabase/.temp/
 /test-results/
 /playwright-report/
 /blob-report/
+
+# Claude Code agent worktrees — local scratch, never part of the repo
+.claude/worktrees/
