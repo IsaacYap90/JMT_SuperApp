@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { DEMO_MODE, maskName, maskPhone } from "@/lib/demo-mask";
+import { FOLLOWUP_VIA } from "@/lib/wa/followup-dropin";
 
 type FeedItem = {
   id: string;
@@ -129,7 +130,8 @@ export async function ActivityFeed({ limit = 8, includeJai = false }: { limit?: 
         .from("conversations")
         .select("id, contact_number, contact_name, created_at")
         .eq("role", "assistant")
-        .eq("via", "bot")
+        // Follow-up nudges are JAI's messages too — keep them in "JAI replied".
+        .in("via", ["bot", FOLLOWUP_VIA])
         .gte("created_at", sinceIso)
         .order("created_at", { ascending: false })
         .limit(50);

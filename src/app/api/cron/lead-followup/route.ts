@@ -42,6 +42,7 @@ import { sendText } from "@/lib/wa/jai-send";
 import { findBookingsByPhone } from "@/lib/wa/trial-verify";
 import {
   DROPIN_BOOKING_URL,
+  FOLLOWUP_VIA,
   decideNudge,
   dropinNudge1,
   dropinNudge2,
@@ -95,10 +96,19 @@ export async function GET(req: NextRequest) {
   const now = Date.now();
 
   // Arm: the most recent drop-in booking link we sent each contact.
+  //
+  // Our own nudges are mirrored into this table (via=FOLLOWUP_VIA below) and
+  // nudge 1 carries the booking URL, so without this exclusion the cron would
+  // re-arm off its own message: the anchor slid to the nudge-1 send time, which
+  // put nudge 2 due at +23h — the exact moment the 23h window shuts — so every
+  // lead went cold after one message. Worse, ~50ms of DB-vs-Node clock skew
+  // put the mirror row AFTER the nudge-1 stamp, so nudge 1 fired again every
+  // run it was due (15 sends in a day, reproduced 2026-09-11).
   const { data: linkRows } = await jai
     .from("conversations")
     .select("contact_number, created_at")
     .eq("role", "assistant")
+    .or(`via.is.null,via.neq.${FOLLOWUP_VIA}`)
     .ilike("message", `%${DROPIN_BOOKING_URL}%`)
     .gte("created_at", new Date(now - LOOKBACK_MS).toISOString())
     .order("created_at", { ascending: false });
@@ -128,6 +138,8 @@ export async function GET(req: NextRequest) {
   //   • the join/price handoff lines — those mean Jeremy is taking it over, and
   //     escalation deliberately does NOT set ai_paused, so without this test we
   //     would nudge over the top of him.
+  //   • our own mirrored nudges — `via` is FOLLOWUP_VIA, not 'bot', so the
+  //     .eq below already leaves them out. Same re-arm bug as the link source.
   const { data: answerRows } = await jai
     .from("conversations")
     .select("contact_number, created_at, message")
@@ -271,13 +283,15 @@ export async function GET(req: NextRequest) {
 
     // Mirror into the WA INBOX thread. Never let a mirror failure lose the
     // stamp — an unstamped successful send is a double-send next run.
+    // via=FOLLOWUP_VIA, not 'bot': both arming queries above must not see this
+    // row as evidence of a conversation (the inbox still renders it as Jai).
     try {
       await jai.from("conversations").insert({
         contact_number: to,
         contact_name: lead.contact_name,
         role: "assistant",
         message: text,
-        via: "bot",
+        via: FOLLOWUP_VIA,
       });
     } catch (e) {
       console.error("[lead-followup] WA INBOX mirror failed", e);

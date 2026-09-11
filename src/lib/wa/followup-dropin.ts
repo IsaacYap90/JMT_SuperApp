@@ -14,6 +14,16 @@
 /** The one booking URL the bot sends adults. Arming looks for this string. */
 export const DROPIN_BOOKING_URL = "https://jaimuaythai.com/booking";
 
+/**
+ * `jai.conversations.via` value the follow-up cron stamps on its own mirror
+ * rows (JAI's replies are 'bot', the WA inbox is 'human'). Distinct on purpose:
+ * nudge 1 contains DROPIN_BOOKING_URL and both nudges are assistant rows, so a
+ * mirror stamped 'bot' re-armed the cron off its own message (2026-09-11).
+ * Anything that classifies assistant rows by `via` must know this value — see
+ * pause-stale.ts (not a human) and activity-feed.tsx (still "JAI replied").
+ */
+export const FOLLOWUP_VIA = "followup";
+
 const H = 3600e3;
 
 /** Nudge 1 is due this long after the booking link went out. */
