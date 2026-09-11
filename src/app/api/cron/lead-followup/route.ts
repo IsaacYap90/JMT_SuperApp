@@ -28,9 +28,7 @@
 // has the chat), is a member, or has an upcoming trial booking. Never during
 // quiet hours (21:00–09:00 SGT).
 //
-// NOT SCHEDULED YET. To enable, add to vercel.json:
-//   { "path": "/api/cron/lead-followup", "schedule": "*/30 * * * *" }
-// Do that only once Isaac has approved the two message drafts.
+// Scheduled in vercel.json: { "path": "/api/cron/lead-followup", "schedule": "*/30 * * * *" }.
 //
 // ?dry=1 — plan the run and return it, sending nothing and writing nothing.
 import { NextRequest, NextResponse } from "next/server";
@@ -180,6 +178,9 @@ export async function GET(req: NextRequest) {
   const leadByNumber = new Map((leads || []).map((l) => [l.contact_number as string, l]));
 
   const plans: Plan[] = [];
+  // A nudge that reached the customer but never reached the inbox is a real
+  // failure, so it is reported in the response, not only to the log.
+  const mirrorFailures: { to: string; error: string }[] = [];
   let nudged1 = 0;
   let nudged2 = 0;
   let cold = 0;
@@ -285,16 +286,25 @@ export async function GET(req: NextRequest) {
     // stamp — an unstamped successful send is a double-send next run.
     // via=FOLLOWUP_VIA, not 'bot': both arming queries above must not see this
     // row as evidence of a conversation (the inbox still renders it as Jai).
+    // 🛑 supabase-js does NOT throw on a database error — it resolves with
+    // { error }. A bare try/catch here caught nothing, so a failed mirror was
+    // silent: the nudge reached the customer and never appeared in Jeremy's
+    // inbox, with nothing logged. Check the returned error, and count it.
     try {
-      await jai.from("conversations").insert({
+      const { error: mirrorError } = await jai.from("conversations").insert({
         contact_number: to,
         contact_name: lead.contact_name,
         role: "assistant",
         message: text,
         via: FOLLOWUP_VIA,
       });
+      if (mirrorError) {
+        console.error("[lead-followup] WA INBOX mirror failed", to, mirrorError.message);
+        mirrorFailures.push({ to, error: mirrorError.message });
+      }
     } catch (e) {
-      console.error("[lead-followup] WA INBOX mirror failed", e);
+      console.error("[lead-followup] WA INBOX mirror threw", to, e);
+      mirrorFailures.push({ to, error: e instanceof Error ? e.message : String(e) });
     }
     await jai
       .from("leads")
@@ -314,6 +324,8 @@ export async function GET(req: NextRequest) {
     nudged2,
     cold,
     failed,
+    mirror_failed: mirrorFailures.length,
+    mirror_failures: mirrorFailures,
     plans,
   });
 }
