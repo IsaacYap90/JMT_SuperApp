@@ -313,7 +313,7 @@ const AMOUNT_PATTERNS: RegExp[] = [
   // of a longer word, so "our monthly 400 membership plan" — the exact shape of
   // a model-invented price — leaked straight through a guard that used to block
   // it. Pattern 1 above always had it; this one did not. (Same day.)
-  /\bmonthly\b(?:\s+(?:is|at|of|rate|fee|price|cost|costs|comes|to)){0,4}\s*(\d{3}[\d,]*(?:\.\d+)?)\b(?!\s*(?:-|–)?\s*(?:month|mth|class|session|year)s?\b)/g,
+  /\bmonthly\b(?:\s+(?:is|at|of|rate|fee|price|cost|costs|comes|to)){0,4}\s*(\d{3}[\d,]*(?:\.\d+)?)\b(?!\s*(?:-|–)?\s*(?:month|mth|class(?:es)?|session|year)s?\b)/g,
 ];
 
 // NOTE (fixed 2026-07-30): "per class / per session / per pax" used to count as a

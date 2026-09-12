@@ -232,26 +232,43 @@ export function acceptsBookingOffer(text: string): boolean {
 // be an affirmation or a pleasantry. "All right thank you!" passes. "ya i want
 // the membership" does not — "membership" is not on this list.
 const ACCEPT_WORD =
-  /^(?:yes|yeah|yea|yah|ya|yup|yep|ok|oki|okie|okay|k|kk|sure|alright|right|all|please|pls|plz|send|it|go|ahead|thanks|thank|you|thx|tks|ty|noted|good|great|nice|cool|perfect|awesome|sounds|lah|sia|can|boleh)$/i;
+  /^(?:yes|yeah|yea|yah|ya|yup|yep|ok|oki|okie|okay|okok|oklah|k|kk|sure|alright|right|all|please|pls|plz|send|sent|it|the|link|me|my|go|ahead|thanks|thank|you|thx|tks|ty|noted|good|great|nice|cool|perfect|awesome|sounds|lah|la|lor|loh|leh|hor|liao|sia|can|boleh|bro|boss|bos|sir|maam|ma)$/i;
+
+// The commonest Chinese yes. Checked whole-message, because the Latin strip
+// below deletes CJK entirely — which is how "有儿童班吗 😊" (is there a kids
+// class) once counted as an acceptance.
+const CJK_ACCEPT = new Set(["好", "好的", "好啊", "可以", "要", "行", "嗯", "没问题", "麻烦你"]);
+
+// Emoji that mean yes. 🛑 Compared as whole strings, never as a character class:
+// every one of these is a surrogate PAIR, so /[👍🙏]/ without the `u` flag is a
+// class of half-characters that matches 😂, 💩 and 🤬 too. It did, and a Chinese
+// refusal with a 🙏 on the end was being answered with a booking link.
+const APPROVING_EMOJI = ["👍", "🙏", "👌", "🥊", "✅", "😊", "😍", "💪", "🙌"];
 
 /** Is the whole message an affirmation and nothing else? */
 export function isPlainAcceptance(text: string): boolean {
-  const words = (text || "")
+  const raw = (text || "").trim();
+  if (!raw) return false;
+
+  // Remove the approving emoji first, then judge whatever is left. Doing it
+  // this way means "👍" alone is a yes, while "不用了，谢谢 🙏" is not — the
+  // refusal survives the strip and fails everything below.
+  let rest = raw;
+  for (const e of APPROVING_EMOJI) rest = rest.split(e).join("");
+  if (rest.replace(/\s/g, "") === "") return rest !== raw;
+
+  // Chinese, judged before the Latin strip deletes it.
+  const cjk = rest.replace(/[\s,，。、!！.?？~]/g, "");
+  if (CJK_ACCEPT.has(cjk)) return true;
+
+  const words = rest
     .toLowerCase()
-    // Drop emoji and punctuation; "ok 👍" and "ok!" are the same answer.
     .replace(/[^a-z0-9\s]/gi, " ")
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  if (words.length > 6) return false;
-  // A bare 👍 to "want me to send you the booking link?" is a yes. No words
-  // survive the strip above, so check the raw text for an approving emoji —
-  // and only an approving one: "😂" or "😭" is not an answer.
-  if (words.length === 0) {
-    // Literal characters, not \u{...} escapes: the `u` flag this file cannot
-    // use is what makes those work. 👍 🙏 👌 🥊 ✅ 😊 😍
-    return /[👍🙏👌🥊✅😊😍]/.test(text || "");
-  }
+  // Zero words here means the message was non-Latin and not a listed yes.
+  if (words.length === 0 || words.length > 6) return false;
   return words.every((w) => ACCEPT_WORD.test(w));
 }
 

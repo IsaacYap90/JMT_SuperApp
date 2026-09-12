@@ -121,6 +121,26 @@ console.log("6. the booking-offer gate must not hijack the turn");
   ]) {
     ok(`rejects ${JSON.stringify(t)}`, g(t) === false);
   }
+  // Pass 4: the emoji fallback was a UTF-16 surrogate class, so it matched ANY
+  // emoji, and the Latin strip deleted CJK entirely — so a Chinese refusal with
+  // a 🙏 on it was "accepted". These are the controls that were missing.
+  for (const t of [
+    "😂", "😭", "🤬", "💩",
+    "不用了，谢谢 🙏",      // no need, thanks — a refusal
+    "有儿童班吗 😊",        // is there a kids class
+    "我要报名会员 😊",      // i want to sign up for membership
+    "请打电话给我 🙏",      // please call me
+    "我要取消 🙏",          // i want to cancel
+    "多少钱？😊",           // how much
+  ]) {
+    ok(`rejects ${JSON.stringify(t)}`, g(t) === false);
+  }
+  // Real acceptances that the first default-NO version wrongly refused.
+  for (const t of ["ok la", "ok lor", "okok", "oklah", "好", "可以", "好的", "要",
+                   "please send the link", "yes send link", "ok bro", "sure boss", "好 👍"]) {
+    ok(`sends ${JSON.stringify(t)}`, g(t) === true);
+  }
+
   // …and the real acceptances still send.
   for (const t of ["All right thank you!", "ok", "okay thanks", "yes pls", "sure 👍", "ya send", "noted thanks", "👍"]) {
     ok(`sends ${JSON.stringify(t)}`, g(t) === true);
