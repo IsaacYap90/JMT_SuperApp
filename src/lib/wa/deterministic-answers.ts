@@ -232,7 +232,7 @@ export function acceptsBookingOffer(text: string): boolean {
 // be an affirmation or a pleasantry. "All right thank you!" passes. "ya i want
 // the membership" does not — "membership" is not on this list.
 const ACCEPT_WORD =
-  /^(?:yes|yeah|yea|yah|ya|yup|yep|ok|oki|okie|okay|okok|oklah|k|kk|sure|alright|right|all|please|pls|plz|send|sent|it|the|link|me|my|go|ahead|thanks|thank|you|thx|tks|ty|noted|good|great|nice|cool|perfect|awesome|sounds|lah|la|lor|loh|leh|hor|liao|sia|can|boleh|bro|boss|bos|sir|maam|ma)$/i;
+  /^(?:yes|yeah|yea|yah|ya|yup|yep|ok|oki|okie|okay|okok|oklah|k|kk|sure|alright|right|all|please|pls|plz|send|it|the|link|me|my|go|ahead|thanks|thank|you|thx|tks|ty|noted|good|great|nice|cool|perfect|awesome|sounds|lah|la|lor|loh|leh|hor|sia|can|boleh|bro|boss|bos|sir|maam)$/i;
 
 // The commonest Chinese yes. Checked whole-message, because the Latin strip
 // below deletes CJK entirely — which is how "有儿童班吗 😊" (is there a kids
@@ -250,16 +250,30 @@ export function isPlainAcceptance(text: string): boolean {
   const raw = (text || "").trim();
   if (!raw) return false;
 
-  // Remove the approving emoji first, then judge whatever is left. Doing it
-  // this way means "👍" alone is a yes, while "不用了，谢谢 🙏" is not — the
-  // refusal survives the strip and fails everything below.
-  let rest = raw;
-  for (const e of APPROVING_EMOJI) rest = rest.split(e).join("");
-  if (rest.replace(/\s/g, "") === "") return rest !== raw;
+  // Skin tones and VS-16 are decoration on the same answer: 👍🏽 and 👍 mean the
+  // same thing, and leaving the modifier behind made every toned thumbs-up a NO.
+  let rest = raw.replace(/\uFE0F/g, "").replace(/\uD83C[\uDFFB-\uDFFF]/g, "");
+  let foundApproving = false;
+  for (const e of APPROVING_EMOJI) {
+    if (rest.includes(e)) {
+      foundApproving = true;
+      rest = rest.split(e).join("");
+    }
+  }
+  // Only approving emoji were sent. A lone skin-tone modifier is not an answer,
+  // which is why this returns the flag rather than "something was removed".
+  if (rest.replace(/\s/g, "") === "") return foundApproving;
 
-  // Chinese, judged before the Latin strip deletes it.
+  // Chinese, judged before the Latin strip below can delete it.
   const cjk = rest.replace(/[\s,，。、!！.?？~]/g, "");
   if (CJK_ACCEPT.has(cjk)) return true;
+
+  // 🛑 Anything non-ASCII still here is text this function cannot read, and the
+  // strip below would silently DELETE it — which is how "ok 不用了" (ok, no
+  // need — a refusal) and "ok 我要报名会员" (ok, I want to sign up) were read as
+  // plain acceptances and answered with a sales link. Never guess yes on words
+  // we have not understood; the model handles them properly.
+  if (/[^\x00-\x7F]/.test(rest)) return false;
 
   const words = rest
     .toLowerCase()
@@ -267,7 +281,6 @@ export function isPlainAcceptance(text: string): boolean {
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  // Zero words here means the message was non-Latin and not a listed yes.
   if (words.length === 0 || words.length > 6) return false;
   return words.every((w) => ACCEPT_WORD.test(w));
 }

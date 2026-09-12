@@ -135,6 +135,28 @@ console.log("6. the booking-offer gate must not hijack the turn");
   ]) {
     ok(`rejects ${JSON.stringify(t)}`, g(t) === false);
   }
+  // Pass 5: mixed script. One Latin accept-word used to let the Latin strip
+  // delete the rest of the message, so "ok" + a Chinese refusal read as a yes.
+  for (const t of [
+    "ok 不用了",          // ok, no need — a refusal
+    "ok 我要取消",        // ok, i want to cancel
+    "ok 我要报名会员",    // ok, i want to sign up — a buy signal
+    "ok 有儿童班吗",      // ok, is there a kids class
+    "ok 请打电话给我",    // ok, please call me
+    "ok 多少钱",          // ok, how much
+    "ok ไม่เอา",          // Thai: don't want
+    "ok 결구합니다",       // Korean-ish: no thank you
+    "sent",               // means already done, not yes
+    "ok ma",              // Manglish: "is that ok?" — a question
+  ]) {
+    ok(`rejects ${JSON.stringify(t)}`, g(t) === false);
+  }
+  // Toned and variation-selector emoji are the same answer as the bare one.
+  for (const t of ["👍🏽", "👍🏿", "🙏🏽", "👌🏼", "👍️", "👍👍👍", "ok 👍🏽"]) {
+    ok(`sends ${JSON.stringify(t)}`, g(t) === true);
+  }
+  ok('a lone skin-tone modifier is not an answer', g("🏽") === false);
+
   // Real acceptances that the first default-NO version wrongly refused.
   for (const t of ["ok la", "ok lor", "okok", "oklah", "好", "可以", "好的", "要",
                    "please send the link", "yes send link", "ok bro", "sure boss", "好 👍"]) {
