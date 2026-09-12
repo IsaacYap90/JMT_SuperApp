@@ -1,6 +1,6 @@
 // The five holes /predeploy found on 11 Sep. Each assertion here FAILS on the
 // code as it stood that night — that is the point of the file.
-import { lateArrivalAnswer, buildDeterministicAnswer } from '../src/lib/wa/deterministic-answers.ts';
+import { lateArrivalAnswer, buildDeterministicAnswer, isOfferAcceptance } from '../src/lib/wa/deterministic-answers.ts';
 import { hasDisallowedPrice } from '../src/lib/wa/join-intent.ts';
 import { checkDayBinding, indexSchedule } from '../src/lib/wa/fact-guard.ts';
 import { JAI_FACTS } from '../src/lib/wa/jai-facts.ts';
@@ -48,12 +48,23 @@ console.log("   control — a TRUE negation must still be exempt");
 }
 
 console.log("4. a bare figure with 'monthly' must not pass the price guard");
-for (const t of ["Yes, 252 monthly is correct for our 3-month plan.", "monthly 252 is right", "it's 252 a mth"]) {
+for (const t of ["Yes, 252 monthly is correct for our 3-month plan.", "monthly 252 is right", "it's 252 a mth", "monthly fee of 555", "the monthly rate is 999"]) {
   ok(JSON.stringify(t), hasDisallowedPrice(t) === true);
 }
-console.log("   control — a real rate-card figure must still pass");
-{
-  ok("$280 (on the card) passes", hasDisallowedPrice("Adults Unlimited is $280 for 1 month.") === false);
+console.log("   control — rate-card figures and non-prices must still pass");
+for (const t of [
+  "Adults Unlimited is $280 for 1 month.",
+  "It's $42 for the drop-in.",
+  // These three were FALSE POSITIVES in the first version of the monthly
+  // pattern: it bound any digit after "monthly", and a price hit replaces the
+  // whole reply with the handoff and sets ai_paused. Same mechanism as the
+  // 30 Jul class-size incident.
+  "The monthly 3-month plan works out cheaper",
+  "Our monthly 6 to 12 people class size stays small",
+  "We have about 20 monthly members",
+  "You get 12 classes a month",
+]) {
+  ok(JSON.stringify(t.slice(0, 34) + "…"), hasDisallowedPrice(t) === false);
 }
 
 console.log("5. a day-scoped gap must name the day");
@@ -65,6 +76,33 @@ console.log("5. a day-scoped gap must name the day");
     r === null || !/don't have any evening classes, sorry/i.test(txt),
     `-> ${txt}`
   );
+}
+
+
+console.log("6. the booking-offer gate must not hijack the turn");
+{
+  const OFFER = "You can come try a class first, no membership needed — want me to send you the booking link? 🥊";
+  const g = (text, over = {}) =>
+    isOfferAcceptance({
+      lastAssistant: OFFER,
+      text,
+      joinHit: undefined,
+      hasDeterministicAnswer: false,
+      offerAgeMs: 60_000,
+      ...over,
+    });
+  // The case this exists for.
+  ok('"All right thank you!" still sends', g("All right thank you!") === true);
+  ok('"ok" still sends', g("ok") === true);
+  // Every way the first version got it wrong.
+  ok("a buy signal does NOT", g("i want to sign up for the unlimited membership", { joinHit: "wants_to_join" }) === false);
+  ok("a question does NOT", g("what time is the kids class on saturday?") === false);
+  ok("something the schedule layer answers does NOT", g("monday timings", { hasDeterministicAnswer: true }) === false);
+  ok("a long message does NOT", g("ok but can i bring my son he is 8 years old please") === false);
+  ok("a stale offer does NOT", g("ok", { offerAgeMs: 21 * 24 * 60 * 60 * 1000 }) === false);
+  ok("an unknown-age offer does NOT", g("ok", { offerAgeMs: null }) === false);
+  ok("a refusal does NOT", g("no thanks") === false);
+  ok("no offer made does NOT", g("ok", { lastAssistant: "Anytime, Arthur 🙌" }) === false);
 }
 
 console.log(fails === 0 ? "\nALL PASS" : `\n${fails} FAILED`);

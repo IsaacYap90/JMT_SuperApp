@@ -181,6 +181,9 @@ export async function GET(req: NextRequest) {
   // A nudge that reached the customer but never reached the inbox is a real
   // failure, so it is reported in the response, not only to the log.
   const mirrorFailures: { to: string; error: string }[] = [];
+  // A failed stamp is worse than a failed mirror: the mirror only costs
+  // visibility, the stamp costs the customer a duplicate message every 30 min.
+  const stampFailures: { to: string; stage: string; error: string }[] = [];
   let nudged1 = 0;
   let nudged2 = 0;
   let cold = 0;
@@ -306,10 +309,19 @@ export async function GET(req: NextRequest) {
       console.error("[lead-followup] WA INBOX mirror threw", to, e);
       mirrorFailures.push({ to, error: e instanceof Error ? e.message : String(e) });
     }
-    await jai
+    // 🛑 The mirror above was fixed and THIS was left unchecked — the one write
+    // that actually prevents a re-send. supabase-js resolves with { error }, so
+    // a failed stamp is invisible and decideNudge returns nudge1 again on the
+    // next */30 run: the customer gets the identical message every half hour.
+    // The comment at the top of this block states exactly that rule.
+    const { error: stampError } = await jai
       .from("leads")
       .update({ [isFirst ? "silent_nudge1_sent_at" : "silent_nudge2_sent_at"]: new Date().toISOString() })
       .eq("contact_number", to);
+    if (stampError) {
+      console.error("[lead-followup] STAMP FAILED — this WILL re-send", to, stampError.message);
+      stampFailures.push({ to, stage: isFirst ? "nudge1" : "nudge2", error: stampError.message });
+    }
 
     if (isFirst) nudged1++;
     else nudged2++;
@@ -326,6 +338,8 @@ export async function GET(req: NextRequest) {
     failed,
     mirror_failed: mirrorFailures.length,
     mirror_failures: mirrorFailures,
+    stamp_failed: stampFailures.length,
+    stamp_failures: stampFailures,
     plans,
   });
 }

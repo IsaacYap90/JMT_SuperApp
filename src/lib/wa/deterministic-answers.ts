@@ -219,6 +219,46 @@ export function acceptsBookingOffer(text: string): boolean {
   return true;
 }
 
+/**
+ * Is this message the answer to our own "want me to send you the booking link?"
+ * — and nothing else?
+ *
+ * Deliberately narrow. The first version of this only checked the marker and
+ * "not a refusal", and it hijacked the whole turn after every price quote: a
+ * lead saying "i want to sign up for the unlimited membership" got a drop-in
+ * link and Jeremy was never pinged, and "what time is the kids class on
+ * saturday?" got an adult $42 pitch. (Caught by the /predeploy review lane,
+ * 12 Sep 2026 — the hole was in the fix for Arthur.)
+ *
+ * A yes is SHORT, carries no question of its own, is not a buy signal, is not
+ * something the timetable layer can answer properly, and follows the offer
+ * within a day.
+ */
+export function isOfferAcceptance(a: {
+  lastAssistant: string;
+  text: string;
+  /** Truthy when detectJoinIntent fired — a buy signal outranks this entirely. */
+  joinHit?: unknown;
+  /** True when buildDeterministicAnswer can answer the message properly. */
+  hasDeterministicAnswer: boolean;
+  /** Age of the offer message. null when unknown — treated as too old. */
+  offerAgeMs: number | null;
+  maxWords?: number;
+  maxAgeMs?: number;
+}): boolean {
+  const { lastAssistant, text, joinHit, hasDeterministicAnswer, offerAgeMs } = a;
+  const maxWords = a.maxWords ?? 6;
+  const maxAgeMs = a.maxAgeMs ?? 24 * 60 * 60 * 1000;
+  if (!lastAssistant.includes(BOOKING_OFFER_MARKER)) return false;
+  if (!acceptsBookingOffer(text)) return false;
+  if (joinHit) return false;
+  if (hasDeterministicAnswer) return false;
+  if (text.includes("?")) return false;
+  if (text.trim().split(/\s+/).length > maxWords) return false;
+  if (offerAgeMs === null || offerAgeMs > maxAgeMs) return false;
+  return true;
+}
+
 // ── Fact-sheet parsing ───────────────────────────────────────────────────────
 // Everything below reads the sheet and returns null the moment it sees a shape
 // it doesn't recognise. null is always safe: the caller falls through to the AI.

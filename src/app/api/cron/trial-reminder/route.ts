@@ -241,15 +241,25 @@ export async function GET(req: NextRequest) {
   }
 
   // Stamp processed trials so no future run re-sends (cron idempotency rule).
+  // 🛑 The error MUST be checked. supabase-js resolves with { error }, the send
+  // window is 60 minutes wide against a */30 cron, so every trial is in-window
+  // on two consecutive runs and this null column is the ONLY thing stopping a
+  // second approved template landing on the customer's phone.
+  let stampError: string | null = null;
   if (deliveredTrialIds.size > 0) {
-    await supabase
+    const { error } = await supabase
       .from("trial_bookings")
       .update({ reminder_1h_sent_at: new Date().toISOString() })
       .in("id", Array.from(deliveredTrialIds));
+    if (error) {
+      stampError = error.message;
+      console.error("[trial-reminder] STAMP FAILED — next run WILL re-send", error.message);
+    }
   }
 
   return NextResponse.json({
     ok: true,
+    stamp_failed: stampError,
     date: ymd,
     trials: upcomingTrials.length,
     recipients: recipientTrials.size,

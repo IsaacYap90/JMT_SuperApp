@@ -241,15 +241,24 @@ export async function GET(req: NextRequest) {
   // Mark trials whose 24h reminder reached at least one recipient, so the
   // 6h backstop cron skips them. Trials with zero successful deliveries stay
   // null and the backstop will pick them up.
+  // 🛑 Checked for the same reason as the 1h cron: a silent failure here sends
+  // the approved template again on the next run, and a third time via the
+  // backstop, which keys on this same null column.
+  let stampError: string | null = null;
   if (deliveredTrialIds.size > 0) {
-    await supabase
+    const { error } = await supabase
       .from("trial_bookings")
       .update({ reminder_24h_sent_at: new Date().toISOString() })
       .in("id", Array.from(deliveredTrialIds));
+    if (error) {
+      stampError = error.message;
+      console.error("[trial-reminder-24h] STAMP FAILED — next run WILL re-send", error.message);
+    }
   }
 
   return NextResponse.json({
     ok: true,
+    stamp_failed: stampError,
     date: ymd,
     trials: upcomingTrials.length,
     recipients: recipientTrials.size,

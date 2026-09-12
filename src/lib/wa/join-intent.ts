@@ -295,9 +295,16 @@ const AMOUNT_PATTERNS: RegExp[] = [
   // our 3-month plan" shipped straight past this guard — the 29 Jul $252
   // incident again, just without the dollar sign. Same for "a mth" and the
   // "x months" phrasing people actually type.
-  /(\d[\d,]*(?:\.\d+)?)\s*(?:\/\s*(?:mo|mth|month)\b|per\s+(?:month|mth|mo)\b|a\s+(?:month|mth)\b|monthly\b|\s*(?:\/|per\s+)?(?:pax|person)\s+(?:a|per)\s+month\b)/g, //  252/mo · 252 per month · 252 monthly
+  /(\d[\d,]*(?:\.\d+)?)\s*(?:\/\s*(?:mo|mth|month)\b|per\s+(?:month|mth|mo)\b|a\s+(?:month|mth)\b|monthly\b(?!\s*(?:member|people|person|pax|student|kid|class|session)s?\b)|\s*(?:\/|per\s+)?(?:pax|person)\s+(?:a|per)\s+month\b)/g, //  252/mo · 252 per month · 252 monthly
   // The figure can also come BEFORE the word: "monthly 252", "monthly is 280".
-  /\bmonthly\b(?:\s+(?:is|at|rate|fee|price))?\s*(?:of\s*)?(\d[\d,]*(?:\.\d+)?)/g,
+  // 🛑 Three digits minimum, and not immediately followed by a unit word. The
+  // first version bound any digit after "monthly", so "the monthly 3-month
+  // plan", "monthly 6 to 12 people class size" and "about 20 monthly members"
+  // all read as prices — and a price hit REPLACES the reply with the handoff
+  // and sets ai_paused. That is the 30 Jul class-size incident's mechanism.
+  // Anything under 100 without a currency marker is caught by the $ pattern
+  // above if it really is money. (Tightened 12 Sep 2026.)
+  /\bmonthly\b(?:\s+(?:is|at|of|rate|fee|price|cost|costs|comes|to)){0,4}\s*(\d{3}[\d,]*(?:\.\d+)?)\b(?!\s*(?:-|–)?\s*(?:month|mth|people|person|pax|member|student|kid|class|session|year))/g,
 ];
 
 // NOTE (fixed 2026-07-30): "per class / per session / per pax" used to count as a

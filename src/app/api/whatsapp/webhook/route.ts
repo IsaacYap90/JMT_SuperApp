@@ -15,9 +15,8 @@ import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
 // these answers with no deploy, exactly like the model path.
 import { DROPIN_BOOKING_URL } from "@/lib/wa/followup-dropin";
 import {
-  acceptsBookingOffer,
-  BOOKING_OFFER_MARKER,
   buildDeterministicAnswer,
+  isOfferAcceptance,
   lateArrivalAnswer,
 } from "@/lib/wa/deterministic-answers";
 import { getJaiFacts } from "@/lib/wa/jai-facts";
@@ -415,7 +414,27 @@ export async function POST(req: NextRequest) {
     // We offered; this is the answer. Anything but a refusal gets the link,
     // deterministically — the model previously read "All right thank you!" as
     // a sign-off and sent nothing (Arthur, 11 Sep 2026).
-    if (lastAssistant.includes(BOOKING_OFFER_MARKER) && acceptsBookingOffer(text)) {
+    // 🛑 Narrow on purpose. The first version of this branch returned before the
+    // join handling and before the deterministic answer, so it hijacked the turn
+    // after every price quote: "i want to sign up for the unlimited membership"
+    // got a drop-in link and Jeremy was NEVER pinged, and "what time is the kids
+    // class on saturday?" got an adult $42 pitch. Caught by the /predeploy code
+    // review lane, 12 Sep 2026.
+    //
+    // A yes to "want me to send you the booking link?" is SHORT and carries no
+    // question of its own. Anything longer, anything with a question mark, any
+    // buy signal, and anything the deterministic layer can answer properly is
+    // not this — it is a new topic, and it belongs to the paths below.
+    const lastAssistantAt = [...prior].reverse().find((m) => m.role === "assistant")?.created_at;
+    const offerAnswer = isOfferAcceptance({
+      lastAssistant,
+      text,
+      joinHit,
+      hasDeterministicAnswer: Boolean(buildDeterministicAnswer(text, await getJaiFacts())),
+      offerAgeMs: lastAssistantAt ? Date.now() - new Date(lastAssistantAt).getTime() : null,
+    });
+
+    if (offerAnswer) {
       const out =
         `Here you go — book any All-Levels class here: ${DROPIN_BOOKING_URL}\n\n` +
         `It's $42 for the drop-in, and beginners are welcome in All-Levels — the coaches scale it to you. ` +
