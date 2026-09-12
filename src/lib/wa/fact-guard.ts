@@ -230,6 +230,20 @@ function linkAllowed(norm: string, allow: string[]): boolean {
 const TRUE_NEGATION_RE =
   /\b(no|not|n't|never|none|cannot|unfortunately|afraid|isn't|aren't|don't|doesn't|won't)\b/i;
 
+// Politeness that carries no claim. Stripped before a negation test so that
+// "No worries," / "Sorry," cannot switch the timetable guards off.
+// Deliberately a closed list: "unfortunately" and "afraid" are NOT here — those
+// really do negate what follows.
+const OPENER_RE =
+  /^\s*(?:sorry|so sorry|apologies|my apologies|no worries|no worry|no problem|no probs|not at all|oh no|ah|ahh|hey|hi|hello|yes|yeah|sure|okay|ok)[\s,!.:-]*/i;
+
+function stripOpener(seg: string): string {
+  let out = seg;
+  // Two can stack: "Ah sorry, the Monday class is ...".
+  for (let i = 0; i < 2; i++) out = out.replace(OPENER_RE, "");
+  return out;
+}
+
 // ── day binding ─────────────────────────────────────────────────────────────
 // Checking that a time exists SOMEWHERE in the sheet is not the same as checking
 // it exists on the day the model attached it to. E2E on 2026-09-01 caught the
@@ -338,8 +352,23 @@ export function checkDayBinding(reply: string, sched: DaySchedule, now: Date = n
   // weekdays we start at 7am but Saturday starts at 10am" the 7am belongs to the
   // unnamed weekdays, not to the Saturday that follows it. Without this split
   // the nearest-day rule bound 7am to Saturday and blocked a correct reply.
-  for (const seg of reply.split(/[.!?;\n]|\u00b7|\b(?:but|whereas|although|though)\b/i)) {
-    if (!seg || !seg.trim() || TRUE_NEGATION_RE.test(seg) || DAY_RANGE_RE.test(seg)) continue;
+  // An em/en dash with spaces round it is a clause boundary too: in "Sorry, we
+  // don't run mornings on Tuesday — Tuesday classes start at 5:30pm" the
+  // negation belongs to the first clause only, and without this split the
+  // 5:30pm claim inherited the "don't" and went unchecked.
+  // 🛑 Spaces are required: a bare hyphen is inside every time RANGE we print
+  // ("4:30-5:15pm"), and splitting on those would shred the claims.
+  for (const seg of reply.split(
+    /[.!?;\n]|\u00b7|\s+[\u2014\u2013]\s+|\s+--\s+|\b(?:but|whereas|although|though)\b/i
+  )) {
+    if (!seg || !seg.trim() || DAY_RANGE_RE.test(seg)) continue;
+    // 🛑 Test the negation against the CLAIM, not the pleasantry in front of it.
+    // "No worries, our Kids class on Monday is 4:30-5:15pm" contains "No", so
+    // the whole segment was skipped and an invented class time was then logged
+    // as "verified against the sheet". A leading apology is the commonest way
+    // JAI opens a correction, and a correction is exactly where a wrong time
+    // appears. (Found 11 Sep 2026.)
+    if (TRUE_NEGATION_RE.test(stripOpener(seg))) continue;
     // Only bind times when the sentence is actually about classes. "I'll get
     // Coach Jeremy to call you Monday around 6pm" names a day and a time but
     // asserts nothing about the timetable, and blocking it would escalate a
@@ -692,7 +721,7 @@ export function validateReply(
     const negatedSegment = (token: string): boolean =>
       reply
         .split(/[.!?;\n]/)
-        .some((seg) => seg.includes(token) && TRUE_NEGATION_RE.test(seg));
+        .some((seg) => seg.includes(token) && TRUE_NEGATION_RE.test(stripOpener(seg)));
 
     for (const t of extractTimes(reply)) {
       if (idx.times.has(t.norm)) continue;

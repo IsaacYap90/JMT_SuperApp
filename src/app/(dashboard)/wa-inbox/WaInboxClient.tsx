@@ -276,11 +276,15 @@ export default function WaInboxClient({ demo = false }: { demo?: boolean }) {
       </aside>
 
       {/* Thread */}
-      <section className={`${showThreadOnly ? "flex" : "hidden md:flex"} flex-1 bg-jai-bg flex-col min-h-0`}>
+      {/* 🛑 min-w-0: without it this flex child cannot shrink below its content's
+          intrinsic width, so on a short/landscape phone the thread — and the
+          Mark member / AI on / Delete buttons — got clipped off the right edge
+          by the parent's overflow-hidden (Isaac, 12 Sep 2026). */}
+      <section className={`${showThreadOnly ? "flex" : "hidden md:flex"} flex-1 min-w-0 bg-jai-bg flex-col min-h-0`}>
         {!active && <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">Select a conversation</div>}
         {active && (
           <>
-            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-jai-border bg-jai-card flex items-center gap-2 sm:gap-3">
+            <div className="px-3 sm:px-5 py-2.5 sm:py-3 border-b border-jai-border bg-jai-card flex flex-wrap items-center gap-2 sm:gap-3">
               <button onClick={() => setSelected(null)} className="md:hidden -ml-1 p-1.5 text-gray-400 hover:text-white rounded shrink-0" aria-label="Back">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
               </button>

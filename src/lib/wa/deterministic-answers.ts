@@ -63,6 +63,7 @@ export type DeterministicConfig = {
     scheduleWindowIntro: string; // {window}
     scheduleNoDayAsk: string; // {days}
     scheduleNothingInWindow: string; // {window}
+    scheduleNothingOnDay: string; // {window}, {day}
     scheduleTrailer: string;
     lateOk: string;
     lateTooLate: string;
@@ -145,8 +146,11 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
   tomorrowWords: ["tomorrow", "tmr", "tmrw", "esok", "明天", "明晚"],
 
   timeWindows: {
-    morning: { aliases: ["morning", "am class", "pagi", "早上", "早班"], fromHour: 0, toHour: 11 },
-    afternoon: { aliases: ["afternoon", "lunch", "lunchtime", "noon", "petang", "下午", "中午"], fromHour: 11, toHour: 17 },
+    // 🛑 toHour is EXCLUSIVE. At 11 this hid Sat 11:30am-12:30pm All-Levels —
+    // Saturday's ONLY adult class — so an adult asking about Saturday morning
+    // was shown Kids and Pre-Teen and told nothing else existed. (11 Sep 2026.)
+    morning: { aliases: ["morning", "am class", "pagi", "早上", "早班"], fromHour: 0, toHour: 12 },
+    afternoon: { aliases: ["afternoon", "lunch", "lunchtime", "noon", "petang", "下午", "中午"], fromHour: 12, toHour: 17 },
     evening: { aliases: ["evening", "night", "tonight", "after work", "malam", "晚上", "晚班", "今晚"], fromHour: 17, toHour: 24 },
   },
 
@@ -160,6 +164,9 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
     scheduleNoDayAsk:
       "Sure! We run classes {days} 🥊 Which day are you looking at? Tell me the day and I'll give you the exact times.",
     scheduleNothingInWindow: "We don't have any {window} classes, sorry!",
+    // Day-scoped version. Without it, "evening class on sunday" answered "We
+    // don't have any evening classes, sorry!" — false for Mon-Fri. (11 Sep 2026.)
+    scheduleNothingOnDay: "We don't have any {window} classes on *{day}*, sorry!",
     scheduleTrailer: "Anything else I can help with? 🙂",
     lateOk:
       "No worries — {mins} minutes is inside our 15-minute window, so you're still good to join 🙏 Just come straight in.",
@@ -177,12 +184,40 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
       // rates link, not the whole list, and the suite checks that the drop-in
       // rate does not leak into a membership answer.
       "You can come try a class first, no membership needed — want me to send you the booking link? 🥊",
+      // 🛑 Keep this wording in step with BOOKING_OFFER_MARKER above — the
+      // acceptance handler matches on it.
     quickReplies: {
       schedule: ["Today", "Tomorrow"],
       price: ["Book a class"],
     },
   },
 };
+
+// ── The booking-link offer, and hearing the answer ──────────────────────────
+// The adult price answer ends with "want me to send you the booking link?".
+// That is a direct question, and until 12 Sep 2026 NOTHING read the reply:
+// Arthur answered "All right thank you!" and got "Anytime, Arthur" back
+// instead of the link. JAI was asking a question it could not hear.
+//
+// The asymmetry decides the rule: sending a booking link to someone who did
+// not want it costs nothing; not sending it loses the lead. So anything that
+// is not clearly a refusal counts as yes.
+export const BOOKING_OFFER_MARKER = "want me to send you the booking link";
+
+// Only these turn the offer down. Everything else — "ok", "sure", "all right
+// thank you", "yes pls", a thumbs-up, even silence-shaped politeness — is a yes.
+const DECLINE_RE =
+  /\b(no thanks|no thank you|no need|not now|not yet|nope|nah|maybe later|later lah|i'?m good|im good|all good|don'?t need|dont need|no lah|not interested)\b/i;
+
+/** True when the customer's reply to the booking-link offer is not a refusal. */
+export function acceptsBookingOffer(text: string): boolean {
+  const t = (text || "").trim();
+  if (!t) return false;
+  if (DECLINE_RE.test(t)) return false;
+  // A bare "no" on its own, but not "no worries" or "no problem".
+  if (/^no[.!\s]*$/i.test(t)) return false;
+  return true;
+}
 
 // ── Fact-sheet parsing ───────────────────────────────────────────────────────
 // Everything below reads the sheet and returns null the moment it sees a shape
@@ -461,7 +496,7 @@ function scheduleAnswer(
       // No classes in the asked-for window on that day. Say so plainly and give
       // the rest of that day rather than nothing.
       const all = day.entries.map((e) => `• ${e.text}`).join("\n");
-      const head = fill(c.scheduleNothingInWindow, { window: det.window || "" });
+      const head = fill(c.scheduleNothingOnDay, { window: det.window || "", day: day.label });
       return {
         intent: "SCHEDULE",
         messageText: `${head}\n\n${fill(c.scheduleDayIntro, { day: day.label })}\n${all}\n\n${c.scheduleTrailer}`,
@@ -675,8 +710,18 @@ export function lateArrivalAnswer(
         if (m) { clsM = m; break; }
       }
     }
+    // 🛑 "in 20 minutes" is a DURATION from now, not a clock time. The bare
+    // `in` in the alternation below read it as 20:00, so a member messaging at
+    // 19:00 that they arrive in 20 minutes — ten minutes EARLY for the 19:30
+    // class — was deterministically told they could not join. No model, no
+    // later override. Hand a relative arrival back to the model instead of
+    // guessing: null is always safe. (Found 11 Sep 2026.)
+    if (/\bin\s+(?:a\s+)?(?:\d{1,3}|ten|fifteen|twenty|thirty|few)\s*(?:mins?|minutes?|hrs?|hours?)\b/i.test(t)) {
+      return null;
+    }
     // "reach at 745", "arrive 8pm", "be there by 7.45"
-    const arrM = /(?:reach|arrive|arriving|get\s+there|be\s+there|in)\s*(?:at|by|around)?\s*(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)/i.exec(t);
+    // No bare `in` here — see the guard above.
+    const arrM = /(?:reach|arrive|arriving|get\s+there|be\s+there)\s*(?:at|by|around)?\s*(\d{1,2}[:.]?\d{0,2}\s*(?:am|pm)?)/i.exec(t);
     // "20 minutes late", "fifteen mins late"
     const words: Record<string, number> = { ten: 10, fifteen: 15, twenty: 20, thirty: 30 };
     // "…20 minutes late" and "…fifteen minutes after it starts" are the same

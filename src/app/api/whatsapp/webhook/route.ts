@@ -13,7 +13,13 @@ import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
 // Layer 2 — class times + prices answered from the fact sheet, never the model.
 // The sheet is passed IN (read live from the DB) so an edit in Supabase changes
 // these answers with no deploy, exactly like the model path.
-import { buildDeterministicAnswer, lateArrivalAnswer } from "@/lib/wa/deterministic-answers";
+import { DROPIN_BOOKING_URL } from "@/lib/wa/followup-dropin";
+import {
+  acceptsBookingOffer,
+  BOOKING_OFFER_MARKER,
+  buildDeterministicAnswer,
+  lateArrivalAnswer,
+} from "@/lib/wa/deterministic-answers";
 import { getJaiFacts } from "@/lib/wa/jai-facts";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
@@ -403,6 +409,27 @@ export async function POST(req: NextRequest) {
         await markHandled(); // reply delivered → safe to dedup retries
         return NextResponse.json({ ok: true });
       }
+    }
+
+    // ── They said yes to the booking link ────────────────────────────────
+    // We offered; this is the answer. Anything but a refusal gets the link,
+    // deterministically — the model previously read "All right thank you!" as
+    // a sign-off and sent nothing (Arthur, 11 Sep 2026).
+    if (lastAssistant.includes(BOOKING_OFFER_MARKER) && acceptsBookingOffer(text)) {
+      const out =
+        `Here you go — book any All-Levels class here: ${DROPIN_BOOKING_URL}\n\n` +
+        `It's $42 for the drop-in, and beginners are welcome in All-Levels — the coaches scale it to you. ` +
+        `Shout if you'd rather I check a specific day 🥊`;
+      await sb.from("conversations").insert({
+        contact_number: from,
+        contact_name: contactName,
+        role: "assistant",
+        message: out,
+        via: "bot",
+      });
+      await sendText(from, `*Jai*\n${out}`);
+      await markHandled();
+      return NextResponse.json({ ok: true });
     }
 
     if (!joinHit && !isNewContact) {

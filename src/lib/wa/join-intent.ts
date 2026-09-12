@@ -291,7 +291,13 @@ const AMOUNT_PATTERNS: RegExp[] = [
   /\$\s?(\d[\d,]*(?:\.\d+)?)/g, //  $252 · $ 252 · $252.50
   /(\d[\d,]*(?:\.\d+)?)\s*(?:sgd|usd|dollars?|bucks)\b/g, //  252 dollars · 252 SGD
   /(?:sgd|usd|s\$|rm)\s*(\d[\d,]*(?:\.\d+)?)\b/g, //  SGD 252 · S$252
-  /(\d[\d,]*(?:\.\d+)?)\s*(?:\/\s*(?:mo|mth|month)\b|per\s+(?:month|mth)\b|a\s+month\b)/g, //  252/mo · 252 per month
+  // 🛑 "monthly" was missing until 12 Sep 2026, so "252 monthly is correct for
+  // our 3-month plan" shipped straight past this guard — the 29 Jul $252
+  // incident again, just without the dollar sign. Same for "a mth" and the
+  // "x months" phrasing people actually type.
+  /(\d[\d,]*(?:\.\d+)?)\s*(?:\/\s*(?:mo|mth|month)\b|per\s+(?:month|mth|mo)\b|a\s+(?:month|mth)\b|monthly\b|\s*(?:\/|per\s+)?(?:pax|person)\s+(?:a|per)\s+month\b)/g, //  252/mo · 252 per month · 252 monthly
+  // The figure can also come BEFORE the word: "monthly 252", "monthly is 280".
+  /\bmonthly\b(?:\s+(?:is|at|rate|fee|price))?\s*(?:of\s*)?(\d[\d,]*(?:\.\d+)?)/g,
 ];
 
 // NOTE (fixed 2026-07-30): "per class / per session / per pax" used to count as a
