@@ -23,6 +23,10 @@ export const PAUSE_STALE_MS = 24 * 60 * 60 * 1000;
  * True when the pause on `contactNumber` is stale — i.e. no HUMAN assistant
  * message in the thread within PAUSE_STALE_MS.
  *
+ * When NO human has ever replied in the thread, the clock falls back to the
+ * newest assistant row of any `via` — the outbound reply the pause was written
+ * beside — so a fresh pause is not instantly stale. See the comment inline.
+ *
  * "Human" = an assistant row whose `via` is neither 'bot' nor FOLLOWUP_VIA.
  * JAI stamps via='bot' on every message it sends (webhook + trial-verify), the
  * lead-followup cron stamps its nudges FOLLOWUP_VIA (2026-09-11 — an automated
@@ -55,8 +59,41 @@ export async function pauseIsStale(
     return false;
   }
   const last = data?.[0]?.created_at as string | undefined;
-  if (!last) return true; // no human has EVER replied here → nobody is on it
-  const ts = new Date(last).getTime();
-  if (!Number.isFinite(ts)) return false;
-  return now - ts >= PAUSE_STALE_MS;
+  if (last) {
+    const ts = new Date(last).getTime();
+    if (!Number.isFinite(ts)) return false;
+    return now - ts >= PAUSE_STALE_MS;
+  }
+
+  // 🛑 No human row is NOT the same as 24h elapsed. This used to `return true`,
+  // which made the pause stale the instant it was written: the promo/price-leak
+  // handoff sets ai_paused, the customer replies 30 seconds later, and JAI
+  // un-muted itself and answered — on exactly the threads the pause exists for,
+  // because most of them have no human reply at all (102 human rows across the
+  // whole table on 2026-09-02). The sheet's rule is that JAI must not be pressed
+  // into guessing a figure while Jeremy is closing; that was not enforced.
+  // (Found 12 Sep 2026.)
+  //
+  // The honest fallback clock is the pause's own age. There is no leads.paused_at
+  // column, but the pause is always written alongside an outbound reply — the
+  // escalating bot message, or the nudge — so the newest assistant row of ANY
+  // `via` is when the handoff happened, i.e. how long Jeremy has had it.
+  const { data: anyRow, error: anyErr } = await sb
+    .from("conversations")
+    .select("created_at")
+    .eq("contact_number", contactNumber)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(1);
+  if (anyErr) {
+    console.error("[jai-webhook] pauseIsStale fallback read failed, staying paused", anyErr);
+    return false;
+  }
+  const since = anyRow?.[0]?.created_at as string | undefined;
+  // No assistant row at all: we cannot date the pause, so we do not clear it.
+  // Same direction as every other unknown in this file.
+  if (!since) return false;
+  const sinceTs = new Date(since).getTime();
+  if (!Number.isFinite(sinceTs)) return false;
+  return now - sinceTs >= PAUSE_STALE_MS;
 }

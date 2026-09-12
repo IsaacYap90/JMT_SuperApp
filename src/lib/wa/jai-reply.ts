@@ -20,6 +20,7 @@ import {
   type FactCheckResult,
 } from "./fact-guard";
 import { buildDeterministicAnswer, scheduleAnswerForDay } from "./deterministic-answers";
+import { FACT_GUARD_BLOCK_TEXT } from "./join-intent";
 import { isStubbedLlm, stubbedLlmReply } from "./harness";
 
 const SYSTEM_PROMPT = `You are Jai, Coach Jeremy's assistant at Jai Muay Thai (JMT), a Muay Thai gym in Ang Mo Kio, Singapore. You help prospects and members over WhatsApp.
@@ -680,8 +681,7 @@ export async function generateReply(
       // Never send an invented fact. Hand the customer to Jeremy through the
       // EXISTING escalation mechanism — the webhook Telegram-alerts on it.
       return {
-        messageText:
-          "Good question — let me double-check that with Coach Jeremy and get right back to you 🙏",
+        messageText: FACT_GUARD_BLOCK_TEXT,
         escalation: {
           escalation: "GENERAL_ESCALATION",
           intent: "fact_guard_block",

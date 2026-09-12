@@ -87,6 +87,22 @@ const hits = [
   { msg: "kids fee?", intent: "PRICE", must: ["$250"] },
   { msg: "sunday got class what time", intent: "SCHEDULE", must: ["no group classes"], mustNot: ["•"] },
   { msg: "how much is your monthly membership", intent: "PRICE", must: ["1mo $280"] },
+  // ── found by /predeploy 2026-09-12 ───────────────────────────────────────
+  // The Malay youth words only had "anak". A parent writing "budak" got the
+  // ADULT price, stated as fact. Malay in, Malay out is a fact-sheet rule, so
+  // these are real inputs, not exotic ones.
+  { msg: "berapa harga untuk budak", intent: "PRICE", must: ["$250"], mustNot: ["$280"] },
+  { msg: "harga untuk kanak-kanak?", intent: "PRICE", must: ["$250"], mustNot: ["$280"] },
+  { msg: "berapa untuk anak saya", intent: "PRICE", must: ["$250"], mustNot: ["$280"] },
+  // The price trailer offered the booking link on EVERY tier, including the
+  // kids/pre-teen one. The parent replies "ok", isOfferAcceptance fires, and
+  // the adult $42 drop-in branch answers a question about a 7-year-old.
+  // Kids and Pre-Teen free trials are still running; the drop-in is the ADULT
+  // path. So a youth price answer must not carry the adult booking offer.
+  { msg: "how much for my son", intent: "PRICE", must: ["$250"], mustNot: ["$280", "booking link"] },
+  { msg: "kids fee?", intent: "PRICE", must: ["$250"], mustNot: ["booking link"] },
+  // control: the ADULT price answer must KEEP the booking offer.
+  { msg: "how much per month for me?", intent: "PRICE", must: ["$280", "booking link"] },
 ];
 for (const t of hits) {
   const a = buildDeterministicAnswer(t.msg, JAI_FACTS);

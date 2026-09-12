@@ -58,22 +58,10 @@ export type FactGuardConfig = {
    * "host/path-prefix" and is matched against the normalised link.
    */
   allowedRuntimeLinks: string[];
-  /**
-   * Words that mark a sentence as *correcting* a value the customer wrote
-   * ("no, there's no 7pm class — closest is 6:30pm"). A time/price the
-   * CUSTOMER used is allowed to be echoed back inside such a sentence; the
-   * assistant is referring to their number, not asserting a new fact.
-   * English by default; a tenant in another language swaps this list.
-   */
-  negationCues: string[];
 };
 
 export const DEFAULT_FACT_GUARD_CONFIG: FactGuardConfig = {
   allowedRuntimeLinks: [],
-  negationCues: [
-    "no", "not", "n't", "never", "unfortunately", "sorry", "afraid",
-    "closest", "nearest", "instead", "but we", "only have", "we have",
-  ],
 };
 
 // ── time extraction ─────────────────────────────────────────────────────────
@@ -222,11 +210,20 @@ function linkAllowed(norm: string, allow: string[]): boolean {
   });
 }
 
-// TRUE negations only. `negationCues` in the config is a deliberately loose list
-// used for the ECHO allowance, where the token must ALSO be one the customer
-// wrote — there "we have" is a harmless extra signal. It must never be reused as
-// a standalone negation test: "Yes, we have a 7pm class on Monday!" matches it,
-// and reusing it exempted exactly the assertion this guard exists to stop.
+// TRUE negations only — the single negation test in this file, used by BOTH the
+// echo allowance and negatedSegment. There used to be a second, deliberately
+// loose `negationCues` list in the config, and the echo allowance used it. That
+// list contained "we have" and "only have", so AFFIRMING a value the customer
+// had typed counted as "correcting" them: "We have a 9pm Advanced class" and
+// "We only have the $199 plan" both passed the guard the moment the customer
+// had named 9pm or $199. The list is gone (12 Sep 2026) rather than merely
+// unused, because a negation test that matches "Yes, we have a 7pm class on
+// Monday!" is a trap that exempts exactly the assertion this guard exists to stop.
+// Clause boundaries for the negation test. Mirrors the splitter checkDayBinding
+// uses, plus the comma — see negatedSegment for why the comma matters.
+const NEGATION_CLAUSE_SPLIT_RE =
+  /[.!?;,\n]|\u00b7|\s+[\u2014\u2013]\s+|\s+--\s+|\b(?:but|whereas|although|though)\b/i;
+
 const TRUE_NEGATION_RE =
   /\b(no|not|n't|never|none|cannot|unfortunately|afraid|isn't|aren't|don't|doesn't|won't)\b/i;
 
@@ -672,16 +669,23 @@ function echoedCorrection(
   reply: string,
   raw: string,
   customerNorms: Set<string>,
-  norm: string,
-  cues: string[]
+  norm: string
 ): boolean {
   if (!customerNorms.has(norm)) return false;
   const at = reply.indexOf(raw);
   if (at === -1) return false;
   const start = Math.max(0, reply.lastIndexOf(".", at) + 1);
   const endDot = reply.indexOf(".", at);
-  const sentence = reply.slice(start, endDot === -1 ? reply.length : endDot).toLowerCase();
-  return cues.some((c) => sentence.includes(c.toLowerCase()));
+  const sentence = reply.slice(start, endDot === -1 ? reply.length : endDot);
+  // 🛑 A TRUE negation, not config.negationCues. That list (DEFAULT_FACT_GUARD_CONFIG)
+  // contains "we have" and "only have", so AFFIRMING a time the customer named
+  // counted as "correcting" them: "We have a 9pm Advanced class, see you then."
+  // passed the guard the moment the customer had typed 9pm, and there is no
+  // second layer for times — checkDayBinding only fires when the draft also
+  // names a day. The comment on TRUE_NEGATION_RE below already warned that the
+  // loose list must never serve as a negation test; this was that reuse.
+  // (Found 12 Sep 2026.)
+  return TRUE_NEGATION_RE.test(stripOpener(sentence));
 }
 
 export type ValidateOptions = {
@@ -718,14 +722,24 @@ export function validateReply(
     // too. "There is no 8pm class on Mondays" does not assert that 8pm exists,
     // and blocking it would escalate the single most useful correction JAI can
     // send — the one that stops a lead turning up at the wrong time.
+    // 🛑 Split on CLAUSE boundaries, not just sentence ends. Splitting only on
+    // [.!?;\n] meant one true negation exempted every time token in the same
+    // comma-joined sentence: "Sorry, we don't run a 6am session, but on Tuesday
+    // the earliest is 7:15am" passed the guard and went out verbatim, though
+    // Tuesday's first class is 12:15pm and 7:15am exists on no day — the lead
+    // turns up to a closed gym. A leading apology before a correction is JAI's
+    // commonest phrasing, so this was not an exotic input. (Found 12 Sep 2026.)
+    // The comma is the only addition over the splitter checkDayBinding uses;
+    // spaces stay REQUIRED around the dashes, because a bare hyphen sits inside
+    // every time range we print ("4:30-5:15pm") and splitting those shreds them.
     const negatedSegment = (token: string): boolean =>
       reply
-        .split(/[.!?;\n]/)
+        .split(NEGATION_CLAUSE_SPLIT_RE)
         .some((seg) => seg.includes(token) && TRUE_NEGATION_RE.test(stripOpener(seg)));
 
     for (const t of extractTimes(reply)) {
       if (idx.times.has(t.norm)) continue;
-      if (echoedCorrection(reply, t.raw, custTimes, t.norm, config.negationCues)) continue;
+      if (echoedCorrection(reply, t.raw, custTimes, t.norm)) continue;
       if (negatedSegment(t.raw)) continue;
       add("time", t);
     }
@@ -735,7 +749,7 @@ export function validateReply(
     }
     for (const p of extractPrices(reply)) {
       if (idx.prices.has(p.norm)) continue;
-      if (echoedCorrection(reply, p.raw, custPrices, p.norm, config.negationCues)) continue;
+      if (echoedCorrection(reply, p.raw, custPrices, p.norm)) continue;
       add("price", p);
     }
     for (const l of extractLinks(reply)) {

@@ -47,7 +47,8 @@ import {
   silentNudge1,
   silentNudge2,
 } from "@/lib/wa/followup-dropin";
-import { JOIN_HANDOFF_TEXT, JOIN_HANDOFF_SUFFIX } from "@/lib/wa/join-intent";
+import { HANDOFF_MARKERS } from "@/lib/wa/join-intent";
+
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -152,7 +153,7 @@ export async function GET(req: NextRequest) {
     if (answerAtByContact.has(to) || linkAtByContact.has(to)) continue;
     const body = String(r.message ?? "");
     if (body.includes(DROPIN_BOOKING_URL)) continue;
-    if (body.includes(JOIN_HANDOFF_TEXT) || body.includes(JOIN_HANDOFF_SUFFIX)) continue;
+    if (HANDOFF_MARKERS.some((m) => body.includes(m))) continue;
     answerAtByContact.set(to, new Date(r.created_at).getTime());
   }
 

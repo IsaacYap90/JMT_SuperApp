@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "test:e2e": "playwright test",
-    "test:jai": "node scripts/validate-facts-check.mjs && node scripts/deterministic-answers-check.mjs && node scripts/day-binding-check.mjs && node scripts/timetable-claim-check.mjs && node scripts/substitution-check.mjs && node scripts/late-arrival-check.mjs && node scripts/no-calls-check.mjs && node scripts/session-window-check.mjs && node scripts/guard-holes-check.mjs",
+    "test:jai": "node scripts/validate-facts-check.mjs && node scripts/deterministic-answers-check.mjs && node scripts/day-binding-check.mjs && node scripts/timetable-claim-check.mjs && node scripts/substitution-check.mjs && node scripts/late-arrival-check.mjs && node scripts/no-calls-check.mjs && node scripts/session-window-check.mjs && node scripts/guard-holes-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/pause-stale-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/facts-fallback-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/handoff-markers-check.mjs",
     "test:jai:conversation": "node scripts/jai-conversation-check.mjs"
   },
   "dependencies": {

@@ -69,6 +69,8 @@ export type DeterministicConfig = {
     lateTooLate: string;
     priceIntro: string; // {tier} {price}
     priceTrailer: string;
+    /** Trailer for the youth tiers — must never contain BOOKING_OFFER_MARKER. */
+    priceTrailerYouth: string;
     quickReplies: { schedule: string[]; price: string[] };
   };
 };
@@ -128,7 +130,11 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
 
   youthWords: [
     "kid", "kids", "child", "children", "son", "daughter", "teen", "teens",
-    "pre-teen", "preteen", "student", "students", "nsf", "under 21", "anak",
+    "pre-teen", "preteen", "student", "students", "nsf", "under 21",
+    // Malay. "anak" alone was not enough: a parent writing "budak" got the
+    // ADULT price quoted as fact (found 12 Sep 2026). The sheet's own rule is
+    // "Malay in, Malay out", so these are ordinary inputs here.
+    "anak", "budak", "kanak", "kanak-kanak", "remaja", "pelajar",
     "小孩", "孩子", "儿童", "兒童", "学生", "學生",
   ],
   dropInLabel: /drop[- ]?in|casual|single/i,
@@ -186,6 +192,16 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
       "You can come try a class first, no membership needed — want me to send you the booking link? 🥊",
       // 🛑 Keep this wording in step with BOOKING_OFFER_MARKER above — the
       // acceptance handler matches on it.
+    // 🛑 The youth tiers get their OWN trailer, carrying NO booking offer.
+    // priceTrailer was appended to every tier, so a parent asking a kids price
+    // was offered the booking link; they replied "ok", isOfferAcceptance fired
+    // on BOOKING_OFFER_MARKER and the ADULT $42 drop-in branch answered a
+    // question about a 7-year-old. Kids (6-10) and Pre-Teen (11-14) free
+    // trials are still running and are booked on Calendly, so the drop-in is
+    // the wrong path for them entirely. This line must NOT contain
+    // BOOKING_OFFER_MARKER. (Found 12 Sep 2026.)
+    priceTrailerYouth:
+      "Happy to help you get them started — how old are they? 🙂",
     quickReplies: {
       schedule: ["Today", "Tomorrow"],
       price: ["Book a class"],
@@ -664,18 +680,24 @@ function priceAnswer(
   const tiers = pricing.tiers.filter((t) => !t.isDropIn);
   if (tiers.length === 0) return null;
   let tier = tiers[0];
+  let isYouthTier = false;
   if (det.youth) {
     const match = tiers.find((t) =>
       cfg.youthWords.some((w) => hit(norm(t.label), t.label.toLowerCase(), w))
     );
-    if (match) tier = match;
+    if (match) {
+      tier = match;
+      isYouthTier = true;
+    }
   }
   // Starting price only — the sheet's own rule is to lead with one number and
   // funnel to the free trial, not to dump the full price list.
   return {
     intent: "PRICE",
     messageText:
-      `${fill(cfg.copy.priceIntro, { tier: tier.label, price: tier.firstOption })}\n\n${cfg.copy.priceTrailer}`,
+      `${fill(cfg.copy.priceIntro, { tier: tier.label, price: tier.firstOption })}\n\n${
+        isYouthTier ? cfg.copy.priceTrailerYouth : cfg.copy.priceTrailer
+      }`,
     quickReplies: cfg.copy.quickReplies.price,
   };
 }

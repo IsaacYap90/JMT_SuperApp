@@ -40,3 +40,40 @@ export function sessionBotReplyCount(
   }
   return prior.slice(start).filter((m) => m.role === "assistant").length;
 }
+
+/**
+ * Is JAI repeating itself — i.e. are its last two real replies the same message?
+ *
+ * `priorBot` is every bot message in the thread, oldest-first. The anti-loop
+ * handoff line is NOT a real reply: it is this guard's own output, and counting
+ * it made the guard latch. Pass it as `handoffText` so it can be discounted.
+ *
+ * 🛑 Two separate mistakes live in this one decision, both of which reached
+ * customers. Keep both in mind before changing it.
+ *
+ * 1. The first version counted the handoff as a reply, so once the guard had
+ *    fired twice JAI's last two messages were both the handoff, "repeating
+ *    itself" was true forever, and every later question got the deflection.
+ *    Isaac watched it happen three times in a row (2 Sep 2026).
+ * 2. The fix for that filtered the handoff OUT of the comparison — which looks
+ *    right and is not. Filtering means the genuine duplicate pair that tripped
+ *    the guard stays the newest two non-handoff messages for the rest of the
+ *    conversation, so `repeating` is STILL true forever; only the shape of the
+ *    bug changed. Five brand-new answerable questions each got the deflection.
+ *    (Found 12 Sep 2026 by /predeploy.)
+ *
+ * So: if the NEWEST bot message is the handoff, the guard has already fired for
+ * this repetition and we report false. One handoff per repetition, not one per
+ * turn. A genuinely stuck chat still reaches a human via the caller's hard
+ * ceiling on session reply count.
+ */
+export function isRepeatingItself(priorBot: string[], handoffText: string): boolean {
+  const norm = (m: string) => m.toLowerCase().replace(/[^a-z0-9 ]+/g, "").trim().slice(0, 80);
+  const own = norm(handoffText);
+  const normalised = priorBot.map(norm).filter((m) => m.length > 0);
+  if (normalised.length === 0) return false;
+  // The guard has already spoken — do not fire again off the same repetition.
+  if (normalised[normalised.length - 1] === own) return false;
+  const lastTwo = [...normalised].reverse().filter((m) => m !== own).slice(0, 2);
+  return lastTwo.length === 2 && lastTwo[0] === lastTwo[1];
+}

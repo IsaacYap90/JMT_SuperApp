@@ -459,5 +459,45 @@ export function hasDeadAdultLink(text: string): boolean {
 // (the "FREE TRIALS ARE PAUSED" section). NO Calendly link of any kind. Gives the
 // customer the useful answer AND tells them Coach Jeremy will follow up (he is
 // also paged on Telegram by the escalation).
+// 🛑 NO MONTH, NO DATE, NO SEASON, and no promise to notify them. This string is
+// assigned straight to outText on both WhatsApp and Instagram, so no model and no
+// fact guard ever sees it. Until 12 Sep 2026 it told every adult asking about a
+// free trial that they return "around September" — still going out ON
+// 12 September, while the fact sheet two files away already forbade naming a
+// month ("reads as either a lie or a bot that cannot tell the date", Isaac
+// 2026-09-01). Coach Jeremy has not decided a date. Wording follows the sheet's
+// approved model reply; scripts/facts-fallback-check.mjs now fails if a month
+// reappears here.
+// The anti-loop handoff, and the line the fact guard sends when it blocks a
+// draft. Both used to be inline strings — ANTI_LOOP_HANDOFF_TEXT in the webhook
+// route, the guard line in jai-reply.ts. They live here with the other
+// customer-facing handoff copy because the lead-followup cron has to recognise
+// them: it excluded only the JOIN handoff, so a thread that had just been
+// escalated for a complaint, a PT enquiry, an anti-loop trip or a blocked fact
+// got a cheerful "just checking that answered what you needed?" nudge an hour
+// later, on top of the escalation, while the lead sat waiting for Jeremy.
+// (Found 12 Sep 2026.)
+export const ANTI_LOOP_HANDOFF_TEXT =
+  "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly.";
+
+export const FACT_GUARD_BLOCK_TEXT =
+  "Good question — let me double-check that with Coach Jeremy and get right back to you 🙏";
+
 export const PAUSED_ADULT_TRIAL_TEXT =
-  "We've actually paused free trials for our Adult All-Levels classes at the moment, as the classes are running close to full. We're looking to bring them back around September, though that isn't fixed yet. In the meantime you can still come try us out with a drop-in class at $42 — same class, same coaches, beginners welcome 🙂 You can book it on our website here: https://jaimuaythai.com/booking\n\nI'm also getting Coach Jeremy to follow up with you personally 🙏";
+  "We've actually paused free trials for our Adult All-Levels classes at the moment, as the classes are running close to full. What you can do straight away is a one-off drop-in at $42 — same class, same coaches, beginners welcome 🙂 You can book it on our website here: https://jaimuaythai.com/booking\n\nI'm also getting Coach Jeremy to follow up with you personally 🙏";
+
+// Every bot line that means "a human is taking this over". A thread whose last
+// bot turn was one of these must NOT be armed for a silent nudge: the lead is
+// waiting for Jeremy, not for us. Only the JOIN handoff was excluded before, so
+// a complaint, a PT enquiry, an anti-loop trip, a blocked fact and the paused
+// adult-trial reply all got nudged an hour later with "just checking that
+// answered what you needed? 🙂" — on top of the escalation. (Found 12 Sep 2026.)
+// PAUSED_ADULT_TRIAL_TEXT is matched on its stable opening clause so that
+// editing the drop-in wording cannot silently re-arm the nudge.
+export const HANDOFF_MARKERS = [
+  JOIN_HANDOFF_TEXT,
+  JOIN_HANDOFF_SUFFIX,
+  ANTI_LOOP_HANDOFF_TEXT,
+  FACT_GUARD_BLOCK_TEXT,
+  PAUSED_ADULT_TRIAL_TEXT.slice(0, 80),
+];

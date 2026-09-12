@@ -34,14 +34,13 @@ import {
   JOIN_HANDOFF_SUFFIX,
   inboundHasUnknownFigure,
   PAUSED_ADULT_TRIAL_TEXT,
+  ANTI_LOOP_HANDOFF_TEXT,
 } from "@/lib/wa/join-intent";
-import { sessionBotReplyCount } from "@/lib/wa/session-window";
+import { sessionBotReplyCount, isRepeatingItself } from "@/lib/wa/session-window";
 import { pauseIsStale } from "@/lib/wa/pause-stale";
 
 /** What the anti-loop guard says. Named because the guard must be able to
  *  recognise its OWN output and not mistake it for JAI repeating itself. */
-const ANTI_LOOP_HANDOFF_TEXT =
-  "Let me get Coach Jeremy to sort this out for you directly 🙏 He'll reach out to you shortly.";
 import {
   BOOKING_HINT_MARKER,
   confirmationText,
@@ -562,14 +561,12 @@ export async function POST(req: NextRequest) {
     // forever and every later question got the same deflection. Isaac watched
     // it happen three times in a row. Ignore the handoff when judging
     // repetition — that is the guard looping, not JAI.
-    const norm = (m: string) => m.toLowerCase().replace(/[^a-z0-9 ]+/g, "").trim().slice(0, 80);
-    const ownOutput = norm(ANTI_LOOP_HANDOFF_TEXT);
-    const lastTwoBot = [...priorBot]
-      .reverse()
-      .map((m) => norm(m.message))
-      .filter((m) => m.length > 0 && m !== ownOutput)
-      .slice(0, 2);
-    const repeatingItself = lastTwoBot.length === 2 && lastTwoBot[0] === lastTwoBot[1];
+    // Extracted to session-window.ts so it can be tested — this decision has now
+    // been wrong twice in production, and neither version had a test.
+    const repeatingItself = isRepeatingItself(
+      priorBot.map((m) => String(m.message ?? "")),
+      ANTI_LOOP_HANDOFF_TEXT
+    );
     const dragging = (sessionBotCount >= 8 && repeatingItself) || sessionBotCount >= 20;
     const forceHandoff =
       (resendingLink || dragging) &&

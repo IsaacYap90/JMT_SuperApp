@@ -211,6 +211,77 @@ const CASES = [
     reply: "Your trial is on 2026-09-01, see you then!",
     expect: "pass",
   },
+  // ── the two guard holes /predeploy found 2026-09-12 ──────────────────────
+  // Hole 1: negatedSegment split only on [.!?;\n], so ONE true negation
+  // exempted every time token in a comma-joined sentence. Tuesday's first
+  // class is 12:15pm — 7:15am exists on no day, and a lead told this turns
+  // up to a closed gym. A leading apology before a correction is JAI's
+  // commonest phrasing, so this is not an exotic input.
+  {
+    name: "[HOLE 2026-09-12] negation + comma must not exempt an invented time",
+    reply:
+      "Sorry, we don't run a 6am session, but on Tuesday the earliest is 7:15am",
+    expect: "block",
+    tokens: ["07:15"],
+  },
+  {
+    name: "[HOLE 2026-09-12] negation + comma, no 'but'",
+    reply:
+      "We don't have a Tuesday morning slot, the earliest on Tuesday is 7:15am",
+    expect: "block",
+    tokens: ["07:15"],
+  },
+  {
+    name: "[HOLE 2026-09-12] negation + em-dash must not exempt an invented time",
+    reply:
+      "No, there isn't a 6am one — on Tuesday we're on the mats from 7:15am",
+    expect: "block",
+    tokens: ["07:15"],
+  },
+  {
+    name: "[HOLE 2026-09-12] 'unfortunately' + comma must not exempt either",
+    reply:
+      "Unfortunately no morning class on Tue, though Tuesday 7:15am is an option",
+    expect: "block",
+    tokens: ["07:15"],
+  },
+  // Hole 2: echoedCorrection used config.negationCues, which includes
+  // "we have" / "only have" — so AFFIRMING an invented time the customer
+  // named counted as a "correction". The file's own comment at fact-guard.ts
+  // :225-229 warns that list must never be used as a negation test.
+  {
+    name: "[HOLE 2026-09-12] affirming a customer's invented time is not a correction",
+    reply: "We have a 9pm Advanced class, see you then.",
+    customer: "is there a 9pm advanced class?",
+    expect: "block",
+    tokens: ["21:00"],
+  },
+  {
+    name: "[HOLE 2026-09-12] 'only have' affirming an invented time",
+    reply: "We only have the 5am All Levels slot left for you.",
+    customer: "can i come at 5am?",
+    expect: "block",
+    tokens: ["05:00"],
+  },
+  {
+    name: "[HOLE 2026-09-12] affirming a customer's invented PRICE is not a correction",
+    reply: "We only have the $199 plan.",
+    customer: "is it $199 a month?",
+    expect: "block",
+    tokens: ["$199"],
+  },
+  // Controls: the legitimate corrections these fixes must NOT break.
+  {
+    name: "control: real correction with a comma still passes",
+    reply: "We don't have a 7:15am class, the earliest on Tuesday is 12:15pm",
+    customer: "is there a 7:15am class on tuesday?",
+    expect: "pass",
+  },
+  {
+    name: "control: a real sheet time in a comma clause still passes",
+    reply: "On Tuesday the earliest is 12:15pm, then 4:30pm for Kids",
+    expect: "pass",
+  },
   {
     name: "trap: customer's wrong time echoed inside a CORRECTION",
     reply:
