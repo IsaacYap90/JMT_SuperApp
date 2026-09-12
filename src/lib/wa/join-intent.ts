@@ -304,7 +304,16 @@ const AMOUNT_PATTERNS: RegExp[] = [
   // and sets ai_paused. That is the 30 Jul class-size incident's mechanism.
   // Anything under 100 without a currency marker is caught by the $ pattern
   // above if it really is money. (Tightened 12 Sep 2026.)
-  /\bmonthly\b(?:\s+(?:is|at|of|rate|fee|price|cost|costs|comes|to)){0,4}\s*(\d{3}[\d,]*(?:\.\d+)?)\b(?!\s*(?:-|–)?\s*(?:month|mth|people|person|pax|member|student|kid|class|session|year))/g,
+  // A head-count puts the number FIRST ("20 monthly members"), which pattern 1
+  // above handles and excludes. After the word, a 3-digit figure next to
+  // "monthly" is money often enough that handing off is the safer error — so
+  // member/people/student are NOT excluded here, only the units that make a
+  // figure structurally not-a-price ("monthly 3-month plan").
+  // 🛑 The unit words need `s?\b`. Without it the lookahead matched the PREFIX
+  // of a longer word, so "our monthly 400 membership plan" — the exact shape of
+  // a model-invented price — leaked straight through a guard that used to block
+  // it. Pattern 1 above always had it; this one did not. (Same day.)
+  /\bmonthly\b(?:\s+(?:is|at|of|rate|fee|price|cost|costs|comes|to)){0,4}\s*(\d{3}[\d,]*(?:\.\d+)?)\b(?!\s*(?:-|–)?\s*(?:month|mth|class|session|year)s?\b)/g,
 ];
 
 // NOTE (fixed 2026-07-30): "per class / per session / per pax" used to count as a

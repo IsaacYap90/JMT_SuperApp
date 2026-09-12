@@ -102,6 +102,29 @@ console.log("6. the booking-offer gate must not hijack the turn");
   ok("a stale offer does NOT", g("ok", { offerAgeMs: 21 * 24 * 60 * 60 * 1000 }) === false);
   ok("an unknown-age offer does NOT", g("ok", { offerAgeMs: null }) === false);
   ok("a refusal does NOT", g("no thanks") === false);
+  // Pass 3: default-YES let 19 of 29 probed messages through. The message must
+  // BE the acceptance now, so every one of these is rejected on its words alone.
+  for (const t of [
+    "can i bring my son",
+    "can my 8 year old join",
+    "is there a kids class",
+    "my son is 8",
+    "ya i want the membership",
+    "ok book me in",
+    "ok lets do it",
+    "do you have parking",
+    "where are you located",
+    "i need to cancel my trial",
+    "im injured, cant come",
+    "please call me instead",
+    "ok can you call me",
+  ]) {
+    ok(`rejects ${JSON.stringify(t)}`, g(t) === false);
+  }
+  // …and the real acceptances still send.
+  for (const t of ["All right thank you!", "ok", "okay thanks", "yes pls", "sure 👍", "ya send", "noted thanks", "👍"]) {
+    ok(`sends ${JSON.stringify(t)}`, g(t) === true);
+  }
   ok("no offer made does NOT", g("ok", { lastAssistant: "Anytime, Arthur 🙌" }) === false);
 }
 

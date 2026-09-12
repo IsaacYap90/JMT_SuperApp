@@ -219,6 +219,42 @@ export function acceptsBookingOffer(text: string): boolean {
   return true;
 }
 
+// 🛑 DEFAULT-NO, deliberately, and this is the second correction to it.
+// "Anything that is not a refusal" is the right asymmetry for the MODEL path —
+// an unwanted link costs nothing. It is the wrong one for a branch that also
+// suppresses the join handling and the deterministic answer, because there the
+// link REPLACES the correct reply. Under default-yes, 19 of 29 probed messages
+// got an adult $42 pitch: "can i bring my son" (a parent, about an 8-year-old),
+// "ya i want the membership" (a buy signal the join regex misses, so Jeremy was
+// never pinged), "im injured, cant come", "please call me instead".
+//
+// So the message must be acceptance and NOTHING else: every word in it has to
+// be an affirmation or a pleasantry. "All right thank you!" passes. "ya i want
+// the membership" does not — "membership" is not on this list.
+const ACCEPT_WORD =
+  /^(?:yes|yeah|yea|yah|ya|yup|yep|ok|oki|okie|okay|k|kk|sure|alright|right|all|please|pls|plz|send|it|go|ahead|thanks|thank|you|thx|tks|ty|noted|good|great|nice|cool|perfect|awesome|sounds|lah|sia|can|boleh)$/i;
+
+/** Is the whole message an affirmation and nothing else? */
+export function isPlainAcceptance(text: string): boolean {
+  const words = (text || "")
+    .toLowerCase()
+    // Drop emoji and punctuation; "ok 👍" and "ok!" are the same answer.
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (words.length > 6) return false;
+  // A bare 👍 to "want me to send you the booking link?" is a yes. No words
+  // survive the strip above, so check the raw text for an approving emoji —
+  // and only an approving one: "😂" or "😭" is not an answer.
+  if (words.length === 0) {
+    // Literal characters, not \u{...} escapes: the `u` flag this file cannot
+    // use is what makes those work. 👍 🙏 👌 🥊 ✅ 😊 😍
+    return /[👍🙏👌🥊✅😊😍]/.test(text || "");
+  }
+  return words.every((w) => ACCEPT_WORD.test(w));
+}
+
 /**
  * Is this message the answer to our own "want me to send you the booking link?"
  * — and nothing else?
@@ -251,6 +287,8 @@ export function isOfferAcceptance(a: {
   const maxAgeMs = a.maxAgeMs ?? 24 * 60 * 60 * 1000;
   if (!lastAssistant.includes(BOOKING_OFFER_MARKER)) return false;
   if (!acceptsBookingOffer(text)) return false;
+  // The message must BE the acceptance, not merely contain no refusal.
+  if (!isPlainAcceptance(text)) return false;
   if (joinHit) return false;
   if (hasDeterministicAnswer) return false;
   if (text.includes("?")) return false;

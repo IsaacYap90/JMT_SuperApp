@@ -15,6 +15,7 @@ import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
 // these answers with no deploy, exactly like the model path.
 import { DROPIN_BOOKING_URL } from "@/lib/wa/followup-dropin";
 import {
+  BOOKING_OFFER_MARKER,
   buildDeterministicAnswer,
   isOfferAcceptance,
   lateArrivalAnswer,
@@ -425,14 +426,23 @@ export async function POST(req: NextRequest) {
     // question of its own. Anything longer, anything with a question mark, any
     // buy signal, and anything the deterministic layer can answer properly is
     // not this — it is a new topic, and it belongs to the paths below.
-    const lastAssistantAt = [...prior].reverse().find((m) => m.role === "assistant")?.created_at;
-    const offerAnswer = isOfferAcceptance({
-      lastAssistant,
-      text,
-      joinHit,
-      hasDeterministicAnswer: Boolean(buildDeterministicAnswer(text, await getJaiFacts())),
-      offerAgeMs: lastAssistantAt ? Date.now() - new Date(lastAssistantAt).getTime() : null,
-    });
+    // Only worth computing when the offer is actually on the table — otherwise
+    // this ran getJaiFacts() and buildDeterministicAnswer() on EVERY inbound
+    // message, including join and new-contact turns, and built the deterministic
+    // answer twice per message.
+    const offerOnTable = lastAssistant.includes(BOOKING_OFFER_MARKER);
+    const lastAssistantAt = offerOnTable
+      ? [...prior].reverse().find((m) => m.role === "assistant")?.created_at
+      : undefined;
+    const offerAnswer =
+      offerOnTable &&
+      isOfferAcceptance({
+        lastAssistant,
+        text,
+        joinHit,
+        hasDeterministicAnswer: Boolean(buildDeterministicAnswer(text, await getJaiFacts())),
+        offerAgeMs: lastAssistantAt ? Date.now() - new Date(lastAssistantAt).getTime() : null,
+      });
 
     if (offerAnswer) {
       const out =
