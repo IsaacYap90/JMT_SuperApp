@@ -289,7 +289,16 @@ export default function WaInboxClient({ demo = false }: { demo?: boolean }) {
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
               </button>
               <div className={`w-9 h-9 rounded-full ${avatarColor(active.phone)} text-white text-sm font-semibold flex items-center justify-center shrink-0`}>{initialOf(dName(active.name, active.phone), dPhone(active.phone))}</div>
-              <div className="min-w-0 flex-1">
+              {/* 🛑 basis-[calc(100%-5rem)] below sm: the three action pills are
+                  shrink-0 and together need ~330px, so on a 390px phone they
+                  could not fit beside the name — the row overflowed, which
+                  widened the whole thread section and clipped the message
+                  bubbles off the right edge too (Jeremy, 14 Sep 2026: could not
+                  see the phone number, thread cut off). Giving the identity
+                  block a basis wide enough to force a wrap puts the pills on
+                  their own row instead of overflowing. From sm up there is room
+                  for one row, so it goes back to flex-1. */}
+              <div className="min-w-0 basis-[calc(100%-5rem)] sm:basis-auto sm:flex-1">
                 <p className="text-sm font-semibold text-white truncate">{dName(active.name, active.phone)}</p>
                 <p className="text-[11px] text-gray-500 font-mono truncate">{dPhone(active.phone)}</p>
               </div>
@@ -329,7 +338,11 @@ export default function WaInboxClient({ demo = false }: { demo?: boolean }) {
               </button>
             </div>
 
-            <div ref={threadContainerRef} className="flex-1 overflow-y-auto px-3 sm:px-5 py-4 space-y-2">
+            {/* overflow-x-hidden as a backstop: the bubbles already wrap
+                (max-w-[80%] + break-words), so anything clipping them is an
+                ancestor being forced wider than the viewport. Containing it
+                here means a future wide child cuts off nothing but itself. */}
+            <div ref={threadContainerRef} className="flex-1 overflow-y-auto overflow-x-hidden px-3 sm:px-5 py-4 space-y-2">
               {(() => {
                 const els: React.ReactNode[] = [];
                 let prevDay = "";
