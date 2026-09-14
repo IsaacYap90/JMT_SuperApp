@@ -483,6 +483,18 @@ export const ANTI_LOOP_HANDOFF_TEXT =
 export const FACT_GUARD_BLOCK_TEXT =
   "Good question — let me double-check that with Coach Jeremy and get right back to you 🙏";
 
+// Sent verbatim when a lead accepts the drop-in offer — no model, no fact
+// guard. It lives HERE, next to PAUSED_ADULT_TRIAL_TEXT, rather than inline in
+// the webhook, for one reason: scripts/facts-fallback-check.mjs can only check
+// canned strings it can import. Inline in a route handler, this one carried a
+// hardcoded price past every guard with nothing watching it — which is exactly
+// how PAUSED_ADULT_TRIAL_TEXT went on promising a September return for eleven
+// days. The check now asserts its price still matches the fact sheet.
+export const offerAcceptedText = (bookingUrl: string) =>
+  `Here you go — book any All-Levels class here: ${bookingUrl}\n\n` +
+  `It's $42 for the drop-in, and beginners are welcome in All-Levels — the coaches scale it to you. ` +
+  `Shout if you'd rather I check a specific day 🥊`;
+
 export const PAUSED_ADULT_TRIAL_TEXT =
   "We've actually paused free trials for our Adult All-Levels classes at the moment, as the classes are running close to full. What you can do straight away is a one-off drop-in at $42 — same class, same coaches, beginners welcome 🙂 You can book it on our website here: https://jaimuaythai.com/booking\n\nI'm also getting Coach Jeremy to follow up with you personally 🙏";
 

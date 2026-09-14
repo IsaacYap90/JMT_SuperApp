@@ -103,7 +103,14 @@ export async function GET(req: NextRequest) {
   // lead went cold after one message. Worse, ~50ms of DB-vs-Node clock skew
   // put the mirror row AFTER the nudge-1 stamp, so nudge 1 fired again every
   // run it was due (15 sends in a day, reproduced 2026-09-11).
-  const { data: linkRows } = await jai
+  // 🛑 The error is READ, not dropped. Both this query and the answerRows one
+  // below decide whether we have ALREADY dealt with a lead, so a failed read
+  // that silently returns [] does not mean "nobody" — it means "we no longer
+  // know", and the cron would then message customers it had already handled.
+  // For this query specifically that re-opens the 15-sends-in-a-day bug the
+  // comment above describes. Fail CLOSED: send nothing this run, say why, and
+  // let the next run pick it up.
+  const { data: linkRows, error: linkErr } = await jai
     .from("conversations")
     .select("contact_number, created_at")
     .eq("role", "assistant")
@@ -111,6 +118,10 @@ export async function GET(req: NextRequest) {
     .ilike("message", `%${DROPIN_BOOKING_URL}%`)
     .gte("created_at", new Date(now - LOOKBACK_MS).toISOString())
     .order("created_at", { ascending: false });
+  if (linkErr) {
+    console.error("[lead-followup] link-history read FAILED, sending nothing:", linkErr.code, linkErr.message);
+    return NextResponse.json({ error: "link history unavailable", code: linkErr.code }, { status: 500 });
+  }
 
   const linkAtByContact = new Map<string, number>();
   for (const r of linkRows || []) {
@@ -139,13 +150,19 @@ export async function GET(req: NextRequest) {
   //     would nudge over the top of him.
   //   • our own mirrored nudges — `via` is FOLLOWUP_VIA, not 'bot', so the
   //     .eq below already leaves them out. Same re-arm bug as the link source.
-  const { data: answerRows } = await jai
+  const { data: answerRows, error: answerErr } = await jai
     .from("conversations")
     .select("contact_number, created_at, message")
     .eq("role", "assistant")
     .eq("via", "bot")
     .gte("created_at", new Date(now - LOOKBACK_MS).toISOString())
     .order("created_at", { ascending: false });
+  // Same reasoning as linkRows above: an empty result here reads as "nobody has
+  // been answered", which would nudge every lead JAI already replied to.
+  if (answerErr) {
+    console.error("[lead-followup] answer-history read FAILED, sending nothing:", answerErr.code, answerErr.message);
+    return NextResponse.json({ error: "answer history unavailable", code: answerErr.code }, { status: 500 });
+  }
 
   const answerAtByContact = new Map<string, number>();
   for (const r of answerRows || []) {

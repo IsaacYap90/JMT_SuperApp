@@ -34,6 +34,7 @@ import {
   JOIN_HANDOFF_SUFFIX,
   inboundHasUnknownFigure,
   PAUSED_ADULT_TRIAL_TEXT,
+  offerAcceptedText,
   ANTI_LOOP_HANDOFF_TEXT,
 } from "@/lib/wa/join-intent";
 import { sessionBotReplyCount, isRepeatingItself } from "@/lib/wa/session-window";
@@ -444,10 +445,7 @@ export async function POST(req: NextRequest) {
       });
 
     if (offerAnswer) {
-      const out =
-        `Here you go — book any All-Levels class here: ${DROPIN_BOOKING_URL}\n\n` +
-        `It's $42 for the drop-in, and beginners are welcome in All-Levels — the coaches scale it to you. ` +
-        `Shout if you'd rather I check a specific day 🥊`;
+      const out = offerAcceptedText(DROPIN_BOOKING_URL);
       await sb.from("conversations").insert({
         contact_number: from,
         contact_name: contactName,

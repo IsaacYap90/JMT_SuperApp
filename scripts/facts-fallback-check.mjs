@@ -18,7 +18,7 @@
 // the constant, so it runs in CI and in /predeploy like everything else.
 
 import { JAI_FACTS } from "../src/lib/wa/jai-facts.ts";
-import { PAUSED_ADULT_TRIAL_TEXT } from "../src/lib/wa/join-intent.ts";
+import { PAUSED_ADULT_TRIAL_TEXT, offerAcceptedText } from "../src/lib/wa/join-intent.ts";
 
 let failed = 0;
 const fail = (msg) => { failed++; console.log(`FAIL  ${msg}`); };
@@ -101,7 +101,14 @@ else ok("fallback sheet names no 7pm class outside the prohibition");
 // as a bug on 1 September, while the fact sheet two files away forbade naming a
 // month at all. A canned string needs its own check precisely because no guard
 // will ever look at it.
-const CANNED = [["PAUSED_ADULT_TRIAL_TEXT", PAUSED_ADULT_TRIAL_TEXT]];
+const CANNED = [
+  ["PAUSED_ADULT_TRIAL_TEXT", PAUSED_ADULT_TRIAL_TEXT],
+  // Added 14 Sep 2026. It was inline in the WhatsApp webhook, so this check
+  // could not see it — a canned string carrying a hardcoded $42 past the model
+  // and the fact guard, with nothing watching it. That is the same shape as the
+  // September promise, before it rotted.
+  ["offerAcceptedText", offerAcceptedText("https://jaimuaythai.com/booking")],
+];
 const MONTHS =
   /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i;
 for (const [name, text] of CANNED) {
@@ -112,6 +119,15 @@ for (const [name, text] of CANNED) {
     fail(`${name} promises a notification — there is no waitlist and no follow-up sequence`);
   } else {
     ok(`${name} promises no notification`);
+  }
+  // A price in a canned string is a price nothing will ever re-check. Every
+  // dollar figure it quotes must still appear in the fact sheet, so changing a
+  // price in the sheet turns this red instead of leaving a stale number going
+  // out to customers verbatim — the failure mode that put "around September"
+  // in front of every adult enquiry for eleven days.
+  for (const price of text.match(/\$\d+(?:\.\d{2})?/g) ?? []) {
+    if (JAI_FACTS.includes(price)) ok(`${name} price ${price} matches the fact sheet`);
+    else fail(`${name} quotes ${price}, which does not appear in the fact sheet — it is sent verbatim, so nothing else will catch this`);
   }
 }
 
