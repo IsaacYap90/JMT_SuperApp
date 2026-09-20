@@ -22,6 +22,8 @@
 // day name, alias and copy template is in DEFAULT_CONFIG below, which another
 // tenant can replace wholesale (buildDeterministicAnswer takes a config).
 
+import { detectLang, type Lang } from "./lang";
+
 // ── Tenant config ────────────────────────────────────────────────────────────
 
 export type TimeWindow = { aliases: string[]; fromHour: number; toHour: number };
@@ -58,21 +60,31 @@ export type DeterministicConfig = {
   maxChars: number;
   /** Score needed to intercept. 2 = one unambiguous phrase, or two weak hints. */
   threshold: number;
-  copy: {
-    scheduleDayIntro: string; // {day}
-    scheduleWindowIntro: string; // {window}
-    scheduleNoDayAsk: string; // {days}
-    scheduleNothingInWindow: string; // {window}
-    scheduleNothingOnDay: string; // {window}, {day}
-    scheduleTrailer: string;
-    lateOk: string;
-    lateTooLate: string;
-    priceIntro: string; // {tier} {price}
-    priceTrailer: string;
-    /** Trailer for the youth tiers — must never contain BOOKING_OFFER_MARKER. */
-    priceTrailerYouth: string;
-    quickReplies: { schedule: string[]; price: string[] };
-  };
+  copy: DeterministicCopy;
+  /**
+   * Chinese overrides, merged over `copy` when the customer writes Chinese.
+   * Partial on purpose: a tenant supplies only the lines it has translated and
+   * every other line keeps its English wording, so an untranslated key degrades
+   * to today's behaviour instead of to an empty message. Omit it entirely and
+   * nothing changes at all. See configForLang().
+   */
+  copyZh?: Partial<DeterministicCopy>;
+};
+
+export type DeterministicCopy = {
+  scheduleDayIntro: string; // {day}
+  scheduleWindowIntro: string; // {window}
+  scheduleNoDayAsk: string; // {days}
+  scheduleNothingInWindow: string; // {window}
+  scheduleNothingOnDay: string; // {window}, {day}
+  scheduleTrailer: string;
+  lateOk: string;
+  lateTooLate: string;
+  priceIntro: string; // {tier} {price}
+  priceTrailer: string;
+  /** Trailer for the youth tiers — must never contain BOOKING_OFFER_MARKER. */
+  priceTrailerYouth: string;
+  quickReplies: { schedule: string[]; price: string[] };
 };
 
 export const DEFAULT_CONFIG: DeterministicConfig = {
@@ -207,6 +219,40 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
       price: ["Book a class"],
     },
   },
+
+  // ── Chinese ───────────────────────────────────────────────────────────────
+  // Every line the customer can see, in Chinese. Nothing else about the layer
+  // changes: the same parse, the same fact sheet, the same numbers.
+  //
+  // Day and window names stay English inside these sentences ("*Monday* 的课",
+  // "我们 *morning* 的课") because they are lifted verbatim from the fact sheet
+  // and are the gym's own labels. That mix is also how JAI already writes to
+  // Chinese leads through the model — "Weekday 的 All Levels 课时间" is its own
+  // wording from the 15 Sep thread — so it reads native rather than translated.
+  copyZh: {
+    scheduleDayIntro: "*{day}* 的课：",
+    scheduleWindowIntro: "我们 *{window}* 的课：",
+    scheduleNoDayAsk:
+      "我们 {days} 都有课 🥊 你想看哪一天？告诉我哪天，我把确切的时间发给你。",
+    scheduleNothingInWindow: "我们没有 {window} 的课，不好意思！",
+    scheduleNothingOnDay: "*{day}* 没有 {window} 的课，不好意思！",
+    scheduleTrailer: "还有什么我可以帮你的吗？🙂",
+    lateOk:
+      "没问题 — {mins} 分钟还在我们 15 分钟的宽限时间内，你还是可以上的 🙏 直接进来就好。",
+    lateTooLate:
+      "谢谢你先告诉我们 🙏 我们有 {cutoff} 分钟的硬性截止时间，所以这一堂恐怕赶不上了。很乐意帮你安排另一天 — 你哪天方便？",
+    priceIntro: "*{tier}*\n{price}",
+    // 🛑 Must contain BOOKING_OFFER_MARKER_ZH — hasBookingOffer() matches on it
+    // to recognise her reply as accepting the link. Keep the two in step, the
+    // same way the English trailer tracks BOOKING_OFFER_MARKER.
+    priceTrailer: "你可以先来上一堂看看，不需要先买配套 — 要我把预约链接发给你吗？🥊",
+    // 🛑 As with the English one, this must NOT carry the booking marker.
+    priceTrailerYouth: "很乐意帮他开始 — 请问小朋友几岁呢？🙂",
+    quickReplies: {
+      schedule: ["今天", "明天"],
+      price: ["预约上课"],
+    },
+  },
 };
 
 // ── The booking-link offer, and hearing the answer ──────────────────────────
@@ -219,6 +265,45 @@ export const DEFAULT_CONFIG: DeterministicConfig = {
 // not want it costs nothing; not sending it loses the lead. So anything that
 // is not clearly a refusal counts as yes.
 export const BOOKING_OFFER_MARKER = "want me to send you the booking link";
+
+// The Chinese trailer says the same thing, so the same acceptance handling has
+// to fire for it. Without this the offer would go out in Chinese and her "好"
+// would be heard by nothing — the offer JAI could not hear, again, in the other
+// language. Match on the question itself, not the whole sentence.
+export const BOOKING_OFFER_MARKER_ZH = "要我把预约链接发给你吗";
+
+/**
+ * Did our last message offer the booking link, in either language?
+ *
+ * 🛑 Use this instead of `lastAssistant.includes(BOOKING_OFFER_MARKER)`. A bare
+ * English-only test silently fails every Chinese thread.
+ */
+export function hasBookingOffer(lastAssistant: string): boolean {
+  const s = lastAssistant || "";
+  return s.includes(BOOKING_OFFER_MARKER) || s.includes(BOOKING_OFFER_MARKER_ZH);
+}
+
+/**
+ * The same config with its customer-facing copy switched to `lang`.
+ *
+ * Returns the config UNCHANGED for "en", and unchanged for any tenant that has
+ * not supplied `copyZh` — so this is inert until a tenant opts in, and an
+ * untranslated key falls back to English rather than to nothing.
+ */
+export function configForLang(
+  cfg: DeterministicConfig,
+  lang: Lang
+): DeterministicConfig {
+  if (lang !== "zh" || !cfg.copyZh) return cfg;
+  return {
+    ...cfg,
+    copy: {
+      ...cfg.copy,
+      ...cfg.copyZh,
+      quickReplies: cfg.copyZh.quickReplies ?? cfg.copy.quickReplies,
+    },
+  };
+}
 
 // Only these turn the offer down. Everything else — "ok", "sure", "all right
 // thank you", "yes pls", a thumbs-up, even silence-shaped politeness — is a yes.
@@ -331,7 +416,7 @@ export function isOfferAcceptance(a: {
   const { lastAssistant, text, joinHit, hasDeterministicAnswer, offerAgeMs } = a;
   const maxWords = a.maxWords ?? 6;
   const maxAgeMs = a.maxAgeMs ?? 24 * 60 * 60 * 1000;
-  if (!lastAssistant.includes(BOOKING_OFFER_MARKER)) return false;
+  if (!hasBookingOffer(lastAssistant)) return false;
   if (!acceptsBookingOffer(text)) return false;
   // The message must BE the acceptance, not merely contain no refusal.
   if (!isPlainAcceptance(text)) return false;
@@ -728,8 +813,15 @@ function priceAnswer(
 export function scheduleAnswerForDay(
   day: string,
   facts: string,
-  cfg: DeterministicConfig = DEFAULT_CONFIG
+  baseCfg: DeterministicConfig = DEFAULT_CONFIG,
+  /**
+   * The day came from an earlier turn, so there is no message to read the
+   * language off here — the caller passes it. Defaults to English, i.e. exactly
+   * today's behaviour for every caller that does not.
+   */
+  lang: Lang = "en"
 ): DeterministicAnswer | null {
+  const cfg = configForLang(baseCfg, lang);
   try {
     const sched = parseSchedule(facts, cfg);
     if (!sched) return null;
@@ -782,7 +874,7 @@ export type LateArrivalAnswer = { messageText: string; canJoin: boolean };
  */
 export function lateArrivalAnswer(
   text: string,
-  cfg: DeterministicConfig = DEFAULT_CONFIG,
+  baseCfg: DeterministicConfig = DEFAULT_CONFIG,
   /**
    * Recent turns, newest last. The class time is very often NOT in the message
    * that states the arrival: Kenneth's real thread ran "can i come today ?" →
@@ -794,6 +886,11 @@ export function lateArrivalAnswer(
    */
   context: string[] = []
 ): LateArrivalAnswer | null {
+  // The gate below is English-only ("late", "reach", "arrive"), so a wholly
+  // Chinese message never reaches this layer at all — it goes to the model,
+  // which answers Chinese correctly. This matters for the mixed messages that
+  // DO get through, e.g. "我 late 10 min ok?".
+  const cfg = configForLang(baseCfg, detectLang([text, ...context].join(" ")));
   try {
     const t = (text || "").toLowerCase();
     if (!/\b(late|reach|arrive|arriving|get\s+there|be\s+there|make\s+it)\b/.test(t)) return null;
@@ -895,8 +992,12 @@ export function lateArrivalAnswer(
 export function buildDeterministicAnswer(
   text: string,
   facts: string,
-  cfg: DeterministicConfig = DEFAULT_CONFIG
+  baseCfg: DeterministicConfig = DEFAULT_CONFIG
 ): DeterministicAnswer | null {
+  // Answer in the language she asked in. Detection reads her message only, so
+  // the intent parse below is unaffected — the keyword lists already carry both
+  // languages ("今天", "早上"), it was only the OUTGOING copy that was English.
+  const cfg = configForLang(baseCfg, detectLang(text));
   const det = detectIntent(text, cfg);
   if (!det.intent) return null;
   try {

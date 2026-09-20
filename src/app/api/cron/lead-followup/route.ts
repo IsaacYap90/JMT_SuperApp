@@ -39,7 +39,6 @@ import { firstNameFrom } from "@/lib/wa/jai-reply";
 import { sendText } from "@/lib/wa/jai-send";
 import { findBookingsByPhone } from "@/lib/wa/trial-verify";
 import {
-  DROPIN_BOOKING_URL,
   FOLLOWUP_VIA,
   decideNudge,
   dropinNudge1,
@@ -47,7 +46,10 @@ import {
   silentNudge1,
   silentNudge2,
 } from "@/lib/wa/followup-dropin";
+import { extractFollowupFacts } from "@/lib/wa/followup-facts";
+import { readJaiFacts } from "@/lib/wa/jai-facts";
 import { HANDOFF_MARKERS } from "@/lib/wa/join-intent";
+import { detectLangFromHistory } from "@/lib/wa/lang";
 
 
 export const dynamic = "force-dynamic";
@@ -65,6 +67,29 @@ type Plan = {
   reason?: string;
   sent?: boolean;
 };
+
+async function alertFactsFailure(reason: string) {
+  const token = process.env.JMT_TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.WATCHDOG_TG_CHAT_ID;
+  if (!token || !chatId) {
+    console.error("[lead-followup] cannot alert facts failure: Telegram env vars missing");
+    return;
+  }
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: `JMT lead follow-up stopped: live JAI facts were unavailable or invalid. No customer nudges were sent. Reason: ${reason}`,
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) console.error("[lead-followup] Telegram facts alert failed:", response.status);
+  } catch (error) {
+    console.error("[lead-followup] Telegram facts alert threw:", error);
+  }
+}
 
 export async function GET(req: NextRequest) {
   if (!isAuthorizedCron(req)) {
@@ -86,6 +111,31 @@ export async function GET(req: NextRequest) {
   if (hour < 9 || hour >= 21) {
     return NextResponse.json({ ok: true, skipped: "quiet hours" });
   }
+
+  // Follow-ups are proactive customer messages, so unlike the reply path they
+  // must never use the in-code fallback. Read once per run and stop before any
+  // customer query/write/send if the live row is unavailable or malformed.
+  const factsRead = await readJaiFacts();
+  const extracted = extractFollowupFacts(factsRead.content);
+  if (factsRead.source !== "db") {
+    const reason = `live source unavailable (${factsRead.reason ?? "unknown reason"})`;
+    console.error("[lead-followup] FACTS FAILED, sending nothing:", reason);
+    if (!dry) await alertFactsFailure(reason);
+    return NextResponse.json(
+      { error: "live follow-up facts unavailable", source: factsRead.source, reason },
+      { status: 503 }
+    );
+  }
+  if (!extracted.ok) {
+    console.error("[lead-followup] FACTS FAILED, sending nothing:", extracted.reason);
+    if (!dry) await alertFactsFailure(extracted.reason);
+    return NextResponse.json(
+      { error: "live follow-up facts unavailable", source: factsRead.source, reason: extracted.reason },
+      { status: 503 }
+    );
+  }
+  const followupFacts = extracted.value;
+  const dropinBookingUrl = followupFacts.bookingUrl;
 
   const jai = createJaiClient();
   const pub = createSbClient(
@@ -115,7 +165,7 @@ export async function GET(req: NextRequest) {
     .select("contact_number, created_at")
     .eq("role", "assistant")
     .or(`via.is.null,via.neq.${FOLLOWUP_VIA}`)
-    .ilike("message", `%${DROPIN_BOOKING_URL}%`)
+    .ilike("message", `%${dropinBookingUrl}%`)
     .gte("created_at", new Date(now - LOOKBACK_MS).toISOString())
     .order("created_at", { ascending: false });
   if (linkErr) {
@@ -169,7 +219,7 @@ export async function GET(req: NextRequest) {
     const to = r.contact_number as string;
     if (answerAtByContact.has(to) || linkAtByContact.has(to)) continue;
     const body = String(r.message ?? "");
-    if (body.includes(DROPIN_BOOKING_URL)) continue;
+    if (body.includes(dropinBookingUrl)) continue;
     if (HANDOFF_MARKERS.some((m) => body.includes(m))) continue;
     answerAtByContact.set(to, new Date(r.created_at).getTime());
   }
@@ -228,12 +278,20 @@ export async function GET(req: NextRequest) {
     // clock Meta's 24h customer-service window actually runs on.
     const { data: lastUserRows } = await jai
       .from("conversations")
-      .select("created_at")
+      .select("created_at, message")
       .eq("contact_number", to)
       .eq("role", "user")
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(10);
     const lastUserAt = lastUserRows?.[0] ? new Date(lastUserRows[0].created_at).getTime() : 0;
+
+    // Which language to nudge her in. Her OWN messages only — the assistant's
+    // side is exactly what got this wrong. Ten of them, not one: Vivi@n's last
+    // inbound was "ok thanks", so reading only the newest would have classed a
+    // Mandarin-only lead as an English speaker. See detectLangFromHistory.
+    const lang = detectLangFromHistory(
+      (lastUserRows ?? []).map((r: { message?: string | null }) => r.message ?? "")
+    );
 
     const decision = decideNudge({
       now,
@@ -280,11 +338,11 @@ export async function GET(req: NextRequest) {
     const text =
       armedBy(to) === "link"
         ? isFirst
-          ? dropinNudge1(first)
-          : dropinNudge2(first)
+          ? dropinNudge1(first, lang, followupFacts)
+          : dropinNudge2(first, lang, followupFacts)
         : isFirst
-          ? silentNudge1(first)
-          : silentNudge2(first);
+          ? silentNudge1(first, lang)
+          : silentNudge2(first, lang);
 
     if (dry) {
       plans.push({ to, stage: decision.stage, reason: "dry run — not sent" });

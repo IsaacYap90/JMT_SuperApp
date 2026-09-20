@@ -79,6 +79,27 @@ await check("no human ever, only a followup nudge 2h ago", [NUDGE(2 * H)], false
 await check("read error stays paused", [HUMAN(99 * H)], false, { error: { message: "boom" } });
 await check("no rows at all stays paused", [], false);
 
+const futureExpiry = new Date(NOW + H).toISOString();
+const explicitExpiryGot = await pauseIsStale(
+  stubClient([BOT(25 * H)]),
+  "6512345678",
+  NOW,
+  futureExpiry
+);
+const explicitExpiryOk = explicitExpiryGot === false;
+if (!explicitExpiryOk) failed++;
+console.log(`${explicitExpiryOk ? "ok   " : "FAIL "} explicit future expiry blocks a stale legacy clock -> ${explicitExpiryGot} (want false)`);
+
+const invalidExpiryGot = await pauseIsStale(
+  stubClient([BOT(25 * H)]),
+  "6512345678",
+  NOW,
+  "not-a-date"
+);
+const invalidExpiryOk = invalidExpiryGot === false;
+if (!invalidExpiryOk) failed++;
+console.log(`${invalidExpiryOk ? "ok   " : "FAIL "} invalid explicit expiry fails closed -> ${invalidExpiryGot} (want false)`);
+
 console.log(`\nPAUSE_STALE_MS = ${PAUSE_STALE_MS}`);
 console.log(`${failed === 0 ? "ALL CASES PASSED" : `${failed} CASE(S) FAILED`}`);
 process.exit(failed === 0 ? 0 : 1);

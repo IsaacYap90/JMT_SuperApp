@@ -19,6 +19,7 @@ import {
 } from "@/lib/calendly";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
 import { resolveTrialRecipients } from "@/lib/trial-recipients";
+import { transitionExactPublicLead } from "@/lib/leads/lifecycle-service";
 
 // Jeremy (JMT master admin) — always DM'd on new Calendly bookings.
 const JEREMY_USER_ID = "2ee6ecaf-f68e-4a0a-a249-0fe7ce019db8";
@@ -276,6 +277,18 @@ export async function POST(req: NextRequest) {
       { ok: false, error: insertErr.message },
       { status: 500 }
     );
+  }
+
+  try {
+    await transitionExactPublicLead({
+      identity: { phone, email: invitee.email },
+      to: "scheduled",
+      trigger: "trial_scheduled",
+      source: { schema: "public", table: "trial_bookings", key: eventUri },
+      actor: { type: "system" },
+    });
+  } catch (lifecycleError) {
+    console.error("[calendly-webhook] lead lifecycle update failed:", lifecycleError);
   }
 
   // Hours between booking-now and trial start (in SGT-anchored absolute time)

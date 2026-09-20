@@ -420,6 +420,12 @@ export function TrialManagementClient({
                 <p className="text-jai-text text-xs mt-1 tabular-nums">
                   +65{b.phone.replace(/\D/g, "")}
                 </p>
+                <a
+                  href={`/customers/timeline?source=public.trial_bookings&id=${encodeURIComponent(b.id)}`}
+                  className="inline-block text-xs text-jai-blue hover:underline mt-1"
+                >
+                  Customer timeline
+                </a>
                 {b.notes && !b.calendly_details && (
                   <p className="text-jai-text text-xs mt-1 italic">
                     📝 {b.notes}

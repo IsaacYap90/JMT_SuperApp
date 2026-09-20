@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { isMasterAdmin } from "@/lib/wa-inbox-guard";
+import { isMissingPauseMetadataColumn, refreshedPauseExpiry } from "@/lib/wa/pause-metadata";
+import { transitionExactPublicLead } from "@/lib/leads/lifecycle-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -122,10 +124,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error, detail: sent.detail }, { status });
   }
 
-  const { error } = await createJaiClient()
+  const jai = createJaiClient();
+  const { error } = await jai
     .from("conversations")
     .insert({ contact_number: phone, role: "assistant", message: body, via: "human" });
   if (error) console.error("[wa-inbox send] log insert failed", error);
+
+  try {
+    await transitionExactPublicLead({
+      identity: { phone },
+      to: "contacted",
+      trigger: "outbound_contact",
+      source: { schema: "jai", table: "conversations", key: `human:${phone}` },
+      actor: { type: "coach" },
+    });
+  } catch (lifecycleError) {
+    console.error("[wa-inbox send] lead lifecycle update failed", lifecycleError);
+  }
+
+  // Human activity restarts the existing 24h ownership window. This metadata
+  // is observability only; a failure here never changes the delivered reply.
+  const { error: expiryError } = await jai
+    .from("leads")
+    .update({ ai_pause_expires_at: refreshedPauseExpiry() })
+    .eq("contact_number", phone)
+    .eq("ai_paused", true);
+  if (expiryError && !isMissingPauseMetadataColumn(expiryError)) {
+    console.error("[wa-inbox send] pause expiry refresh failed", expiryError);
+  }
 
   return NextResponse.json({ ok: true });
 }

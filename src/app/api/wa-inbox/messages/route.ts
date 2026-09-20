@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { isMasterAdmin } from "@/lib/wa-inbox-guard";
+import { isMissingPauseMetadataColumn } from "@/lib/wa/pause-metadata";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -36,10 +37,30 @@ export async function GET() {
     return NextResponse.json({ conversations: [] });
   }
 
-  const { data: leadRows } = await supabase
+  type Lead = {
+    contact_number: string;
+    contact_name: string | null;
+    ai_paused: boolean | null;
+    is_member: boolean | null;
+    ai_paused_at?: string | null;
+    ai_paused_by?: string | null;
+    ai_pause_source?: string | null;
+    ai_pause_reason?: string | null;
+    ai_pause_expires_at?: string | null;
+  };
+  const expanded = await supabase
     .from("leads")
-    .select("contact_number, contact_name, ai_paused, is_member");
-  type Lead = { contact_number: string; contact_name: string | null; ai_paused: boolean | null; is_member: boolean | null };
+    .select("contact_number, contact_name, ai_paused, is_member, ai_paused_at, ai_paused_by, ai_pause_source, ai_pause_reason, ai_pause_expires_at");
+  let leadRows = expanded.data as unknown as Lead[] | null;
+  let leadError = expanded.error;
+  if (leadError && isMissingPauseMetadataColumn(leadError)) {
+    const legacy = await supabase
+      .from("leads")
+      .select("contact_number, contact_name, ai_paused, is_member");
+    leadRows = legacy.data as unknown as Lead[] | null;
+    leadError = legacy.error;
+  }
+  if (leadError) console.error("[wa-inbox messages] lead metadata read failed", leadError);
   const leadByPhone = new Map<string, Lead>();
   for (const l of (leadRows || []) as Lead[]) leadByPhone.set(l.contact_number, l);
 
@@ -64,6 +85,11 @@ export async function GET() {
       last_body: last.message,
       last_role: last.role,
       paused: !!lead?.ai_paused,
+      pausedAt: lead?.ai_paused_at ?? null,
+      pausedBy: lead?.ai_paused_by ?? null,
+      pauseSource: lead?.ai_pause_source ?? null,
+      pauseReason: lead?.ai_pause_reason ?? null,
+      pauseExpiresAt: lead?.ai_pause_expires_at ?? null,
       isMember: !!lead?.is_member,
       messages: sorted.map((m) => ({ id: m.id, role: m.role, body: m.message, via: m.via, ts: m.created_at })),
     };

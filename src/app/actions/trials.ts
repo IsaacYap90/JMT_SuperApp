@@ -5,6 +5,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/types/database";
 import { revalidatePath } from "next/cache";
 import { createNotification } from "./notifications";
+import { transitionExactPublicLead } from "@/lib/leads/lifecycle-service";
 
 async function requireAdmin() {
   const supabase = createClient();
@@ -19,6 +20,7 @@ async function requireAdmin() {
     .single();
   if (!profile || !isAdmin(profile.role as "admin" | "master_admin" | "coach" | "member"))
     throw new Error("Not authorized");
+  return user.id;
 }
 
 export async function updateTrialSetting(
@@ -150,11 +152,22 @@ export async function adminCreateTrialBooking(data: {
   bookingDate: string;
   timeSlot: string;
 }) {
-  await requireAdmin();
+  const actorId = await requireAdmin();
   const admin = createAdminClient();
 
   // Reuse the availability + insert logic
   const booking = await createTrialBooking(data);
+  try {
+    await transitionExactPublicLead({
+      identity: { phone: data.phone },
+      to: "scheduled",
+      trigger: "trial_scheduled",
+      source: { schema: "public", table: "trial_bookings", key: String(booking.id) },
+      actor: { type: "admin", id: actorId },
+    });
+  } catch (error) {
+    console.error("[trial booking] lead lifecycle update failed", error);
+  }
 
   // Fetch class info + all coaches tied to it
   const { data: cls } = await admin
@@ -208,7 +221,7 @@ export async function updateTrialBookingStatus(
   bookingId: string,
   status: "showed" | "no_show" | "cancelled"
 ) {
-  await requireAdmin();
+  const actorId = await requireAdmin();
   const admin = createAdminClient();
 
   const { error } = await admin
@@ -217,5 +230,26 @@ export async function updateTrialBookingStatus(
     .eq("id", bookingId);
 
   if (error) throw new Error(error.message);
+  if (status === "showed") {
+    const { data: booking } = await admin
+      .from("trial_bookings")
+      .select("id, phone, calendly_details")
+      .eq("id", bookingId)
+      .maybeSingle();
+    if (booking) {
+      const details = booking.calendly_details as { email?: string | null } | null;
+      try {
+        await transitionExactPublicLead({
+          identity: { phone: booking.phone, email: details?.email },
+          to: "showed",
+          trigger: "trial_outcome",
+          source: { schema: "public", table: "trial_bookings", key: bookingId },
+          actor: { type: "admin", id: actorId },
+        });
+      } catch (lifecycleError) {
+        console.error("[trial status] lead lifecycle update failed", lifecycleError);
+      }
+    }
+  }
   revalidatePath("/trial-management");
 }

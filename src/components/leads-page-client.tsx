@@ -12,11 +12,12 @@ const STATUS_CONFIG: Record<LeadStatus, { label: string; color: string; bg: stri
   new: { label: "New", color: "text-blue-400", bg: "bg-blue-500/10", border: "border-blue-500/20", strip: "bg-blue-400" },
   contacted: { label: "Contacted", color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/20", strip: "bg-amber-400" },
   scheduled: { label: "Scheduled", color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20", strip: "bg-purple-400" },
+  showed: { label: "Showed", color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-cyan-500/20", strip: "bg-cyan-400" },
   won: { label: "Won", color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/20", strip: "bg-green-400" },
   lost: { label: "Lost", color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/20", strip: "bg-red-400" },
 };
 
-const STATUSES: LeadStatus[] = ["new", "contacted", "scheduled", "won", "lost"];
+const STATUSES: LeadStatus[] = ["new", "contacted", "scheduled", "showed", "won", "lost"];
 
 type Preset = { id: string; label: string; match: (l: Lead) => boolean };
 
@@ -253,6 +254,13 @@ function LeadCard({
               {lead.interest && (
                 <p className="text-xs text-jai-text/70">Interest: {lead.interest}</p>
               )}
+              <a
+                href={`/customers/timeline?source=public.leads&id=${encodeURIComponent(lead.id)}`}
+                onClick={(e) => e.stopPropagation()}
+                className="inline-block text-xs text-jai-blue hover:underline mt-1"
+              >
+                Customer timeline
+              </a>
             </div>
           </div>
         </div>
@@ -540,6 +548,7 @@ export function LeadsPageClient({ leads: initialLeads, isAdmin = false }: { lead
     new: leads.filter((l) => l.status === "new").length,
     contacted: leads.filter((l) => l.status === "contacted").length,
     scheduled: leads.filter((l) => l.status === "scheduled").length,
+    showed: leads.filter((l) => l.status === "showed").length,
     won: leads.filter((l) => l.status === "won").length,
     lost: leads.filter((l) => l.status === "lost").length,
   }), [leads]);

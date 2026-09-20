@@ -4,6 +4,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createJaiClient } from "@/lib/supabase/jai";
 import { isMasterAdmin } from "@/lib/wa-inbox-guard";
+import {
+  buildPauseMetadata,
+  clearPauseMetadata,
+  isMissingPauseMetadataColumn,
+} from "@/lib/wa/pause-metadata";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,9 +29,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "paused must be boolean" }, { status: 400 });
   }
 
-  const { error } = await createJaiClient()
+  const jai = createJaiClient();
+  const metadata = payload.paused
+    ? buildPauseMetadata({
+        pausedBy: "coach_jeremy",
+        source: "inbox_manual",
+        reason: "Coach Jeremy took over from the WhatsApp inbox",
+      })
+    : clearPauseMetadata();
+  let { error } = await jai
     .from("leads")
-    .upsert({ contact_number: phone, ai_paused: payload.paused }, { onConflict: "contact_number" });
+    .upsert({ contact_number: phone, ...metadata }, { onConflict: "contact_number" });
+
+  // Safe rolling deploy: if code reaches an environment before the additive
+  // migration, preserve the existing pause behaviour and omit metadata only.
+  if (error && isMissingPauseMetadataColumn(error)) {
+    const legacy = await jai
+      .from("leads")
+      .upsert({ contact_number: phone, ai_paused: payload.paused }, { onConflict: "contact_number" });
+    error = legacy.error;
+  }
 
   if (error) {
     console.error("[wa-inbox pause] upsert failed", error);

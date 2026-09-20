@@ -42,8 +42,19 @@ export const PAUSE_STALE_MS = 24 * 60 * 60 * 1000;
 export async function pauseIsStale(
   sb: JaiClient,
   contactNumber: string,
-  now: number = Date.now()
+  now: number = Date.now(),
+  notBefore?: string | null
 ): Promise<boolean> {
+  // New pause rows have an explicit earliest auto-resume check. This prevents
+  // a freshly paused old thread inheriting a month-old assistant timestamp and
+  // resuming on the customer's very next message. Legacy rows omit it and keep
+  // the conversation-derived behaviour below. Invalid metadata fails closed.
+  if (notBefore) {
+    const notBeforeTs = new Date(notBefore).getTime();
+    if (!Number.isFinite(notBeforeTs)) return false;
+    if (now < notBeforeTs) return false;
+  }
+
   // jai.leads.last_contact is stale on every row — never use it. The only
   // trustworthy clock is jai.conversations.created_at.
   const { data, error } = await sb

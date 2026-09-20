@@ -18,9 +18,45 @@ type Conv = {
   last_body: string;
   last_role: Role;
   paused: boolean;
+  pausedAt?: string | null;
+  pausedBy?: string | null;
+  pauseSource?: string | null;
+  pauseReason?: string | null;
+  pauseExpiresAt?: string | null;
   isMember: boolean;
   messages: Msg[];
 };
+
+function compactDuration(ms: number): string {
+  const mins = Math.max(0, Math.floor(Math.abs(ms) / 60_000));
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 48) return `${hours}h`;
+  return `${Math.floor(hours / 24)}d`;
+}
+
+function pauseAgeText(pausedAt?: string | null): string {
+  if (!pausedAt) return "takeover time unavailable";
+  const at = Date.parse(pausedAt);
+  if (!Number.isFinite(at)) return "takeover time unavailable";
+  return `taken over ${compactDuration(Date.now() - at)} ago`;
+}
+
+function pauseExpiryText(expiresAt?: string | null): string {
+  if (!expiresAt) return "legacy 24h fallback";
+  const at = Date.parse(expiresAt);
+  if (!Number.isFinite(at)) return "legacy 24h fallback";
+  const delta = at - Date.now();
+  return delta > 0
+    ? `auto-check in ${compactDuration(delta)}`
+    : `auto-check due ${compactDuration(delta)} ago`;
+}
+
+function pauseActorLabel(pausedBy?: string | null): string {
+  if (pausedBy === "jai") return "JAI";
+  if (pausedBy === "coach_jeremy") return "Coach Jeremy";
+  return pausedBy || "legacy pause";
+}
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore" });
@@ -301,6 +337,12 @@ export default function WaInboxClient({ demo = false }: { demo?: boolean }) {
               <div className="min-w-0 basis-[calc(100%-5rem)] sm:basis-auto sm:flex-1">
                 <p className="text-sm font-semibold text-white truncate">{dName(active.name, active.phone)}</p>
                 <p className="text-[11px] text-gray-500 font-mono truncate">{dPhone(active.phone)}</p>
+                <a
+                  href={`/customers/timeline?source=jai.leads&id=${encodeURIComponent(active.phone)}`}
+                  className="text-[11px] text-jai-blue hover:underline"
+                >
+                  Customer timeline
+                </a>
               </div>
               {(() => {
                 const isMember = memberOverride[active.phone] ?? active.isMember;
@@ -337,6 +379,25 @@ export default function WaInboxClient({ demo = false }: { demo?: boolean }) {
                 Delete
               </button>
             </div>
+
+            {active.paused && (
+              <div className="mx-3 sm:mx-5 mt-3 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-100">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-semibold">Owner: Coach Jeremy</span>
+                  <span className="text-amber-200/70">·</span>
+                  <span>{pauseAgeText(active.pausedAt)}</span>
+                  <span className="text-amber-200/70">·</span>
+                  <span>{pauseExpiryText(active.pauseExpiresAt)}</span>
+                </div>
+                <p className="mt-1 text-amber-100/85">
+                  {active.pauseReason || "Legacy pause — no reason recorded"}
+                </p>
+                <p className="mt-0.5 text-[10px] uppercase tracking-wider text-amber-200/60">
+                  Set by {pauseActorLabel(active.pausedBy)}
+                  {active.pauseSource ? ` · ${active.pauseSource.replace(/_/g, " ")}` : ""}
+                </p>
+              </div>
+            )}
 
             {/* overflow-x-hidden as a backstop: the bubbles already wrap
                 (max-w-[80%] + break-words), so anything clipping them is an

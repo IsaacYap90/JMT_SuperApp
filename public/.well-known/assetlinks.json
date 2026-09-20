@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ai.ionicx.jmtos",
+      "sha256_cert_fingerprints": [
+        "94:99:F4:84:4A:60:7E:8C:EF:C4:73:06:CB:80:E5:A8:6C:45:81:9B:21:06:BF:80:3C:AB:D7:19:B7:70:FA:EE"
+      ]
+    }
+  }
+]

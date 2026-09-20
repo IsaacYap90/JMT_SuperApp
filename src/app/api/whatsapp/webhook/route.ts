@@ -15,11 +15,12 @@ import { buildContactContext, fetchMemberNotes } from "@/lib/wa/member-lookup";
 // these answers with no deploy, exactly like the model path.
 import { DROPIN_BOOKING_URL } from "@/lib/wa/followup-dropin";
 import {
-  BOOKING_OFFER_MARKER,
+  hasBookingOffer,
   buildDeterministicAnswer,
   isOfferAcceptance,
   lateArrivalAnswer,
 } from "@/lib/wa/deterministic-answers";
+import { detectLang } from "@/lib/wa/lang";
 import { getJaiFacts } from "@/lib/wa/jai-facts";
 import { extractMessage, isStatusUpdate, sendText, sendQuickReplies, markRead } from "@/lib/wa/jai-send";
 import { sendTelegramPlainToUser } from "@/lib/telegram-alert";
@@ -39,6 +40,12 @@ import {
 } from "@/lib/wa/join-intent";
 import { sessionBotReplyCount, isRepeatingItself } from "@/lib/wa/session-window";
 import { pauseIsStale } from "@/lib/wa/pause-stale";
+import { transitionExactPublicLead } from "@/lib/leads/lifecycle-service";
+import {
+  buildPauseMetadata,
+  clearPauseMetadata,
+  isMissingPauseMetadataColumn,
+} from "@/lib/wa/pause-metadata";
 
 /** What the anti-loop guard says. Named because the guard must be able to
  *  recognise its OWN output and not mistake it for JAI repeating itself. */
@@ -115,6 +122,36 @@ export async function POST(req: NextRequest) {
         .eq("wa_message_id", messageId);
       if (error) console.error("[jai-webhook] markHandled failed", error);
     };
+    const markPublicLeadContacted = async () => {
+      try {
+        await transitionExactPublicLead({
+          identity: { phone: from },
+          to: "contacted",
+          trigger: "outbound_contact",
+          source: { schema: "jai", table: "conversations", key: messageId || `contact:${from}` },
+          actor: { type: "jai" },
+        });
+      } catch (error) {
+        console.error("[jai-webhook] lead lifecycle update failed", error);
+      }
+    };
+    const markPublicLeadInbound = async () => {
+      try {
+        await transitionExactPublicLead({
+          identity: { phone: from },
+          to: "contacted",
+          trigger: "reopened",
+          source: {
+            schema: "jai",
+            table: "conversations",
+            key: messageId || `inbound:${from}:${crypto.randomUUID()}`,
+          },
+          actor: { type: "system" },
+        });
+      } catch (error) {
+        console.error("[jai-webhook] inbound lead lifecycle update failed", error);
+      }
+    };
 
     if (messageId) {
       const { error: claimErr } = await sb
@@ -172,6 +209,11 @@ export async function POST(req: NextRequest) {
         { onConflict: "contact_number", ignoreDuplicates: true }
       );
 
+    // A customer returning after being marked Lost immediately reopens the
+    // exact, unique public lead. This happens before pause/handoff checks, so a
+    // human-owned conversation is still reflected in the lifecycle.
+    await markPublicLeadInbound();
+
     // They replied — disarm the silent-lead follow-up funnel (re-arms if the
     // bot sends another booking link below).
     await sb
@@ -183,11 +225,19 @@ export async function POST(req: NextRequest) {
     markRead(messageId).catch(() => {});
 
     // Jeremy has taken over this chat from the inbox → stay quiet (still logged above).
-    const { data: lead } = await sb
+    let leadRead = await sb
       .from("leads")
-      .select("ai_paused, is_member, contact_name")
+      .select("ai_paused, is_member, contact_name, ai_pause_expires_at")
       .eq("contact_number", from)
       .maybeSingle();
+    if (leadRead.error && isMissingPauseMetadataColumn(leadRead.error)) {
+      leadRead = await sb
+        .from("leads")
+        .select("ai_paused, is_member, contact_name")
+        .eq("contact_number", from)
+        .maybeSingle() as typeof leadRead;
+    }
+    const lead = leadRead.data;
 
     // A pause is a HANDOFF, not a permanent mute. Nothing has ever cleared
     // ai_paused, so 28 of 83 leads were silently muted for good (2026-09-02).
@@ -195,11 +245,18 @@ export async function POST(req: NextRequest) {
     // JAI takes the chat back and answers normally from here down. If he
     // replied inside 24h the chat stays his. pauseIsStale fails closed.
     let paused = lead?.ai_paused === true;
-    if (paused && (await pauseIsStale(sb, from))) {
-      const { error: resumeErr } = await sb
+    if (paused && (await pauseIsStale(sb, from, Date.now(), lead?.ai_pause_expires_at))) {
+      let { error: resumeErr } = await sb
         .from("leads")
-        .update({ ai_paused: false })
+        .update(clearPauseMetadata())
         .eq("contact_number", from);
+      if (resumeErr && isMissingPauseMetadataColumn(resumeErr)) {
+        const legacy = await sb
+          .from("leads")
+          .update({ ai_paused: false })
+          .eq("contact_number", from);
+        resumeErr = legacy.error;
+      }
       if (resumeErr) {
         // Could not clear the flag — stay quiet rather than reply while the
         // inbox still shows the chat as Jeremy's.
@@ -286,8 +343,11 @@ export async function POST(req: NextRequest) {
           message: out,
           via: "bot",
         });
-        await sendText(from, `*Jai*\n${out}`);
-        await markHandled(); // reply delivered → safe to dedup retries
+        const delivered = await sendText(from, `*Jai*\n${out}`);
+        if (delivered) {
+          await markPublicLeadContacted();
+          await markHandled(); // reply delivered → safe to dedup retries
+        }
       };
 
       const pingAdmins = async (note: string) => {
@@ -405,8 +465,11 @@ export async function POST(req: NextRequest) {
           message: late.messageText,
           via: "bot",
         });
-        await sendText(from, `*Jai*\n${late.messageText}`);
-        await markHandled(); // reply delivered → safe to dedup retries
+        const delivered = await sendText(from, `*Jai*\n${late.messageText}`);
+        if (delivered) {
+          await markPublicLeadContacted();
+          await markHandled(); // reply delivered → safe to dedup retries
+        }
         return NextResponse.json({ ok: true });
       }
     }
@@ -430,7 +493,7 @@ export async function POST(req: NextRequest) {
     // this ran getJaiFacts() and buildDeterministicAnswer() on EVERY inbound
     // message, including join and new-contact turns, and built the deterministic
     // answer twice per message.
-    const offerOnTable = lastAssistant.includes(BOOKING_OFFER_MARKER);
+    const offerOnTable = hasBookingOffer(lastAssistant);
     const lastAssistantAt = offerOnTable
       ? [...prior].reverse().find((m) => m.role === "assistant")?.created_at
       : undefined;
@@ -453,8 +516,11 @@ export async function POST(req: NextRequest) {
         message: out,
         via: "bot",
       });
-      await sendText(from, `*Jai*\n${out}`);
-      await markHandled();
+      const delivered = await sendText(from, `*Jai*\n${out}`);
+      if (delivered) {
+        await markPublicLeadContacted();
+        await markHandled();
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -469,13 +535,17 @@ export async function POST(req: NextRequest) {
           via: "bot",
         });
         const out = `*Jai*\n${det.messageText}`;
+        let delivered: boolean;
         if (det.quickReplies.length > 0 && out.length <= 1000) {
-          const ok = await sendQuickReplies(from, out, det.quickReplies);
-          if (!ok) await sendText(from, out);
+          delivered = await sendQuickReplies(from, out, det.quickReplies);
+          if (!delivered) delivered = await sendText(from, out);
         } else {
-          await sendText(from, out);
+          delivered = await sendText(from, out);
         }
-        await markHandled(); // reply delivered → safe to dedup retries
+        if (delivered) {
+          await markPublicLeadContacted();
+          await markHandled(); // reply delivered → safe to dedup retries
+        }
         return NextResponse.json({ ok: true });
       }
     }
@@ -700,16 +770,20 @@ export async function POST(req: NextRequest) {
     // for other reasons — never let the buttons cost the customer the message:
     // long bodies go as plain text, and a failed interactive send falls back.
     const outbound = `*Jai*\n${outText}`;
+    let delivered: boolean;
     if (outQuick.length > 0 && outbound.length <= 1000) {
-      const ok = await sendQuickReplies(from, outbound, outQuick);
-      if (!ok) await sendText(from, outbound);
+      delivered = await sendQuickReplies(from, outbound, outQuick);
+      if (!delivered) delivered = await sendText(from, outbound);
     } else {
-      await sendText(from, outbound);
+      delivered = await sendText(from, outbound);
     }
 
     // Reply delivered → NOW mark the message handled so Meta retries dedup.
     // (Before this point any crash/timeout leaves handled=false → we re-reply.)
-    await markHandled();
+    if (delivered) {
+      await markPublicLeadContacted();
+      await markHandled();
+    }
 
     // Join / promo intent → hand the chat to Jeremy for real: pause JAI on this
     // contact so it can't keep talking over him while he closes, or get pressed
@@ -723,10 +797,25 @@ export async function POST(req: NextRequest) {
     // Jeremy is ALWAYS pinged on Telegram + given a pending item below, so a
     // paused chat is a handoff, never silence.
     if (pauseAi) {
-      const { error: pauseErr } = await sb
+      const pauseSource = priceLeak ? "price_guard" : "promo_handoff";
+      const pauseReason = priceLeak
+        ? "JAI blocked a non-standard price and handed the chat to Coach Jeremy"
+        : "Customer asked about a promotion or quoted an unverified price";
+      let { error: pauseErr } = await sb
         .from("leads")
-        .update({ ai_paused: true })
+        .update(buildPauseMetadata({
+          pausedBy: "jai",
+          source: pauseSource,
+          reason: pauseReason,
+        }))
         .eq("contact_number", from);
+      if (pauseErr && isMissingPauseMetadataColumn(pauseErr)) {
+        const legacy = await sb
+          .from("leads")
+          .update({ ai_paused: true })
+          .eq("contact_number", from);
+        pauseErr = legacy.error;
+      }
       if (pauseErr) console.error("[jai-webhook] join-intent pause failed", pauseErr);
     }
 
@@ -821,9 +910,25 @@ export async function POST(req: NextRequest) {
           console.warn("[jai-webhook] dropping unknown escalation type", esc.escalation);
           return NextResponse.json({ ok: true });
         }
+        // 🛑 Say which language she writes in, in English, before quoting her.
+        // On 15 Sep Coach Jeremy was handed a Mandarin PT lead as
+        //   PT lead 🥊 — "1对1的价钱 大概多少"
+        // and he does not read Chinese, so the only substantive part of the
+        // alert was unreadable to its only reader. Isaac had to pick the thread
+        // up by hand. We do not translate here — a model call in the webhook is
+        // another thing that can fail while a customer waits — but naming the
+        // language tells whoever reads it to loop Isaac in, which is the actual
+        // decision. (JAI does not know which coach speaks what: there is no
+        // language field on coach_profiles.)
+        const leadLang = detectLang(text);
+        const langNote =
+          leadLang === "zh"
+            ? `⚠️ Writes in CHINESE — Isaac is the only coach who reads it.\n`
+            : "";
         const alert =
           `🔔 JAI — ${label}\n` +
           `Customer: ${contactName || "Unknown"} (+${from})\n` +
+          langNote +
           (esc.intent ? `Intent: ${esc.intent}\n` : "") +
           `Last message: "${text}"\n` +
           cancelNote +
@@ -860,15 +965,17 @@ export async function POST(req: NextRequest) {
           // against other join escalations for the same contact.
           if (joinEscalation) taskQuery = taskQuery.ilike("description", `${label}%`);
           const { data: existingTask } = await taskQuery.limit(1);
+          const who = contactName || `+${from}`;
+          const preview = text.length > 200 ? text.slice(0, 197) + "..." : text;
+          const description =
+            (leadLang === "zh" ? "[CHINESE — ask Isaac] " : "") +
+            `${label} — "${preview}"` +
+            (esc.intent ? ` (intent: ${esc.intent})` : "");
           if (!existingTask || existingTask.length === 0) {
-            const who = contactName || `+${from}`;
-            const preview = text.length > 200 ? text.slice(0, 197) + "..." : text;
             await pub.from("admin_pending_items").insert({
               id: globalThis.crypto?.randomUUID?.() ?? `jai-${from}-${Date.now()}`,
               title: `JAI: ${who} needs Jeremy`,
-              description:
-                `${label} — "${preview}"` +
-                (esc.intent ? ` (intent: ${esc.intent})` : ""),
+              description,
               category: "jai_escalation",
               link: `https://jmtos.ionicx.ai/wa-inbox?contact=${from}`,
               priority:
@@ -877,6 +984,18 @@ export async function POST(req: NextRequest) {
                   : "medium",
               status: "open",
             });
+          } else {
+            // 🛑 De-dupe by UPDATING, not by dropping the newer message.
+            // Vivi@n's card was raised at 15:13 quoting "1对1的价钱 大概多少"
+            // (how much is 1-to-1). She stated her actual goal — 减重减脂,
+            // losing weight and fat — at 15:14, one minute later. The old code
+            // saw an open card and skipped, so the goal never reached the card
+            // and Jeremy opened a strictly worse summary than JAI already had.
+            // The whole point of the card is to be the freshest thing he reads.
+            await pub
+              .from("admin_pending_items")
+              .update({ description })
+              .eq("id", existingTask[0].id);
           }
         } catch (e) {
           console.error("[jai-webhook] escalation task create failed", e);

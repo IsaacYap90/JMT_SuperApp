@@ -42,6 +42,14 @@
     {
       "path": "/api/cron/lead-followup",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/lead-lifecycle",
+      "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/gcal-sync",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

@@ -4,8 +4,10 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { isAdmin } from "@/lib/types/database";
 import { sendConversionLeadEvent, STATUS_EVENT_MAP } from "@/lib/meta/capi";
+import { transitionLeadStage } from "@/lib/leads/lifecycle-service";
+import type { LeadLifecycleStatus } from "@/lib/leads/lifecycle";
 
-export type LeadStatus = "new" | "contacted" | "scheduled" | "won" | "lost";
+export type LeadStatus = LeadLifecycleStatus;
 
 export interface Lead {
   id: string;
@@ -62,12 +64,17 @@ export async function updateLeadStatus(leadId: string, status: LeadStatus) {
   if (!profile || !isAdmin(profile.role)) throw new Error("Not authorized");
 
   const db = createAdminClient();
-  const { error } = await db
-    .from("leads")
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq("id", leadId);
-
-  if (error) throw new Error(error.message);
+  const outcome = await transitionLeadStage({
+    leadId,
+    to: status,
+    trigger: "manual",
+    source: { schema: "public", table: "leads", key: `manual:${leadId}:${status}` },
+    actor: { type: profile.role === "master_admin" || profile.role === "admin" ? "admin" : "coach", id: user.id },
+    automatic: false,
+  });
+  if (outcome === "conflict" || outcome === "not_found" || outcome === "rejected") {
+    throw new Error(`Lead status update failed: ${outcome}`);
+  }
 
   // Meta Conversions API feedback (non-fatal): if this status maps to a funnel
   // event, the lead came from a Meta lead form, and CAPI env is configured,
@@ -75,7 +82,7 @@ export async function updateLeadStatus(leadId: string, status: LeadStatus) {
   const eventName = STATUS_EVENT_MAP[status];
   const datasetId = process.env.JMT_META_CAPI_DATASET_ID;
   const accessToken = process.env.JMT_META_CAPI_ACCESS_TOKEN;
-  if (eventName && datasetId && accessToken) {
+  if (outcome === "applied" && eventName && datasetId && accessToken) {
     const { data: lead } = await db
       .from("leads")
       .select("meta_lead_id")

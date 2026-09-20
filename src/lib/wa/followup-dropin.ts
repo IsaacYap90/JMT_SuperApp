@@ -99,6 +99,9 @@ export function decideNudge(i: NudgeInput): NudgeDecision {
   return { stage: "nudge2" };
 }
 
+import type { Lang } from "./lang";
+import type { FollowupFacts } from "./followup-facts";
+
 // ── Message drafts ───────────────────────────────────────────────────────────
 // APPROVED by Isaac verbatim, 2026-09-02 ("4. use them."). Do not reword
 // without asking him — these go out in his name. Written 2026-09-02.
@@ -112,20 +115,47 @@ export function decideNudge(i: NudgeInput): NudgeDecision {
 // customer reads. Both are deliberately safe for someone who has already booked
 // on the website: nothing in this database records a drop-in purchase, so the
 // cron cannot know.
+//
+// ⚠ THE CHINESE DRAFTS BELOW ARE NOT YET SIGNED OFF (added 2026-09-16). The
+// English wording above is Isaac's, approved verbatim, and is untouched. The
+// fact sheet has ordered "Chinese in, Chinese out" since 25 Aug, but these four
+// nudges never obeyed it: Vivi@n (+65 9697 3505) wrote eight Chinese messages
+// and got both silent nudges in English on 15-16 Sep. Same shape as Huiling on
+// 20 Aug, who opened with "你好", was answered in English, and never replied
+// again — the incident the fact-sheet rule was written for.
+// 🛑 Isaac signs off anything a customer reads. Get these approved before they
+// go out, exactly as the English ones were.
 
-export function dropinNudge1(first: string): string {
+export function dropinNudge1(first: string, lang: Lang = "en", facts?: FollowupFacts): string {
+  if (lang === "zh") {
+    return (
+      `Hey${first ? ` ${first}` : ""}！还想来试试吗？🥊\n\n` +
+      `单次 drop-in 是 $42 — 一样的课，一样的教练，新手也很欢迎。` +
+      `一分钟就能预约：${DROPIN_BOOKING_URL}\n\n` +
+      `想先问我什么也可以，直接回这里就好。`
+    );
+  }
+  if (!facts) throw new Error("live follow-up facts are required for an English drop-in nudge");
   return (
     `Hey${first ? ` ${first}` : ""}! Still keen to jump in? 🥊\n\n` +
-    `A drop-in class is $42 — same class, same coaches, beginners welcome. ` +
-    `Takes a minute to book: ${DROPIN_BOOKING_URL}\n\n` +
+    `A drop-in class is ${facts.price} — same class, same coaches, beginners welcome. ` +
+    `Takes a minute to book: ${facts.bookingUrl}\n\n` +
     `Rather ask me something first? Just reply here.`
   );
 }
 
-export function dropinNudge2(first: string): string {
+export function dropinNudge2(first: string, lang: Lang = "en", facts?: FollowupFacts): string {
+  if (lang === "zh") {
+    return (
+      `最后问一次${first ? `，${first}` : ""} — 这个星期想来上一堂吗？🙂\n\n` +
+      `$42 的 drop-in 随时都在，你准备好再来：${DROPIN_BOOKING_URL}\n\n` +
+      `已经约了的话，忽略这则就好，拳馆见 🙏 如果现在时机不对，也完全没关系。`
+    );
+  }
+  if (!facts) throw new Error("live follow-up facts are required for an English drop-in nudge");
   return (
     `Last check${first ? `, ${first}` : ""} — want to come try a class this week? 🙂\n\n` +
-    `The $42 drop-in is here whenever you're ready: ${DROPIN_BOOKING_URL}\n\n` +
+    `The ${facts.price} drop-in is here whenever you're ready: ${facts.bookingUrl}\n\n` +
     `Already booked? Ignore this and see you at the gym 🙏 If now's not the right time, no stress at all.`
   );
 }
@@ -141,14 +171,27 @@ export function dropinNudge2(first: string): string {
 // "did you manage to book?" is nonsense to someone who was never sent a link.
 // They reference the conversation, not a purchase, and both are safe for
 // someone who has since decided against it.
-export function silentNudge1(first: string): string {
+export function silentNudge1(first: string, lang: Lang = "en"): string {
+  if (lang === "zh") {
+    return (
+      `Hey${first ? ` ${first}` : ""} — 想确认一下，之前的回复有解答到你要问的吗？🙂\n\n` +
+      `如果那个时间不合适，我可以帮你看别的日子或时段。`
+    );
+  }
   return (
     `Hey${first ? ` ${first}` : ""} — just checking that answered what you needed? 🙂\n\n` +
     `Happy to look up another day or time if that one doesn't suit.`
   );
 }
 
-export function silentNudge2(first: string): string {
+export function silentNudge2(first: string, lang: Lang = "en"): string {
+  if (lang === "zh") {
+    return (
+      `最后一则${first ? `，${first}` : ""} 🙏\n\n` +
+      `如果你还想来试一堂，告诉我哪天方便，我帮你安排。` +
+      `如果现在时机不对，也完全没关系 — 我们随时都在。`
+    );
+  }
   return (
     `Last one from me${first ? `, ${first}` : ""} 🙏\n\n` +
     `If you'd still like to come try a class, just tell me which day works and I'll sort it. ` +

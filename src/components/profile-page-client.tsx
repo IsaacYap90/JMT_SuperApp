@@ -4,6 +4,8 @@ import { useState } from "react";
 import { User } from "@/lib/types/database";
 import { updateEmail, updatePhone, changePassword } from "@/app/actions/auth";
 import { useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { GcalConnect } from "./gcal-connect";
 
 export function ProfilePageClient({ profile }: { profile: User }) {
   const router = useRouter();
@@ -142,6 +144,11 @@ export function ProfilePageClient({ profile }: { profile: User }) {
           </p>
         )}
       </section>
+
+      {/* Google Calendar */}
+      <Suspense fallback={null}>
+        <GcalConnect />
+      </Suspense>
 
       {/* Change Password */}
       <section className="bg-jai-card border border-jai-border rounded-xl p-4 space-y-3">
