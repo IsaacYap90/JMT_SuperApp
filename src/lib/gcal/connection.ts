@@ -21,22 +21,24 @@ export interface GCalConnection {
 /** Get the active (non-revoked) connection for a user, or null. */
 export async function getConnection(userId: string): Promise<GCalConnection | null> {
   const sb = createAdminClient();
-  const { data } = await sb
+  const { data, error } = await sb
     .from("gcal_connections")
     .select("id, user_id, google_calendar_id, google_email, connected_at, last_synced_at, revoked_at, token_expires_at")
     .eq("user_id", userId)
     .is("revoked_at", null)
     .maybeSingle();
+  if (error) throw new Error(`Failed to read gcal connection: ${error.message}`);
   return data as GCalConnection | null;
 }
 
 /** Get all active connections (for cron sync). */
 export async function getAllActiveConnections(): Promise<GCalConnection[]> {
   const sb = createAdminClient();
-  const { data } = await sb
+  const { data, error } = await sb
     .from("gcal_connections")
     .select("id, user_id, google_calendar_id, google_email, connected_at, last_synced_at, revoked_at, token_expires_at")
     .is("revoked_at", null);
+  if (error) throw new Error(`Failed to read active gcal connections: ${error.message}`);
   return (data || []) as GCalConnection[];
 }
 
@@ -87,11 +89,12 @@ export async function setCalendarId(connectionId: string, calendarId: string): P
 /** Get a valid access token, refreshing if expired. Returns the decrypted access token. */
 export async function getValidAccessToken(connectionId: string): Promise<string> {
   const sb = createAdminClient();
-  const { data: row } = await sb
+  const { data: row, error } = await sb
     .from("gcal_connections")
     .select("encrypted_access_token, encrypted_refresh_token, token_expires_at")
     .eq("id", connectionId)
     .single();
+  if (error) throw new Error(`Failed to read gcal connection ${connectionId}: ${error.message}`);
   if (!row) throw new Error(`Connection ${connectionId} not found`);
 
   const expiresAt = row.token_expires_at ? new Date(row.token_expires_at).getTime() : 0;
@@ -119,7 +122,8 @@ export async function getValidAccessToken(connectionId: string): Promise<string>
   if (tokens.refresh_token) {
     updates.encrypted_refresh_token = encrypt(tokens.refresh_token);
   }
-  await sb.from("gcal_connections").update(updates).eq("id", connectionId);
+  const { error: updateError } = await sb.from("gcal_connections").update(updates).eq("id", connectionId);
+  if (updateError) throw new Error(`Failed to persist refreshed Google token: ${updateError.message}`);
 
   return tokens.access_token;
 }
@@ -132,7 +136,7 @@ export async function getValidAccessToken(connectionId: string): Promise<string>
  */
 export async function getExistingCalendarId(userId: string): Promise<string | null> {
   const sb = createAdminClient();
-  const { data } = await sb
+  const { data, error } = await sb
     .from("gcal_connections")
     .select("google_calendar_id")
     .eq("user_id", userId)
@@ -140,24 +144,27 @@ export async function getExistingCalendarId(userId: string): Promise<string | nu
     .order("connected_at", { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (error) throw new Error(`Failed to read existing Google calendar: ${error.message}`);
   return data?.google_calendar_id || null;
 }
 
 /** Soft-disconnect: set revoked_at. Does NOT delete the Google calendar. */
 export async function revokeConnection(userId: string): Promise<void> {
   const sb = createAdminClient();
-  await sb
+  const { error } = await sb
     .from("gcal_connections")
     .update({ revoked_at: new Date().toISOString() })
     .eq("user_id", userId)
     .is("revoked_at", null);
+  if (error) throw new Error(`Failed to disconnect Google Calendar: ${error.message}`);
 }
 
 /** Update last_synced_at after a successful sync. */
 export async function markSynced(connectionId: string): Promise<void> {
   const sb = createAdminClient();
-  await sb
+  const { error } = await sb
     .from("gcal_connections")
     .update({ last_synced_at: new Date().toISOString() })
     .eq("id", connectionId);
+  if (error) throw new Error(`Failed to mark Google Calendar sync: ${error.message}`);
 }

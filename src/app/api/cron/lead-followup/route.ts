@@ -237,12 +237,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, dry, candidates: 0, plans: [] });
   }
 
-  const { data: leads } = await jai
+  const { data: leads, error: leadsError } = await jai
     .from("leads")
     .select(
       "contact_number, contact_name, is_member, ai_paused, silent_nudge1_sent_at, silent_nudge2_sent_at"
     )
     .in("contact_number", numbers);
+  if (leadsError) {
+    console.error("[lead-followup] lead-state read FAILED, sending nothing:", leadsError.code, leadsError.message);
+    return NextResponse.json({ error: "lead state unavailable", code: leadsError.code }, { status: 500 });
+  }
   const leadByNumber = new Map((leads || []).map((l) => [l.contact_number as string, l]));
 
   const plans: Plan[] = [];
@@ -276,13 +280,18 @@ export async function GET(req: NextRequest) {
 
     // Their last inbound: both the "have they replied since?" test and the
     // clock Meta's 24h customer-service window actually runs on.
-    const { data: lastUserRows } = await jai
+    const { data: lastUserRows, error: lastUserError } = await jai
       .from("conversations")
       .select("created_at, message")
       .eq("contact_number", to)
       .eq("role", "user")
       .order("created_at", { ascending: false })
       .limit(10);
+    if (lastUserError) {
+      console.error("[lead-followup] inbound-history read FAILED, skipping contact:", to, lastUserError.code, lastUserError.message);
+      plans.push({ to, stage: "skip", reason: "inbound history unavailable" });
+      continue;
+    }
     const lastUserAt = lastUserRows?.[0] ? new Date(lastUserRows[0].created_at).getTime() : 0;
 
     // Which language to nudge her in. Her OWN messages only — the assistant's
@@ -327,6 +336,14 @@ export async function GET(req: NextRequest) {
       }
       cold++;
       plans.push({ to, stage: "cold", reason: decision.reason });
+      continue;
+    }
+
+    // The Chinese follow-up copy has not been approved for sending in Jeremy's
+    // name. Do not fall back to English or send the pending draft. It remains
+    // visible in dry-run plans until its wording is explicitly signed off.
+    if (lang === "zh") {
+      plans.push({ to, stage: "skip", reason: "Chinese follow-up copy awaiting approval" });
       continue;
     }
 

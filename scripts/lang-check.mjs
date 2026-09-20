@@ -180,14 +180,16 @@ for (const [name, fn] of [
   const en = name.startsWith("dropin")
     ? fn("Vivi@n", "en", parsedFollowupFacts.value)
     : fn("Vivi@n");
-  const zh = fn("Vivi@n", "zh");
+  const zh = name.startsWith("dropin")
+    ? fn("Vivi@n", "zh", parsedFollowupFacts.value)
+    : fn("Vivi@n", "zh");
   ok(`${name}() default is unchanged English`, !hasCJK(en) && en.length > 0);
   ok(`${name}(_, "zh") is Chinese`, hasCJK(zh));
   ok(`${name} keeps her name verbatim`, zh.includes("Vivi@n"));
 }
 // The drop-in nudges quote a price and a URL — neither may be translated.
-ok('dropinNudge1 zh keeps "$42"', dropinNudge1("A", "zh").includes("$42"));
-ok("dropinNudge1 zh keeps the booking URL", /https?:\/\//.test(dropinNudge1("A", "zh")));
+ok('dropinNudge1 zh keeps "$42"', dropinNudge1("A", "zh", parsedFollowupFacts.value).includes("$42"));
+ok("dropinNudge1 zh keeps the booking URL", /https?:\/\//.test(dropinNudge1("A", "zh", parsedFollowupFacts.value)));
 
 console.log(
   `\n${flipped} case(s) flipped between old and new, ${deadweight} identical under both.`

@@ -97,9 +97,27 @@ export async function transitionExactPublicLead(input: {
   actor: LifecycleActor;
 }) {
   const db = createAdminClient();
-  const { data, error } = await db.from("leads").select("id, status, phone, email").limit(1000);
-  if (error) throw new Error(error.message);
-  const resolved = resolveUniquePublicLead((data ?? []) as LeadRow[], input.identity);
+  const rows: LeadRow[] = [];
+  const pageSize = 500;
+  let from = 0;
+
+  // Existing public leads have phone numbers in several display formats. Until
+  // the identity graph is backfilled, normalize in application code — but page
+  // through every lead so a lead after the first 1,000 is never silently missed.
+  while (true) {
+    const { data, error } = await db
+      .from("leads")
+      .select("id, status, phone, email")
+      .order("id", { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw new Error(error.message);
+    const page = (data ?? []) as LeadRow[];
+    rows.push(...page);
+    if (page.length < pageSize) break;
+    from += page.length;
+  }
+
+  const resolved = resolveUniquePublicLead(rows, input.identity);
   if (resolved.kind !== "matched") return resolved.kind;
   return executeLeadTransition({ ...input, leadId: resolved.lead.id, automatic: true, metadata: { matched_by: resolved.matchedBy } }, supabaseGateway(db));
 }

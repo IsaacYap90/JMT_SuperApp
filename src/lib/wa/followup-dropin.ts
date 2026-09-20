@@ -127,15 +127,15 @@ import type { FollowupFacts } from "./followup-facts";
 // go out, exactly as the English ones were.
 
 export function dropinNudge1(first: string, lang: Lang = "en", facts?: FollowupFacts): string {
+  if (!facts) throw new Error("live follow-up facts are required for a drop-in nudge");
   if (lang === "zh") {
     return (
       `Hey${first ? ` ${first}` : ""}！还想来试试吗？🥊\n\n` +
-      `单次 drop-in 是 $42 — 一样的课，一样的教练，新手也很欢迎。` +
-      `一分钟就能预约：${DROPIN_BOOKING_URL}\n\n` +
+      `单次 drop-in 是 ${facts.price} — 一样的课，一样的教练，新手也很欢迎。` +
+      `一分钟就能预约：${facts.bookingUrl}\n\n` +
       `想先问我什么也可以，直接回这里就好。`
     );
   }
-  if (!facts) throw new Error("live follow-up facts are required for an English drop-in nudge");
   return (
     `Hey${first ? ` ${first}` : ""}! Still keen to jump in? 🥊\n\n` +
     `A drop-in class is ${facts.price} — same class, same coaches, beginners welcome. ` +
@@ -145,14 +145,14 @@ export function dropinNudge1(first: string, lang: Lang = "en", facts?: FollowupF
 }
 
 export function dropinNudge2(first: string, lang: Lang = "en", facts?: FollowupFacts): string {
+  if (!facts) throw new Error("live follow-up facts are required for a drop-in nudge");
   if (lang === "zh") {
     return (
       `最后问一次${first ? `，${first}` : ""} — 这个星期想来上一堂吗？🙂\n\n` +
-      `$42 的 drop-in 随时都在，你准备好再来：${DROPIN_BOOKING_URL}\n\n` +
+      `${facts.price} 的 drop-in 随时都在，你准备好再来：${facts.bookingUrl}\n\n` +
       `已经约了的话，忽略这则就好，拳馆见 🙏 如果现在时机不对，也完全没关系。`
     );
   }
-  if (!facts) throw new Error("live follow-up facts are required for an English drop-in nudge");
   return (
     `Last check${first ? `, ${first}` : ""} — want to come try a class this week? 🙂\n\n` +
     `The ${facts.price} drop-in is here whenever you're ready: ${facts.bookingUrl}\n\n` +

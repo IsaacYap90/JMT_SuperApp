@@ -126,15 +126,17 @@ interface LeaveRow {
 
 async function fetchCoachClasses(userId: string): Promise<ClassRow[]> {
   const sb = createAdminClient();
-  const { data: allClasses } = await sb
+  const { data: allClasses, error: classesError } = await sb
     .from("classes")
     .select("id, name, day_of_week, event_date, start_time, end_time, is_active, lead_coach_id, assistant_coach_id, created_at")
     .eq("is_active", true);
+  if (classesError) throw new Error(`Failed to read classes for Google Calendar sync: ${classesError.message}`);
 
-  const { data: ccLinks } = await sb
+  const { data: ccLinks, error: linksError } = await sb
     .from("class_coaches")
     .select("class_id")
     .eq("coach_id", userId);
+  if (linksError) throw new Error(`Failed to read class coaches for Google Calendar sync: ${linksError.message}`);
 
   const ccIds = new Set((ccLinks || []).map((l: { class_id: string }) => l.class_id));
 
@@ -150,12 +152,13 @@ async function fetchCoachPt(userId: string): Promise<PtRow[]> {
   const sb = createAdminClient();
   // Only future + recent past (2 weeks back) to keep the sync window manageable
   const twoWeeksAgo = new Date(Date.now() - 14 * 86400_000).toISOString();
-  const { data } = await sb
+  const { data, error } = await sb
     .from("pt_sessions")
     .select("id, coach_id, member_id, scheduled_at, duration_minutes, status, created_at, member:users!pt_sessions_member_id_fkey(full_name)")
     .eq("coach_id", userId)
     .in("status", ["scheduled", "confirmed", "completed"])
     .gte("scheduled_at", twoWeeksAgo);
+  if (error) throw new Error(`Failed to read PT sessions for Google Calendar sync: ${error.message}`);
   // Supabase returns the FK join as an array; normalize to single object.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return ((data || []) as any[]).map((row) => ({
@@ -167,13 +170,14 @@ async function fetchCoachPt(userId: string): Promise<PtRow[]> {
 async function fetchCoachLeaves(userId: string): Promise<LeaveRow[]> {
   const sb = createAdminClient();
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
-  const { data } = await sb
+  const { data, error } = await sb
     .from("leaves")
     .select("id, coach_id, leave_date, leave_end_date, leave_type, is_half_day, half_day_period, status")
     .eq("coach_id", userId)
     .eq("status", "approved")
     .is("deleted_at", null)
     .gte("leave_date", todayStr);
+  if (error) throw new Error(`Failed to read leave for Google Calendar sync: ${error.message}`);
   return (data || []) as LeaveRow[];
 }
 
@@ -189,10 +193,11 @@ interface EventMapRow {
 
 async function getEventMap(connectionId: string): Promise<Map<string, EventMapRow>> {
   const sb = createAdminClient();
-  const { data } = await sb
+  const { data, error } = await sb
     .from("gcal_event_map")
     .select("id, local_entity_key, google_event_id, synced_at, deleted")
     .eq("connection_id", connectionId);
+  if (error) throw new Error(`Failed to read Google Calendar event map: ${error.message}`);
   const map = new Map<string, EventMapRow>();
   for (const row of data || []) {
     map.set(row.local_entity_key, row as EventMapRow);
@@ -207,7 +212,7 @@ async function upsertEventMap(
   deleted: boolean = false
 ): Promise<void> {
   const sb = createAdminClient();
-  await sb.from("gcal_event_map").upsert(
+  const { error } = await sb.from("gcal_event_map").upsert(
     {
       connection_id: connectionId,
       local_entity_key: key,
@@ -218,6 +223,7 @@ async function upsertEventMap(
     },
     { onConflict: "connection_id,local_entity_key" }
   );
+  if (error) throw new Error(`Failed to persist Google Calendar event map: ${error.message}`);
 }
 
 // ── main sync ──
