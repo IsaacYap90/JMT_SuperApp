@@ -174,6 +174,44 @@ export interface GCalEvent {
   };
 }
 
+/** Minimal event shape returned while reconciling this app's calendar. */
+export interface GCalListedEvent {
+  id: string;
+  status?: string;
+  extendedProperties?: {
+    private?: Record<string, string>;
+  };
+}
+
+interface GCalEventsPage {
+  items?: GCalListedEvent[];
+  nextPageToken?: string;
+}
+
+/**
+ * List events from the app-owned calendar. Callers must still restrict any
+ * mutation to events bearing the private jmt_key marker.
+ */
+export async function listCalendarEvents(accessToken: string, calendarId: string): Promise<GCalListedEvent[]> {
+  const events: GCalListedEvent[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const page = await gcalFetch<GCalEventsPage>({
+      accessToken,
+      path: `/calendars/${encodeURIComponent(calendarId)}/events`,
+      query: {
+        maxResults: "2500",
+        ...(pageToken ? { pageToken } : {}),
+      },
+    });
+    events.push(...(page.items || []));
+    pageToken = page.nextPageToken;
+  } while (pageToken);
+
+  return events;
+}
+
 /** Insert a calendar event. Returns the Google event ID. */
 export async function insertEvent(accessToken: string, calendarId: string, event: GCalEvent): Promise<string> {
   const created = await gcalFetch<{ id: string }>({

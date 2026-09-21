@@ -28,6 +28,7 @@ assert.equal(typeof gcal.findCalendarBySummary, "undefined", "findCalendarBySumm
 assert.ok(typeof gcal.insertEvent === "function", "insertEvent should be exported");
 assert.ok(typeof gcal.updateEvent === "function", "updateEvent should be exported");
 assert.ok(typeof gcal.deleteEvent === "function", "deleteEvent should be exported");
+assert.ok(typeof gcal.listCalendarEvents === "function", "Calendar sync should list app-owned events to remove retry duplicates");
 assert.ok(Array.isArray(gcal.GOOGLE_SCOPES), "GOOGLE_SCOPES should be an array");
 assert.ok(gcal.GOOGLE_SCOPES.includes("https://www.googleapis.com/auth/calendar.app.created"), "Should include calendar.app.created scope");
 assert.ok(!gcal.GOOGLE_SCOPES.includes("https://www.googleapis.com/auth/calendar"), "Must NOT include broad calendar scope");
@@ -51,6 +52,8 @@ const syncSource = await readFile(new URL("../src/lib/gcal/sync.ts", import.meta
 assert.match(syncSource, /data\?\.role === "master_admin"/, "Only master admins should mirror every coach");
 assert.match(syncSource, /fetchCalendarPt\(conn\.user_id, includeAllCoaches\)/, "Calendar sync should include PT sessions in both scopes");
 assert.match(syncSource, /PT — \$\{coachName\} · \$\{clientName\}/, "Master-admin PT events should identify the coach");
+assert.match(syncSource, /removeDuplicateJmtEvents/, "Sync should reconcile marked retry duplicates");
+assert.match(syncSource, /extendedProperties\?\.private\?\.jmt_key/, "Duplicate cleanup must only touch JMT-marked events");
 assert.equal(
   sync.isPtBlockedByLeave("2026-09-21T04:00:00.000Z", "coach-1", [{ coach_id: "coach-1", leave_date: "2026-09-21", leave_end_date: null, is_half_day: false }]),
   true,

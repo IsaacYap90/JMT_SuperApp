@@ -15,6 +15,7 @@ import {
   updateEvent,
   deleteEvent,
   createSecondaryCalendar,
+  listCalendarEvents,
   type GCalEvent,
   type GCalEventTime,
 } from "./google-calendar";
@@ -24,6 +25,7 @@ import {
   markSynced,
   type GCalConnection,
 } from "./connection";
+import { isValidPtScheduledAt } from "@/lib/pt-schedule";
 
 const CALENDAR_NAME = "JMT Schedule";
 const TZ = "Asia/Singapore";
@@ -412,6 +414,11 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   const ptSessions = await fetchCalendarPt(conn.user_id, includeAllCoaches);
   for (const pt of ptSessions) {
+    // A malformed legacy PT must never stop every coach's calendar sync.
+    if (!isValidPtScheduledAt(pt.scheduled_at)) {
+      result.errors.push(`Skipped PT ${pt.id}: invalid scheduled time`);
+      continue;
+    }
     const start = utcToSgt(pt.scheduled_at);
     // Do not mark a leave-conflicting PT as wanted: the delete phase below
     // then removes an already-mirrored event without changing the JMT record.
@@ -474,6 +481,11 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
     syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, result)
   );
 
+  // A prior network interruption can happen after Google creates an event but
+  // before its map row is saved. Retrying then leaves an untracked duplicate.
+  // Reconcile only marked JMT events, preserving the map's canonical event.
+  await removeDuplicateJmtEvents(accessToken, calId, conn.id, wantedKeys, result);
+
   // ── 4. Delete events no longer wanted ──
 
   const deleteWork: EventMapRow[] = [];
@@ -506,6 +518,43 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   await markSynced(conn.id);
   return result;
+}
+
+async function removeDuplicateJmtEvents(
+  accessToken: string,
+  calendarId: string,
+  connectionId: string,
+  wantedKeys: Set<string>,
+  result: SyncResult
+): Promise<void> {
+  let remoteEvents;
+  try {
+    remoteEvents = await listCalendarEvents(accessToken, calendarId);
+  } catch (err) {
+    result.errors.push(`List calendar events for duplicate cleanup: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  // Read again after writes so a freshly-created map row is canonical too.
+  const freshMap = await getEventMap(connectionId);
+  const duplicateIds = remoteEvents.flatMap((event) => {
+    const key = event.extendedProperties?.private?.jmt_key;
+    if (!key || !wantedKeys.has(key) || event.status === "cancelled") return [];
+    const canonicalId = freshMap.get(key)?.google_event_id;
+    return canonicalId && event.id !== canonicalId ? [event.id] : [];
+  });
+
+  await runWithConcurrency(duplicateIds, SYNC_CONCURRENCY, async (eventId) => {
+    try {
+      await deleteEvent(accessToken, calendarId, eventId);
+      result.deleted++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("404") && !msg.includes("410")) {
+        result.errors.push(`Delete duplicate Google event ${eventId}: ${msg}`);
+      }
+    }
+  });
 }
 
 /** Add one day to a YYYY-MM-DD string (for Google all-day event exclusive end). */

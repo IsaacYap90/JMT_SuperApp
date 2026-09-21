@@ -6,6 +6,7 @@ import { isAdmin } from "@/lib/types/database";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { createNotification } from "./notifications";
+import { assertValidPtDuration, parsePtScheduledAt } from "@/lib/pt-schedule";
 
 function formatSgtDate(date: Date): string {
   const weekday = date.toLocaleDateString("en-GB", { weekday: "long", timeZone: "Asia/Singapore" });
@@ -235,6 +236,8 @@ export async function createPtSession(payload: {
   duration_minutes: number;
 }) {
   await requireAdmin();
+  const scheduledAt = parsePtScheduledAt(payload.scheduled_at);
+  assertValidPtDuration(payload.duration_minutes);
   const admin = createAdminClient();
 
   // Find active package for this member+coach. Pay-per-class clients won't
@@ -268,12 +271,11 @@ export async function createPtSession(payload: {
   // no admin blast.
   if (session) {
     const memberName = session.member?.full_name || "Client";
-    const dt = new Date(payload.scheduled_at);
     createNotification(
       payload.coach_id,
       "pt_created",
       "PT Session Scheduled",
-      `PT session with ${memberName} on ${formatSgtDate(dt)} at ${formatSgtTime(dt)}.`
+      `PT session with ${memberName} on ${formatSgtDate(scheduledAt)} at ${formatSgtTime(scheduledAt)}.`
     ).catch((err) => console.error("Failed to create PT notification:", err));
   }
 
@@ -293,6 +295,8 @@ export async function updatePtSession(
   }
 ) {
   const adminUser = await requireAdmin();
+  const scheduledAt = parsePtScheduledAt(payload.scheduled_at);
+  assertValidPtDuration(payload.duration_minutes);
   const admin = createAdminClient();
 
   // Get old session to check if coach changed
@@ -315,8 +319,7 @@ export async function updatePtSession(
 
   if (session) {
     const memberName = session.member?.full_name || "Client";
-    const dt = new Date(payload.scheduled_at);
-    const dateTime = `${formatSgtDate(dt)} at ${formatSgtTime(dt)}`;
+    const dateTime = `${formatSgtDate(scheduledAt)} at ${formatSgtTime(scheduledAt)}`;
 
     // Notify the new/current coach about the update
     createNotification(
@@ -713,7 +716,9 @@ export async function coachReschedulePtSession(
   if (session.status === "completed" || session.status === "cancelled" || session.status === "no_show") {
     throw new Error("Cannot reschedule a resolved session");
   }
-  if (new Date(newScheduledAt) < new Date()) {
+  const scheduledAt = parsePtScheduledAt(newScheduledAt);
+  assertValidPtDuration(newDurationMinutes);
+  if (scheduledAt < new Date()) {
     throw new Error("New time must be in the future");
   }
 
