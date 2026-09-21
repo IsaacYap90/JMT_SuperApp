@@ -73,6 +73,18 @@ function sgtParts(utc: Date): { y: number; m: number; d: number; h: number; min:
   };
 }
 
+function leaveBlocksTime(
+  leave: { leave_date: string; leave_end_date: string | null; is_half_day: boolean; half_day_period: string | null },
+  date: string,
+  timeHHMM: string
+): boolean {
+  const leaveEnd = leave.leave_end_date || leave.leave_date;
+  if (date < leave.leave_date || date > leaveEnd) return false;
+  if (!leave.is_half_day) return true;
+  const period = leave.half_day_period || "morning";
+  return period === "morning" ? timeHHMM < "18:30" : timeHHMM >= "18:30";
+}
+
 export async function GET(req: NextRequest) {
   // Auth = the unguessable per-user calendar token. Calendar apps can't send
   // cookies, so the token IS the credential (route is in the middleware
@@ -144,6 +156,9 @@ export async function GET(req: NextRequest) {
   // Per Isaac: past is past (phantom past classes on leave dates are acceptable);
   // only future coach-on-leave dates get excluded.
   const leaveCoachIds = new Set<string>();
+  // A coach can have PT without a class assignment; their own approved leave
+  // must still remove those PT events from their subscribed calendar.
+  leaveCoachIds.add(userId);
   for (const c of myClasses) {
     if (c.lead_coach_id) leaveCoachIds.add(c.lead_coach_id);
     if (c.assistant_coach_id) leaveCoachIds.add(c.assistant_coach_id);
@@ -335,6 +350,16 @@ export async function GET(req: NextRequest) {
 
     const s = sgtParts(startUtc);
     const e = sgtParts(endUtc);
+    const ptYmd = `${s.y}-${pad(s.m)}-${pad(s.d)}`;
+    const ptHHMM = `${pad(s.h)}:${pad(s.min)}`;
+    if (
+      ptYmd >= todayStr &&
+      (approvedLeaves || []).some(
+        (leave) => leave.coach_id === pt.coach_id && leaveBlocksTime(leave, ptYmd, ptHHMM)
+      )
+    ) {
+      continue;
+    }
 
     const clientName = pt.member?.full_name || "Client";
     const coachName = pt.coach?.full_name || "";

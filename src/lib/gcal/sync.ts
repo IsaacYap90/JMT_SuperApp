@@ -60,6 +60,31 @@ function utcToSgt(utcIso: string): { date: string; time: string } {
   };
 }
 
+/** JMT leave: a full day blocks all work; morning half blocks before 18:30. */
+function leaveBlocksTime(leave: LeaveRow, date: string, timeHHMM: string): boolean {
+  const leaveEnd = leave.leave_end_date || leave.leave_date;
+  if (date < leave.leave_date || date > leaveEnd) return false;
+  if (!leave.is_half_day) return true;
+  const period = leave.half_day_period || "morning";
+  return period === "morning" ? timeHHMM < "18:30" : timeHHMM >= "18:30";
+}
+
+function classIsBlockedByLeave(
+  cls: ClassRow,
+  date: string,
+  assignedCoachIdsByClass: Map<string, Set<string>>,
+  leaves: LeaveRow[]
+): boolean {
+  const assignedCoachIds = new Set<string>([
+    ...(cls.lead_coach_id ? [cls.lead_coach_id] : []),
+    ...(cls.assistant_coach_id ? [cls.assistant_coach_id] : []),
+    ...Array.from(assignedCoachIdsByClass.get(cls.id) || []),
+  ]);
+  return leaves.some(
+    (leave) => assignedCoachIds.has(leave.coach_id) && leaveBlocksTime(leave, date, cls.start_time.slice(0, 5))
+  );
+}
+
 /** Upcoming weekday dates for a given day_of_week from today, up to `weeks` ahead. */
 function upcomingDates(dayOfWeek: string, weeks: number): string[] {
   const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -306,6 +331,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   for (const cls of classes) {
     if (cls.event_date) {
+      if (classIsBlockedByLeave(cls, cls.event_date, assignedCoachIdsByClass, leaves)) continue;
       // One-off class
       const key = `class:${cls.id}`;
       wantedKeys.add(key);
@@ -320,34 +346,14 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
     } else if (cls.day_of_week) {
       // Recurring: expand into individual events for the next N weeks
       const dates = upcomingDates(cls.day_of_week, CLASS_HORIZON_WEEKS);
-      const classStartHHMM = cls.start_time.slice(0, 5);
 
       for (const date of dates) {
         // Skip holidays
         if (holidaySet.has(date)) continue;
 
-        // Skip when an assigned coach is on leave. Master-admin calendars must
-        // respect every assigned coach's leave; coach calendars only fetch own leave.
-        const assignedCoachIds = new Set<string>([
-          ...(cls.lead_coach_id ? [cls.lead_coach_id] : []),
-          ...(cls.assistant_coach_id ? [cls.assistant_coach_id] : []),
-          ...Array.from(assignedCoachIdsByClass.get(cls.id) || []),
-        ]);
-        let onLeave = false;
-        for (const leave of leaves) {
-          if (!assignedCoachIds.has(leave.coach_id)) continue;
-          const leaveEnd = leave.leave_end_date || leave.leave_date;
-          if (date >= leave.leave_date && date <= leaveEnd) {
-            if (leave.is_half_day) {
-              const period = leave.half_day_period || "morning";
-              if (period === "morning" && classStartHHMM >= "18:30") continue;
-              if (period === "evening" && classStartHHMM < "18:30") continue;
-            }
-            onLeave = true;
-            break;
-          }
-        }
-        if (onLeave) continue;
+        // Master-admin calendars respect every assigned coach's leave; coach
+        // calendars only fetch their own leave.
+        if (classIsBlockedByLeave(cls, date, assignedCoachIdsByClass, leaves)) continue;
 
         const key = `class:${cls.id}:${date}`;
         wantedKeys.add(key);
@@ -370,6 +376,9 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
     const key = `pt:${pt.id}`;
     wantedKeys.add(key);
     const start = utcToSgt(pt.scheduled_at);
+    if (leaves.some((leave) => leave.coach_id === pt.coach_id && leaveBlocksTime(leave, start.date, start.time.slice(0, 5)))) {
+      continue;
+    }
     const endUtc = new Date(new Date(pt.scheduled_at).getTime() + (pt.duration_minutes || 60) * 60_000);
     const end = utcToSgt(endUtc.toISOString());
     const clientName = pt.member?.full_name || "Client";

@@ -49,6 +49,7 @@ const syncSource = await readFile(new URL("../src/lib/gcal/sync.ts", import.meta
 assert.match(syncSource, /data\?\.role === "master_admin"/, "Only master admins should mirror every coach");
 assert.match(syncSource, /fetchCalendarPt\(conn\.user_id, includeAllCoaches\)/, "Calendar sync should include PT sessions in both scopes");
 assert.match(syncSource, /PT — \$\{coachName\} · \$\{clientName\}/, "Master-admin PT events should identify the coach");
+assert.match(syncSource, /leaveBlocksTime\(leave, start\.date, start\.time\.slice\(0, 5\)\)/, "Leave should remove PT events from Google Calendar");
 passed++;
 
 // --- Test emailFromIdToken ---
