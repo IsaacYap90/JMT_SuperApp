@@ -62,4 +62,3 @@ export function isMissingPauseMetadataColumn(error: unknown): boolean {
     "ai_pause_expires_at",
   ].some((column) => message.includes(column));
 }
-

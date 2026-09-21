@@ -74,4 +74,3 @@ export function canonicalCustomerIdentifiers(input: {
     emailNormalized: normalizeCustomerEmail(input.email),
   };
 }
-

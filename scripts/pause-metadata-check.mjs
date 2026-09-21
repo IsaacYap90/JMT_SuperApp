@@ -45,4 +45,3 @@ for (const [name, got, expected] of checks) {
 }
 console.log(`\n${failed ? `${failed} CASE(S) FAILED` : "ALL PAUSE METADATA CASES PASSED"}`);
 process.exit(failed ? 1 : 0);
-

@@ -35,4 +35,3 @@ for (const [name, run, expected] of cases) {
 
 console.log(`\n${failed ? `${failed} CASE(S) FAILED` : "ALL IDENTITY CASES PASSED"}`);
 process.exit(failed ? 1 : 0);
-

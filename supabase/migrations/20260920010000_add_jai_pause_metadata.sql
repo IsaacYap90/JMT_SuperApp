@@ -18,4 +18,3 @@ comment on column jai.leads.ai_pause_reason is
   'Short human-readable reason shown in the WA inbox.';
 comment on column jai.leads.ai_pause_expires_at is
   'Earliest 24h auto-resume check; a later human reply can extend ownership.';
-
