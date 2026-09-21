@@ -292,6 +292,18 @@ export interface SyncResult {
   errors: string[];
 }
 
+/** True when an approved leave should remove this PT from the calendar mirror. */
+export function isPtBlockedByLeave(
+  scheduledAt: string,
+  coachId: string,
+  leaves: LeaveRow[]
+): boolean {
+  const start = utcToSgt(scheduledAt);
+  return leaves.some(
+    (leave) => leave.coach_id === coachId && leaveBlocksTime(leave, start.date, start.time.slice(0, 5))
+  );
+}
+
 /**
  * Full sync for one coach. Idempotent: safe to retry on failure.
  */
@@ -373,12 +385,12 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   const ptSessions = await fetchCalendarPt(conn.user_id, includeAllCoaches);
   for (const pt of ptSessions) {
+    const start = utcToSgt(pt.scheduled_at);
+    // Do not mark a leave-conflicting PT as wanted: the delete phase below
+    // then removes an already-mirrored event without changing the JMT record.
+    if (isPtBlockedByLeave(pt.scheduled_at, pt.coach_id, leaves)) continue;
     const key = `pt:${pt.id}`;
     wantedKeys.add(key);
-    const start = utcToSgt(pt.scheduled_at);
-    if (leaves.some((leave) => leave.coach_id === pt.coach_id && leaveBlocksTime(leave, start.date, start.time.slice(0, 5)))) {
-      continue;
-    }
     const endUtc = new Date(new Date(pt.scheduled_at).getTime() + (pt.duration_minutes || 60) * 60_000);
     const end = utcToSgt(endUtc.toISOString());
     const clientName = pt.member?.full_name || "Client";

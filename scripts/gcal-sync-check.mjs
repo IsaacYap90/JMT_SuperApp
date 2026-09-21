@@ -45,11 +45,26 @@ passed++;
 
 const sync = await import("../src/lib/gcal/sync.ts");
 assert.ok(typeof sync.syncCoach === "function", "syncCoach should be exported");
+assert.ok(typeof sync.isPtBlockedByLeave === "function", "PT leave filter should be testable");
 const syncSource = await readFile(new URL("../src/lib/gcal/sync.ts", import.meta.url), "utf8");
 assert.match(syncSource, /data\?\.role === "master_admin"/, "Only master admins should mirror every coach");
 assert.match(syncSource, /fetchCalendarPt\(conn\.user_id, includeAllCoaches\)/, "Calendar sync should include PT sessions in both scopes");
 assert.match(syncSource, /PT — \$\{coachName\} · \$\{clientName\}/, "Master-admin PT events should identify the coach");
-assert.match(syncSource, /leaveBlocksTime\(leave, start\.date, start\.time\.slice\(0, 5\)\)/, "Leave should remove PT events from Google Calendar");
+assert.equal(
+  sync.isPtBlockedByLeave("2026-09-21T04:00:00.000Z", "coach-1", [{ coach_id: "coach-1", leave_date: "2026-09-21", leave_end_date: null, is_half_day: false }]),
+  true,
+  "A full-day leave should remove a PT event from Google Calendar"
+);
+assert.equal(
+  sync.isPtBlockedByLeave("2026-09-21T11:00:00.000Z", "coach-1", [{ coach_id: "coach-1", leave_date: "2026-09-21", leave_end_date: null, is_half_day: true, half_day_period: "morning" }]),
+  false,
+  "A morning half-day leave should keep a 7pm PT event"
+);
+const ptLoop = syncSource.slice(syncSource.indexOf("const ptSessions = await fetchCalendarPt"));
+assert.ok(
+  ptLoop.indexOf("if (isPtBlockedByLeave") < ptLoop.indexOf("wantedKeys.add(key)"),
+  "A blocked PT must not be marked wanted, so its old Google event is deleted"
+);
 passed++;
 
 // --- Test emailFromIdToken ---
