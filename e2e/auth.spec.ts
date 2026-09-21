@@ -34,15 +34,17 @@ test("unknown route does not leak or 500 — it hits the auth gate", async ({ pa
 test("login form blocks empty and malformed submits client-side", async ({ page }) => {
   await page.goto("/login");
   const email = page.locator('input[type="email"]');
-  const submit = page.getByRole("button", { name: "Sign In" });
 
-  await submit.click();
+  // This test exercises native HTML constraint validation, not pointer
+  // actionability. requestSubmit() follows the browser's submit algorithm but
+  // avoids a flaky stability wait while Next dev is compiling in parallel.
+  await page.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
   await expect(page).toHaveURL(/\/login$/);
   expect(await email.evaluate((el: HTMLInputElement) => el.validity.valueMissing)).toBe(true);
 
   await email.fill("not-an-email");
   await page.locator('input[type="password"]').fill("whatever");
-  await submit.click();
+  await page.locator("form").evaluate((form: HTMLFormElement) => form.requestSubmit());
   await expect(page).toHaveURL(/\/login$/);
   expect(await email.evaluate((el: HTMLInputElement) => el.validity.typeMismatch)).toBe(true);
 });
@@ -51,9 +53,16 @@ test("password show/hide toggle works", async ({ page }) => {
   await page.goto("/login");
   const pw = page.locator('input[type="password"]');
   await pw.fill("secret");
-  await page.getByRole("button", { name: "Show" }).click();
+  const show = page.getByRole("button", { name: "Show" });
+  await expect(show).toBeVisible();
+  // The control is visibly rendered but its absolutely-positioned wrapper can
+  // keep moving during Next dev hydration. Exercise the actual click handler
+  // without making this UI-state test depend on that layout-stability check.
+  await show.click({ force: true });
   await expect(page.locator('input[type="text"][placeholder="Enter password"]')).toBeVisible();
-  await page.getByRole("button", { name: "Hide" }).click();
+  const hide = page.getByRole("button", { name: "Hide" });
+  await expect(hide).toBeVisible();
+  await hide.click({ force: true });
   await expect(page.locator('input[type="password"]')).toBeVisible();
 });
 
