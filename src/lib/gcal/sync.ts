@@ -111,6 +111,7 @@ interface PtRow {
   updated_at?: string | null;
   created_at: string;
   member?: { full_name: string } | null;
+  coach?: { full_name: string } | null;
 }
 
 interface LeaveRow {
@@ -124,7 +125,20 @@ interface LeaveRow {
   status: string;
 }
 
-async function fetchCoachClasses(userId: string): Promise<ClassRow[]> {
+interface CalendarClasses {
+  classes: ClassRow[];
+  assignedCoachIdsByClass: Map<string, Set<string>>;
+}
+
+/** Master admins mirror the operational calendar; coaches mirror only their work. */
+async function isMasterAdmin(userId: string): Promise<boolean> {
+  const sb = createAdminClient();
+  const { data, error } = await sb.from("users").select("role").eq("id", userId).maybeSingle();
+  if (error) throw new Error(`Failed to check Google Calendar sync role: ${error.message}`);
+  return data?.role === "master_admin";
+}
+
+async function fetchCalendarClasses(userId: string, includeAllCoaches: boolean): Promise<CalendarClasses> {
   const sb = createAdminClient();
   const { data: allClasses, error: classesError } = await sb
     .from("classes")
@@ -134,49 +148,61 @@ async function fetchCoachClasses(userId: string): Promise<ClassRow[]> {
 
   const { data: ccLinks, error: linksError } = await sb
     .from("class_coaches")
-    .select("class_id")
-    .eq("coach_id", userId);
+    .select("class_id, coach_id");
   if (linksError) throw new Error(`Failed to read class coaches for Google Calendar sync: ${linksError.message}`);
 
-  const ccIds = new Set((ccLinks || []).map((l: { class_id: string }) => l.class_id));
+  const assignedCoachIdsByClass = new Map<string, Set<string>>();
+  for (const link of ccLinks || []) {
+    const typedLink = link as { class_id: string; coach_id: string };
+    const ids = assignedCoachIdsByClass.get(typedLink.class_id) || new Set<string>();
+    ids.add(typedLink.coach_id);
+    assignedCoachIdsByClass.set(typedLink.class_id, ids);
+  }
 
-  return (allClasses || []).filter(
-    (c: ClassRow) =>
-      c.lead_coach_id === userId ||
-      c.assistant_coach_id === userId ||
-      ccIds.has(c.id)
-  );
+  const classes = includeAllCoaches
+    ? (allClasses || [])
+    : (allClasses || []).filter(
+        (c: ClassRow) =>
+          c.lead_coach_id === userId ||
+          c.assistant_coach_id === userId ||
+          assignedCoachIdsByClass.get(c.id)?.has(userId)
+      );
+
+  return { classes: classes as ClassRow[], assignedCoachIdsByClass };
 }
 
-async function fetchCoachPt(userId: string): Promise<PtRow[]> {
+async function fetchCalendarPt(userId: string, includeAllCoaches: boolean): Promise<PtRow[]> {
   const sb = createAdminClient();
   // Only future + recent past (2 weeks back) to keep the sync window manageable
   const twoWeeksAgo = new Date(Date.now() - 14 * 86400_000).toISOString();
-  const { data, error } = await sb
+  let query = sb
     .from("pt_sessions")
-    .select("id, coach_id, member_id, scheduled_at, duration_minutes, status, created_at, member:users!pt_sessions_member_id_fkey(full_name)")
-    .eq("coach_id", userId)
+    .select("id, coach_id, member_id, scheduled_at, duration_minutes, status, created_at, member:users!pt_sessions_member_id_fkey(full_name), coach:users!pt_sessions_coach_id_fkey(full_name)")
     .in("status", ["scheduled", "confirmed", "completed"])
     .gte("scheduled_at", twoWeeksAgo);
+  if (!includeAllCoaches) query = query.eq("coach_id", userId);
+  const { data, error } = await query;
   if (error) throw new Error(`Failed to read PT sessions for Google Calendar sync: ${error.message}`);
-  // Supabase returns the FK join as an array; normalize to single object.
+  // Supabase can return an FK join as an array; normalize to a single object.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return ((data || []) as any[]).map((row) => ({
     ...row,
     member: Array.isArray(row.member) ? row.member[0] || null : row.member,
+    coach: Array.isArray(row.coach) ? row.coach[0] || null : row.coach,
   })) as PtRow[];
 }
 
-async function fetchCoachLeaves(userId: string): Promise<LeaveRow[]> {
+async function fetchCalendarLeaves(userId: string, includeAllCoaches: boolean): Promise<LeaveRow[]> {
   const sb = createAdminClient();
   const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
-  const { data, error } = await sb
+  let query = sb
     .from("leaves")
     .select("id, coach_id, leave_date, leave_end_date, leave_type, is_half_day, half_day_period, status")
-    .eq("coach_id", userId)
     .eq("status", "approved")
     .is("deleted_at", null)
     .gte("leave_date", todayStr);
+  if (!includeAllCoaches) query = query.eq("coach_id", userId);
+  const { data, error } = await query;
   if (error) throw new Error(`Failed to read leave for Google Calendar sync: ${error.message}`);
   return (data || []) as LeaveRow[];
 }
@@ -274,8 +300,9 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   // ── 1. Classes: expand recurring classes into individual weekly events ──
 
-  const classes = await fetchCoachClasses(conn.user_id);
-  const leaves = await fetchCoachLeaves(conn.user_id);
+  const includeAllCoaches = await isMasterAdmin(conn.user_id);
+  const { classes, assignedCoachIdsByClass } = await fetchCalendarClasses(conn.user_id, includeAllCoaches);
+  const leaves = await fetchCalendarLeaves(conn.user_id, includeAllCoaches);
 
   for (const cls of classes) {
     if (cls.event_date) {
@@ -299,10 +326,16 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
         // Skip holidays
         if (holidaySet.has(date)) continue;
 
-        // Skip if any coach leave covers this date
+        // Skip when an assigned coach is on leave. Master-admin calendars must
+        // respect every assigned coach's leave; coach calendars only fetch own leave.
+        const assignedCoachIds = new Set<string>([
+          ...(cls.lead_coach_id ? [cls.lead_coach_id] : []),
+          ...(cls.assistant_coach_id ? [cls.assistant_coach_id] : []),
+          ...Array.from(assignedCoachIdsByClass.get(cls.id) || []),
+        ]);
         let onLeave = false;
         for (const leave of leaves) {
-          if (leave.coach_id !== conn.user_id) continue;
+          if (!assignedCoachIds.has(leave.coach_id)) continue;
           const leaveEnd = leave.leave_end_date || leave.leave_date;
           if (date >= leave.leave_date && date <= leaveEnd) {
             if (leave.is_half_day) {
@@ -332,7 +365,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   // ── 2. PT sessions ──
 
-  const ptSessions = await fetchCoachPt(conn.user_id);
+  const ptSessions = await fetchCalendarPt(conn.user_id, includeAllCoaches);
   for (const pt of ptSessions) {
     const key = `pt:${pt.id}`;
     wantedKeys.add(key);
@@ -340,10 +373,13 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
     const endUtc = new Date(new Date(pt.scheduled_at).getTime() + (pt.duration_minutes || 60) * 60_000);
     const end = utcToSgt(endUtc.toISOString());
     const clientName = pt.member?.full_name || "Client";
+    const coachName = pt.coach?.full_name || "Coach";
 
     const event: GCalEvent = {
-      summary: `PT — ${clientName}`,
-      description: `PT Session · ${pt.duration_minutes || 60}min`,
+      summary: includeAllCoaches ? `PT — ${coachName} · ${clientName}` : `PT — ${clientName}`,
+      description: includeAllCoaches
+        ? `PT Session · ${pt.duration_minutes || 60}min · Coach: ${coachName}`
+        : `PT Session · ${pt.duration_minutes || 60}min`,
       start: sgtTime({ dateTime: sgtDatetime(start.date, start.time), timeZone: TZ }),
       end: sgtTime({ dateTime: sgtDatetime(end.date, end.time), timeZone: TZ }),
       extendedProperties: { private: { jmt_key: key } },

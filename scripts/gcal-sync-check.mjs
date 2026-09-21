@@ -6,6 +6,7 @@
  */
 
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 // These tests focus on the parts we can test without network:
 // 1. The google-calendar module exports the right functions
@@ -44,6 +45,10 @@ passed++;
 
 const sync = await import("../src/lib/gcal/sync.ts");
 assert.ok(typeof sync.syncCoach === "function", "syncCoach should be exported");
+const syncSource = await readFile(new URL("../src/lib/gcal/sync.ts", import.meta.url), "utf8");
+assert.match(syncSource, /data\?\.role === "master_admin"/, "Only master admins should mirror every coach");
+assert.match(syncSource, /fetchCalendarPt\(conn\.user_id, includeAllCoaches\)/, "Calendar sync should include PT sessions in both scopes");
+assert.match(syncSource, /PT — \$\{coachName\} · \$\{clientName\}/, "Master-admin PT events should identify the coach");
 passed++;
 
 // --- Test emailFromIdToken ---
