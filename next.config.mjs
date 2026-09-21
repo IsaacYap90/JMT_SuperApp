@@ -38,7 +38,12 @@ const nextConfig = {
   // Dev only, ignored by `next build`. Isaac reviews previews over BOTH a
   // cloudflare tunnel and the tailnet; without the host here Next 15 blocks the
   // server actions the dashboard runs on and returns EMPTY data with no error.
-  allowedDevOrigins: ["*.trycloudflare.com", "homepc.bumblebee-burbot.ts.net"],
+  allowedDevOrigins: [
+    "*.trycloudflare.com",
+    "homepc.bumblebee-burbot.ts.net",
+    "localhost",
+    "127.0.0.1",
+  ],
   poweredByHeader: false,
   env: {
     NEXT_PUBLIC_BUILD_SHA: buildSha,
