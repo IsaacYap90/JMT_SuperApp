@@ -285,11 +285,37 @@ const holidaySet = new Set(SG_HOLIDAYS.map((h) => h.date));
 /** How many weeks ahead to expand recurring classes into individual Google events. */
 const CLASS_HORIZON_WEEKS = 8;
 
+/**
+ * Google Calendar accepts modest parallelism, but a full account can have
+ * hundreds of events. A bounded worker pool keeps manual syncs comfortably
+ * within the server request window without flooding Google's API.
+ */
+const SYNC_CONCURRENCY = 4;
+
 export interface SyncResult {
   created: number;
   updated: number;
   deleted: number;
   errors: string[];
+}
+
+/** Run independent Google-event operations with bounded concurrency. */
+export async function runWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  const queue = [...items];
+  const workerCount = Math.min(Math.max(1, limit), queue.length);
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (item !== undefined) await worker(item);
+      }
+    })
+  );
 }
 
 /** True when an approved leave should remove this PT from the calendar mirror. */
@@ -334,6 +360,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   const eventMap = await getEventMap(conn.id);
   const wantedKeys = new Set<string>();
+  const eventWork: Array<{ key: string; event: GCalEvent }> = [];
 
   // ── 1. Classes: expand recurring classes into individual weekly events ──
 
@@ -354,7 +381,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
         end: sgtTime({ dateTime: sgtDatetime(cls.event_date, cls.end_time), timeZone: TZ }),
         extendedProperties: { private: { jmt_key: key } },
       };
-      await syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, result);
+      eventWork.push({ key, event });
     } else if (cls.day_of_week) {
       // Recurring: expand into individual events for the next N weeks
       const dates = upcomingDates(cls.day_of_week, CLASS_HORIZON_WEEKS);
@@ -376,7 +403,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
           end: sgtTime({ dateTime: sgtDatetime(date, cls.end_time), timeZone: TZ }),
           extendedProperties: { private: { jmt_key: key } },
         };
-        await syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, result);
+        eventWork.push({ key, event });
       }
     }
   }
@@ -405,7 +432,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
       end: sgtTime({ dateTime: sgtDatetime(end.date, end.time), timeZone: TZ }),
       extendedProperties: { private: { jmt_key: key } },
     };
-    await syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, result);
+    eventWork.push({ key, event });
   }
 
   // ── 3. Leave events (coach sees their own leave on the calendar) ──
@@ -438,30 +465,44 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
       end: { date: addOneDay(leaveEnd) }, // Google all-day end is exclusive
       extendedProperties: event.extendedProperties,
     };
-    await syncOneEvent(accessToken, calId, conn.id, key, allDayEvent as unknown as GCalEvent, eventMap, result);
+    eventWork.push({ key, event: allDayEvent as unknown as GCalEvent });
   }
+
+  // Each key is unique, so its Google write and event-map upsert are safe to
+  // run independently. This replaces hundreds of serial network round trips.
+  await runWithConcurrency(eventWork, SYNC_CONCURRENCY, ({ key, event }) =>
+    syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, result)
+  );
 
   // ── 4. Delete events no longer wanted ──
 
+  const deleteWork: EventMapRow[] = [];
   for (const [key, mapRow] of Array.from(eventMap.entries())) {
     if (wantedKeys.has(key)) continue;
     if (mapRow.deleted) continue;
     if (!mapRow.google_event_id) continue;
+    deleteWork.push(mapRow);
+  }
+
+  await runWithConcurrency(deleteWork, SYNC_CONCURRENCY, async (mapRow) => {
+    const key = mapRow.local_entity_key;
+    const googleEventId = mapRow.google_event_id;
+    if (!googleEventId) return;
     try {
-      await deleteEvent(accessToken, calId, mapRow.google_event_id);
-      await upsertEventMap(conn.id, key, mapRow.google_event_id, true);
+      await deleteEvent(accessToken, calId, googleEventId);
+      await upsertEventMap(conn.id, key, googleEventId, true);
       result.deleted++;
     } catch (err) {
       // 404/410 = already deleted on Google — just mark our side
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("404") || msg.includes("410")) {
-        await upsertEventMap(conn.id, key, mapRow.google_event_id, true);
+        await upsertEventMap(conn.id, key, googleEventId, true);
         result.deleted++;
       } else {
         result.errors.push(`Delete ${key}: ${msg}`);
       }
     }
-  }
+  });
 
   await markSynced(conn.id);
   return result;

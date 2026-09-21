@@ -46,6 +46,7 @@ passed++;
 const sync = await import("../src/lib/gcal/sync.ts");
 assert.ok(typeof sync.syncCoach === "function", "syncCoach should be exported");
 assert.ok(typeof sync.isPtBlockedByLeave === "function", "PT leave filter should be testable");
+assert.ok(typeof sync.runWithConcurrency === "function", "Sync should use a bounded-concurrency worker pool");
 const syncSource = await readFile(new URL("../src/lib/gcal/sync.ts", import.meta.url), "utf8");
 assert.match(syncSource, /data\?\.role === "master_admin"/, "Only master admins should mirror every coach");
 assert.match(syncSource, /fetchCalendarPt\(conn\.user_id, includeAllCoaches\)/, "Calendar sync should include PT sessions in both scopes");
@@ -65,6 +66,23 @@ assert.ok(
   ptLoop.indexOf("if (isPtBlockedByLeave") < ptLoop.indexOf("wantedKeys.add(key)"),
   "A blocked PT must not be marked wanted, so its old Google event is deleted"
 );
+passed++;
+
+// A large account must not serially wait for every Google request. Confirm all
+// work completes while the pool never exceeds its configured safety bound.
+let inFlight = 0;
+let peakInFlight = 0;
+const completed = [];
+await sync.runWithConcurrency([1, 2, 3, 4, 5, 6, 7], 3, async (item) => {
+  inFlight++;
+  peakInFlight = Math.max(peakInFlight, inFlight);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  completed.push(item);
+  inFlight--;
+});
+assert.equal(completed.length, 7, "Every queued calendar operation should complete");
+assert.ok(peakInFlight > 1, "Calendar operations should run in parallel");
+assert.ok(peakInFlight <= 3, "Calendar operations must respect the concurrency limit");
 passed++;
 
 // --- Test emailFromIdToken ---
