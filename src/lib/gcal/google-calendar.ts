@@ -178,6 +178,18 @@ export interface GCalEvent {
 export interface GCalListedEvent {
   id: string;
   status?: string;
+  summary?: string;
+  description?: string;
+  start?: {
+    date?: string;
+    dateTime?: string;
+    timeZone?: string;
+  };
+  end?: {
+    date?: string;
+    dateTime?: string;
+    timeZone?: string;
+  };
   extendedProperties?: {
     private?: Record<string, string>;
   };

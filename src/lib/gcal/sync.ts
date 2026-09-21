@@ -18,6 +18,7 @@ import {
   listCalendarEvents,
   type GCalEvent,
   type GCalEventTime,
+  type GCalListedEvent,
 } from "./google-calendar";
 import {
   getValidAccessToken,
@@ -292,7 +293,15 @@ const CLASS_HORIZON_WEEKS = 8;
  * hundreds of events. A bounded worker pool keeps manual syncs comfortably
  * within the server request window without flooding Google's API.
  */
-const SYNC_CONCURRENCY = 4;
+// Google rate-limits event writes per calendar. A single writer makes a first
+// sync slower, but prevents partial calendars. Normal syncs are near-zero
+// writes because they compare the one listed remote snapshot before updating.
+const SYNC_CONCURRENCY = 1;
+
+interface EventWork {
+  key: string;
+  event: GCalEvent;
+}
 
 export interface SyncResult {
   created: number;
@@ -361,8 +370,21 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
   }
 
   const eventMap = await getEventMap(conn.id);
+  let remoteEvents: GCalListedEvent[] = [];
+  let remoteSnapshotAvailable = true;
+  try {
+    remoteEvents = await listCalendarEvents(accessToken, calId);
+  } catch (err) {
+    // A remote snapshot lets us avoid rewrites. If it is unavailable, keep
+    // syncing safely; map-backed writes still repair missing events.
+    result.errors.push(`List calendar events: ${err instanceof Error ? err.message : String(err)}`);
+    remoteSnapshotAvailable = false;
+  }
+  const remoteEventsById = new Map(remoteEvents.map((event) => [event.id, event]));
   const wantedKeys = new Set<string>();
-  const eventWork: Array<{ key: string; event: GCalEvent }> = [];
+  const classWork: EventWork[] = [];
+  const ptWork: EventWork[] = [];
+  const leaveWork: EventWork[] = [];
 
   // ── 1. Classes: expand recurring classes into individual weekly events ──
 
@@ -383,7 +405,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
         end: sgtTime({ dateTime: sgtDatetime(cls.event_date, cls.end_time), timeZone: TZ }),
         extendedProperties: { private: { jmt_key: key } },
       };
-      eventWork.push({ key, event });
+      classWork.push({ key, event });
     } else if (cls.day_of_week) {
       // Recurring: expand into individual events for the next N weeks
       const dates = upcomingDates(cls.day_of_week, CLASS_HORIZON_WEEKS);
@@ -405,7 +427,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
           end: sgtTime({ dateTime: sgtDatetime(date, cls.end_time), timeZone: TZ }),
           extendedProperties: { private: { jmt_key: key } },
         };
-        eventWork.push({ key, event });
+        classWork.push({ key, event });
       }
     }
   }
@@ -439,7 +461,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
       end: sgtTime({ dateTime: sgtDatetime(end.date, end.time), timeZone: TZ }),
       extendedProperties: { private: { jmt_key: key } },
     };
-    eventWork.push({ key, event });
+    ptWork.push({ key, event });
   }
 
   // ── 3. Leave events (coach sees their own leave on the calendar) ──
@@ -472,19 +494,22 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
       end: { date: addOneDay(leaveEnd) }, // Google all-day end is exclusive
       extendedProperties: event.extendedProperties,
     };
-    eventWork.push({ key, event: allDayEvent as unknown as GCalEvent });
+    leaveWork.push({ key, event: allDayEvent as unknown as GCalEvent });
   }
 
-  // Each key is unique, so its Google write and event-map upsert are safe to
-  // run independently. This replaces hundreds of serial network round trips.
+  // PT must not wait behind hundreds of recurring class writes. Each key is
+  // unique; the remote snapshot skips unchanged entries before a write occurs.
+  const eventWork = [...ptWork, ...leaveWork, ...classWork];
   await runWithConcurrency(eventWork, SYNC_CONCURRENCY, ({ key, event }) =>
-    syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, result)
+    syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, remoteSnapshotAvailable ? remoteEventsById : null, result)
   );
 
   // A prior network interruption can happen after Google creates an event but
   // before its map row is saved. Retrying then leaves an untracked duplicate.
   // Reconcile only marked JMT events, preserving the map's canonical event.
-  await removeDuplicateJmtEvents(accessToken, calId, conn.id, wantedKeys, result);
+  if (remoteSnapshotAvailable) {
+    await removeDuplicateJmtEvents(accessToken, calId, conn.id, wantedKeys, remoteEvents, result);
+  }
 
   // ── 4. Delete events no longer wanted ──
 
@@ -525,16 +550,9 @@ async function removeDuplicateJmtEvents(
   calendarId: string,
   connectionId: string,
   wantedKeys: Set<string>,
+  remoteEvents: GCalListedEvent[],
   result: SyncResult
 ): Promise<void> {
-  let remoteEvents;
-  try {
-    remoteEvents = await listCalendarEvents(accessToken, calendarId);
-  } catch (err) {
-    result.errors.push(`List calendar events for duplicate cleanup: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
-
   // Read again after writes so a freshly-created map row is canonical too.
   const freshMap = await getEventMap(connectionId);
   const duplicateIds = remoteEvents.flatMap((event) => {
@@ -565,6 +583,28 @@ function addOneDay(ymd: string): string {
 }
 
 /** Create or update a single event, driven by the event map. */
+function timeValue(value: { date?: string; dateTime?: string } | undefined): string | undefined {
+  if (value?.date) return `date:${value.date}`;
+  if (!value?.dateTime) return undefined;
+  // JMT sends SGT wall-clock datetimes plus a timeZone field; Google returns
+  // the same instant with an explicit +08:00 offset. Compare instants, not
+  // their string serialisation, so unchanged events stay zero-write.
+  const iso = /(?:Z|[+-]\d{2}:\d{2})$/.test(value.dateTime)
+    ? value.dateTime
+    : `${value.dateTime}+08:00`;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? `time:${ms}` : `raw:${value.dateTime}`;
+}
+
+function remoteMatchesEvent(remote: GCalListedEvent, event: GCalEvent): boolean {
+  const expectedStart = timeValue(event.start as unknown as { date?: string; dateTime?: string });
+  const expectedEnd = timeValue(event.end as unknown as { date?: string; dateTime?: string });
+  return remote.summary === event.summary
+    && (remote.description || "") === (event.description || "")
+    && timeValue(remote.start) === expectedStart
+    && timeValue(remote.end) === expectedEnd;
+}
+
 async function syncOneEvent(
   accessToken: string,
   calId: string,
@@ -572,9 +612,13 @@ async function syncOneEvent(
   key: string,
   event: GCalEvent,
   eventMap: Map<string, EventMapRow>,
+  remoteEventsById: Map<string, GCalListedEvent> | null,
   result: SyncResult
 ): Promise<void> {
   const existing = eventMap.get(key);
+  const remote = existing?.google_event_id && remoteEventsById
+    ? remoteEventsById.get(existing.google_event_id)
+    : undefined;
 
   try {
     if (!existing || !existing.google_event_id || existing.deleted) {
@@ -582,7 +626,12 @@ async function syncOneEvent(
       const gid = await insertEvent(accessToken, calId, event);
       await upsertEventMap(connectionId, key, gid);
       result.created++;
-    } else {
+    } else if (remoteEventsById && !remote) {
+      // The event was removed from Google outside JMT; recreate it directly.
+      const gid = await insertEvent(accessToken, calId, event);
+      await upsertEventMap(connectionId, key, gid);
+      result.created++;
+    } else if (!remote || !remoteMatchesEvent(remote, event)) {
       // Update existing
       await updateEvent(accessToken, calId, existing.google_event_id, event);
       await upsertEventMap(connectionId, key, existing.google_event_id);

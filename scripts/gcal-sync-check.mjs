@@ -54,6 +54,9 @@ assert.match(syncSource, /fetchCalendarPt\(conn\.user_id, includeAllCoaches\)/, 
 assert.match(syncSource, /PT — \$\{coachName\} · \$\{clientName\}/, "Master-admin PT events should identify the coach");
 assert.match(syncSource, /removeDuplicateJmtEvents/, "Sync should reconcile marked retry duplicates");
 assert.match(syncSource, /extendedProperties\?\.private\?\.jmt_key/, "Duplicate cleanup must only touch JMT-marked events");
+assert.match(syncSource, /const eventWork = \[\.\.\.ptWork, \.\.\.leaveWork, \.\.\.classWork\]/, "PT events must be written before classes");
+assert.match(syncSource, /remoteMatchesEvent/, "Unchanged remote events must be detected before a Google write");
+assert.match(syncSource, /remoteSnapshotAvailable/, "A failed Google event listing must not create duplicate events");
 assert.equal(
   sync.isPtBlockedByLeave("2026-09-21T04:00:00.000Z", "coach-1", [{ coach_id: "coach-1", leave_date: "2026-09-21", leave_end_date: null, is_half_day: false }]),
   true,
