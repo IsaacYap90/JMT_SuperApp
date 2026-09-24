@@ -30,6 +30,7 @@ import { isValidPtScheduledAt } from "@/lib/pt-schedule";
 import { randomUUID } from "crypto";
 import { ingestPhoneChanges } from "./phone-changes";
 import { ptBaseline, type PtBaseline } from "./phone-policy";
+import { leaveOverlapsInterval } from "@/lib/leave-overlap";
 
 const CALENDAR_NAME = "JMT Schedule";
 const TZ = "Asia/Singapore";
@@ -66,15 +67,6 @@ function utcToSgt(utcIso: string): { date: string; time: string } {
   };
 }
 
-/** JMT leave: a full day blocks all work; morning half blocks before 18:30. */
-function leaveBlocksTime(leave: LeaveRow, date: string, timeHHMM: string): boolean {
-  const leaveEnd = leave.leave_end_date || leave.leave_date;
-  if (date < leave.leave_date || date > leaveEnd) return false;
-  if (!leave.is_half_day) return true;
-  const period = leave.half_day_period || "morning";
-  return period === "morning" ? timeHHMM < "18:30" : timeHHMM >= "18:30";
-}
-
 function classIsBlockedByLeave(
   cls: ClassRow,
   date: string,
@@ -87,7 +79,9 @@ function classIsBlockedByLeave(
     ...Array.from(assignedCoachIdsByClass.get(cls.id) || []),
   ]);
   return leaves.some(
-    (leave) => assignedCoachIds.has(leave.coach_id) && leaveBlocksTime(leave, date, cls.start_time.slice(0, 5))
+    (leave) => assignedCoachIds.has(leave.coach_id) && leaveOverlapsInterval(leave,
+      Date.parse(`${sgtDatetime(date, cls.start_time)}+08:00`),
+      Date.parse(`${sgtDatetime(date, cls.end_time)}+08:00`))
   );
 }
 
@@ -153,7 +147,7 @@ interface LeaveRow {
   leave_end_date: string | null;
   leave_type: string;
   is_half_day: boolean;
-  half_day_period?: string | null;
+  half_day_period?: "morning" | "evening" | null;
   status: string;
 }
 
@@ -341,11 +335,12 @@ export async function runWithConcurrency<T>(
 export function isPtBlockedByLeave(
   scheduledAt: string,
   coachId: string,
-  leaves: LeaveRow[]
+  leaves: LeaveRow[],
+  durationMinutes = 60
 ): boolean {
-  const start = utcToSgt(scheduledAt);
+  const start = Date.parse(scheduledAt);
   return leaves.some(
-    (leave) => leave.coach_id === coachId && leaveBlocksTime(leave, start.date, start.time.slice(0, 5))
+    (leave) => leave.coach_id === coachId && leaveOverlapsInterval(leave, start, start + durationMinutes * 60_000)
   );
 }
 
@@ -473,7 +468,7 @@ async function syncCoachLocked(conn: GCalConnection): Promise<SyncResult> {
     const start = utcToSgt(pt.scheduled_at);
     // Do not mark a leave-conflicting PT as wanted: the delete phase below
     // then removes an already-mirrored event without changing the JMT record.
-    if (isPtBlockedByLeave(pt.scheduled_at, pt.coach_id, leaves)) continue;
+    if (isPtBlockedByLeave(pt.scheduled_at, pt.coach_id, leaves, pt.duration_minutes || 60)) continue;
     const key = `pt:${pt.id}`;
     wantedKeys.add(key);
     const endUtc = new Date(new Date(pt.scheduled_at).getTime() + (pt.duration_minutes || 60) * 60_000);
@@ -545,9 +540,8 @@ async function syncCoachLocked(conn: GCalConnection): Promise<SyncResult> {
   const deleteWork: EventMapRow[] = [];
   for (const [key, mapRow] of Array.from(eventMap.entries())) {
     if (wantedKeys.has(key)) continue;
-    // Past recurring classes are history, not stale work. Preserve them in
-    // Google Calendar even though they are outside the active sync horizon.
-    if (isHistoricalClassKey(key)) continue;
+    // Preserve completed PT and class history outside the active sync window.
+    if (isHistoricalCalendarEvent(key, mapRow.pt_baseline, remoteEventsById.get(mapRow.google_event_id || ""))) continue;
     if (mapRow.deleted) continue;
     if (!mapRow.google_event_id) continue;
     deleteWork.push(mapRow);
@@ -620,11 +614,25 @@ function addOneDay(ymd: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
-/** True for an expanded recurring class occurrence before today in Singapore. */
-function isHistoricalClassKey(key: string): boolean {
+/** Completed work stays on the calendar even after its source leaves the sync window. */
+export function isHistoricalCalendarEvent(
+  key: string, baseline: PtBaseline | null, remote: GCalListedEvent | undefined,
+  now = Date.now()
+): boolean {
+  if (!key.startsWith("class:") && !key.startsWith("pt:")) return false;
+  // The last mirrored PT time is authoritative; a phone edit must not turn a
+  // future cancellation into protected history by moving the event backwards.
+  if (key.startsWith("pt:") && baseline) {
+    const end = Date.parse(baseline.scheduled_at) + baseline.duration_minutes * 60_000;
+    if (Number.isFinite(end)) return end <= now;
+  }
+  const remoteEnd = timeValue(remote?.end);
+  if (remoteEnd?.startsWith("time:")) return Number(remoteEnd.slice(5)) <= now;
+  // Expanded classes encode their occurrence date, including when Google
+  // returns a tombstone without start/end. One-off classes use remote end.
   const match = /^class:[^:]+:(\d{4}-\d{2}-\d{2})$/.exec(key);
   if (!match) return false;
-  const today = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+  const today = new Date(now).toLocaleDateString("en-CA", { timeZone: TZ });
   return match[1] < today;
 }
 

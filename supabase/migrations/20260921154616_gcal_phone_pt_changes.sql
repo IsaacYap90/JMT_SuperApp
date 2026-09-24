@@ -91,6 +91,22 @@ begin
     values(p_connection_id, session_row.id, p_google_event_id,
       case when p_cancel then 'cancelled' else 'rescheduled' end,
       p_expected, jsonb_build_object('scheduled_at', p_scheduled_at, 'duration_minutes', p_duration, 'cancelled', p_cancel));
+  -- Notify the assigned coach in this same transaction. The baseline lock and
+  -- invalidation make retries a no-op; failed notifications roll back the edit.
+  if actor_role = 'master_admin' and session_row.coach_id <> connection_row.user_id then
+    insert into public.notifications(user_id, sender_id, notification_type, title, message, is_read, action_url)
+      values(session_row.coach_id, connection_row.user_id,
+        case when p_cancel then 'pt_cancelled' else 'pt_updated' end,
+        case when p_cancel then 'PT Session Cancelled' else 'PT Session Rescheduled' end,
+        coalesce((select full_name from public.users where id = connection_row.user_id), 'Jeremy') ||
+        case when p_cancel then ' cancelled your PT with ' else ' rescheduled your PT with ' end ||
+        coalesce((select full_name from public.users where id = session_row.member_id), 'Client') ||
+        case when p_cancel then ' on ' else ' from ' end ||
+        to_char(session_row.scheduled_at at time zone 'Asia/Singapore', 'DD Mon YYYY HH24:MI') ||
+        case when p_cancel then ' (Singapore time).'
+          else ' to ' || to_char(p_scheduled_at at time zone 'Asia/Singapore', 'DD Mon YYYY HH24:MI') || ' (Singapore time).' end,
+        false, '/pt');
+  end if;
   -- Invalidate the old baseline in the same transaction. Retried requests may
   -- never replay against a later edit even if Google has not been updated yet.
   update public.gcal_event_map set pt_baseline = null where id = map_row.id;

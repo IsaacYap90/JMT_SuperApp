@@ -45,6 +45,32 @@ assert.ok(typeof conn.markSynced === "function", "markSynced should be exported"
 passed++;
 
 const sync = await import("../src/lib/gcal/sync.ts");
+const { leaveOverlapsInterval } = await import("../src/lib/leave-overlap.ts");
+const eveningLeave = { leave_date: "2026-09-29", leave_end_date: null, is_half_day: true, half_day_period: "evening" };
+const at = (value) => Date.parse(value + "+08:00");
+assert.equal(leaveOverlapsInterval(eveningLeave, at("2026-09-29T18:00:00"), at("2026-09-29T19:00:00")), true);
+assert.equal(leaveOverlapsInterval(eveningLeave, at("2026-09-29T17:30:00"), at("2026-09-29T18:30:00")), false);
+assert.equal(leaveOverlapsInterval({ ...eveningLeave, half_day_period: "morning" }, at("2026-09-29T18:30:00"), at("2026-09-29T19:30:00")), false);
+assert.equal(leaveOverlapsInterval({ ...eveningLeave, is_half_day: false }, at("2026-09-28T23:30:00"), at("2026-09-29T00:30:00")), true);
+assert.equal(leaveOverlapsInterval({ ...eveningLeave, deleted_at: "2026-09-28" }, at("2026-09-29T18:00:00"), at("2026-09-29T19:00:00")), false);
+assert.equal(sync.isPtBlockedByLeave("2026-09-29T10:00:00Z", "coach", [{ ...eveningLeave, coach_id: "coach" }], 60), true);
+passed++;
+// Expiring the active sync window must never erase completed work.
+const historyNow = Date.parse("2026-09-24T06:00:00Z");
+const oldPt = { scheduled_at: "2026-09-01T03:00:00Z", duration_minutes: 60 };
+const futurePt = { ...oldPt, scheduled_at: "2026-09-25T03:00:00Z" };
+const pastEvent = { id: "old", end: { dateTime: "2026-09-01T12:00:00+08:00" } };
+const futureEvent = { id: "future", end: { dateTime: "2026-09-25T12:00:00+08:00" } };
+assert.equal(sync.isHistoricalCalendarEvent("pt:old", oldPt, undefined, historyNow), true, "PT older than the two-week query window survives even without remote times");
+assert.equal(sync.isHistoricalCalendarEvent("pt:legacy", null, pastEvent, historyNow), true, "Legacy PT without baseline retains history using Google end");
+assert.equal(sync.isHistoricalCalendarEvent("class:one-off", null, pastEvent, historyNow), true, "Past one-off classes retain history");
+assert.equal(sync.isHistoricalCalendarEvent("class:weekly:2026-09-22", null, undefined, historyNow), true, "Past recurring occurrence retains history without remote times");
+assert.equal(sync.isHistoricalCalendarEvent("class:today:2026-09-24", null, { id: "ended", end: { dateTime: "2026-09-24T13:15:00+08:00" } }, historyNow), true, "An already-ended class today is history");
+assert.equal(sync.isHistoricalCalendarEvent("pt:future", futurePt, pastEvent, historyNow), false, "Phone edits cannot hide future PT cancellation or leave cleanup");
+assert.equal(sync.isHistoricalCalendarEvent("class:future:2026-09-25", null, futureEvent, historyNow), false, "Future class cleanup remains enabled");
+assert.equal(sync.isHistoricalCalendarEvent("pt:ongoing", { ...oldPt, scheduled_at: "2026-09-24T05:30:00Z" }, undefined, historyNow), false, "An ongoing PT is not completed history");
+assert.equal(sync.isHistoricalCalendarEvent("pt:unknown", null, undefined, historyNow), false, "Unknown times cannot imply historical work");
+passed++;
 assert.ok(typeof sync.syncCoach === "function", "syncCoach should be exported");
 assert.ok(typeof sync.isPtBlockedByLeave === "function", "PT leave filter should be testable");
 assert.ok(typeof sync.runWithConcurrency === "function", "Sync should use a bounded-concurrency worker pool");

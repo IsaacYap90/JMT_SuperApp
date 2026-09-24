@@ -5,15 +5,26 @@ import { CalendarManageClient } from "@/components/calendar-manage-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function CalendarManagePage({ searchParams }: { searchParams: Promise<{ draft?: string; class?: string }> }) {
+export default async function CalendarManagePage({ searchParams }: { searchParams: Promise<{ draft?: string; class?: string; pt?: string }> }) {
   const params = await searchParams;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
-  if (!profile || profile.role !== "master_admin") redirect("/");
+  const { data: profile } = await supabase.from("users").select("role, is_active").eq("id", user.id).single();
+  if (!profile?.is_active || (profile.role !== "master_admin" && !(profile.role === "coach" && params.pt))) redirect("/");
 
   const db = createAdminClient();
+  if (params.pt) {
+    let query = db.from("pt_sessions").select("id, coach_id, scheduled_at, duration_minutes, status, member:users!pt_sessions_member_id_fkey(full_name)").eq("id", params.pt);
+    if (profile.role !== "master_admin") query = query.eq("coach_id", user.id);
+    const { data: session, error } = await query.maybeSingle();
+    if (error) throw new Error("Could not load PT session");
+    const { data: ptCoaches } = profile.role === "master_admin"
+      ? await db.from("users").select("id, full_name").in("role", ["coach", "master_admin"]).eq("is_active", true).order("full_name")
+      : { data: [] };
+    const member = session && (Array.isArray(session.member) ? session.member[0] : session.member);
+    return <CalendarManageClient draft={null} classItem={null} members={[]} coaches={ptCoaches || []} canReassign={profile.role === "master_admin"} pt={session ? { id: session.id, coachId: session.coach_id, scheduledAt: session.scheduled_at, durationMinutes: session.duration_minutes, status: session.status, clientName: member?.full_name || "Client" } : null} />;
+  }
   const [membersRes, coachesRes] = await Promise.all([
     db.from("users").select("id, full_name").eq("role", "member").eq("is_active", true).is("merged_into_id", null).order("full_name"),
     db.from("users").select("id, full_name").in("role", ["coach", "admin", "master_admin"]).eq("is_active", true).is("merged_into_id", null).order("full_name"),

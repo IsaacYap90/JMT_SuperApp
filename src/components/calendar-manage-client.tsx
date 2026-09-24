@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { completeGoogleCalendarPtDraft, assignGoogleCalendarClassCoaches } from "@/app/actions/calendar-manage";
+import { completeGoogleCalendarPtDraft, assignGoogleCalendarClassCoaches, manageCalendarPt } from "@/app/actions/calendar-manage";
 import { Button } from "@/components/ui/button";
 
 type Person = { id: string; full_name: string };
@@ -11,17 +11,36 @@ export function CalendarManageClient({
   classItem,
   members,
   coaches,
+  pt = null,
+  canReassign = false,
 }: {
   draft: { id: string; summary: string; scheduledAt: string; durationMinutes: number } | null;
   classItem: { id: string; name: string; assignedCoachIds: string[] } | null;
   members: Person[];
   coaches: Person[];
+  pt?: { id: string; coachId: string; scheduledAt: string; durationMinutes: number; status: string; clientName: string } | null;
+  canReassign?: boolean;
 }) {
   const [memberId, setMemberId] = useState("");
   const [coachId, setCoachId] = useState("");
   const [coachIds, setCoachIds] = useState<string[]>(classItem?.assignedCoachIds || []);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [ptTime, setPtTime] = useState(pt ? new Date(pt.scheduledAt).toLocaleString("sv-SE", { timeZone: "Asia/Singapore" }).replace(" ", "T").slice(0, 16) : "");
+  const [ptDuration, setPtDuration] = useState(pt?.durationMinutes || 60);
+  const [ptCoach, setPtCoach] = useState(pt?.coachId || "");
+  const [ptCancelled, setPtCancelled] = useState(false);
+
+  const savePt = async (cancel = false) => {
+    if (!pt || (cancel && !window.confirm("Cancel this PT session?"))) return;
+    setSaving(true); setMessage("");
+    try {
+      await manageCalendarPt(pt.id, cancel ? { cancel: true } : { scheduledAt: new Date(`${ptTime}:00+08:00`).toISOString(), durationMinutes: ptDuration, coachId: ptCoach });
+      if (cancel) setPtCancelled(true);
+      setMessage(cancel ? "PT cancelled. Calendars update on the next sync." : "PT updated. Calendars update on the next sync.");
+    } catch (err) { setMessage(err instanceof Error ? err.message : "Could not update PT"); }
+    finally { setSaving(false); }
+  };
 
   const finishDraft = async () => {
     if (!draft || !memberId || !coachId) return;
@@ -48,6 +67,21 @@ export function CalendarManageClient({
   const toggleCoach = (id: string) => setCoachIds((current) => current.includes(id)
     ? current.filter((coach) => coach !== id)
     : [...current, id]);
+
+  if (pt) {
+    const resolved = ptCancelled || !["scheduled", "confirmed"].includes(pt.status);
+    return <section className="max-w-lg space-y-5">
+      <h1 className="text-2xl font-bold text-white">PT — {pt.clientName}</h1>
+      {resolved ? <p className="text-jai-text">This PT is {ptCancelled ? "cancelled" : pt.status} and cannot be edited.</p> : <>
+        <label className="block text-sm text-jai-text">Date and time (Singapore)<input type="datetime-local" value={ptTime} onChange={e => setPtTime(e.target.value)} className="mt-1 w-full rounded-lg border border-jai-border bg-jai-bg p-3 text-white" /></label>
+        <label className="block text-sm text-jai-text">Duration (minutes)<input type="number" min={1} max={480} value={ptDuration} onChange={e => setPtDuration(Number(e.target.value))} className="mt-1 w-full rounded-lg border border-jai-border bg-jai-bg p-3 text-white" /></label>
+        {canReassign && <label className="block text-sm text-jai-text">Coach<select value={ptCoach} onChange={e => setPtCoach(e.target.value)} className="mt-1 w-full rounded-lg border border-jai-border bg-jai-bg p-3 text-white">{coaches.map(person => <option key={person.id} value={person.id}>{person.full_name}</option>)}</select></label>}
+        <Button fullWidth loading={saving} disabled={!ptTime || !ptCoach} onClick={() => savePt()}>Save PT changes</Button>
+        <button disabled={saving} onClick={() => savePt(true)} className="text-red-400 disabled:opacity-50">Cancel PT session</button>
+      </>}
+      {message && <p role="status" className="text-sm text-jai-text">{message}</p>}
+    </section>;
+  }
 
   if (draft) return <section className="max-w-lg space-y-5">
     <div><h1 className="text-2xl font-bold text-white">Finish new PT</h1><p className="mt-1 text-jai-text">{draft.summary || "Calendar PT"} · {new Date(draft.scheduledAt).toLocaleString("en-GB", { timeZone: "Asia/Singapore" })} · {draft.durationMinutes} min</p></div>

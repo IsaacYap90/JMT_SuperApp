@@ -83,8 +83,9 @@ export default async function SchedulePage({
         .from("leaves")
         .select("coach_id, leave_date, leave_end_date, is_half_day, half_day_period")
         .eq("status", "approved")
+        .is("deleted_at", null)
         .lte("leave_date", rangeEnd)
-        .gte("leave_end_date", rangeStart),
+        .or(`leave_end_date.gte.${rangeStart},and(leave_end_date.is.null,leave_date.gte.${rangeStart})`),
     ]);
 
     const rawPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];

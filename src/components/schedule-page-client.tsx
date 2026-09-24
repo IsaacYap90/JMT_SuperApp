@@ -10,8 +10,9 @@ import { updatePtSession } from "@/app/actions/pt";
 import { getMyCalendarToken } from "@/app/actions/calendar";
 import { USER_SELECT } from "@/lib/user-columns";
 import { Button, Fab } from "./ui/button";
+import { leaveOverlapsInterval, type LeaveInterval } from "@/lib/leave-overlap";
 
-type ScheduleLeave = { coach_id: string; leave_date: string; leave_end_date: string; is_half_day: boolean | null; half_day_period: "morning" | "evening" | null };
+type ScheduleLeave = LeaveInterval & { coach_id: string };
 
 const CLASS_SELECT =
   `*, lead_coach:users!classes_lead_coach_id_fkey(${USER_SELECT}), assistant_coach:users!classes_assistant_coach_id_fkey(${USER_SELECT}), class_coaches(*, coach:users(${USER_SELECT}))`;
@@ -196,13 +197,10 @@ export function SchedulePageClient({
   const dayOfWeek = selected.dayName;
   const selectedDateStr = `${selected.date.getFullYear()}-${String(selected.date.getMonth() + 1).padStart(2, "0")}-${String(selected.date.getDate()).padStart(2, "0")}`;
 
-  function hasLeaveConflict(coachIds: string[], startTime: string): boolean {
+  function hasLeaveConflict(coachIds: string[], start: number, end: number): boolean {
     if (!isAdmin || !approvedLeaves?.length) return false;
     return approvedLeaves.some((leave) => {
-      if (!coachIds.includes(leave.coach_id) || selectedDateStr < leave.leave_date || selectedDateStr > leave.leave_end_date) return false;
-      if (!leave.is_half_day) return true;
-      const period = leave.half_day_period || "morning";
-      return period === "morning" ? startTime < "18:30" : startTime >= "18:30";
+      return coachIds.includes(leave.coach_id) && leaveOverlapsInterval(leave, start, end);
     });
   }
 
@@ -390,7 +388,9 @@ export function SchedulePageClient({
                 ...(cls.class_coaches?.filter((cc) => !cc.is_lead && cc.coach).map((cc) => cc.coach!.full_name) || []),
               ].filter(Boolean).join(", ");
               const assignedCoachIds = [cls.lead_coach_id, cls.assistant_coach_id, ...(cls.class_coaches?.map((cc) => cc.coach_id) || [])].filter(Boolean) as string[];
-              const leaveConflict = hasLeaveConflict(assignedCoachIds, cls.start_time);
+              const leaveConflict = hasLeaveConflict(assignedCoachIds,
+                Date.parse(`${selectedDateStr}T${cls.start_time}+08:00`),
+                Date.parse(`${selectedDateStr}T${cls.end_time}+08:00`));
               return (
                 <div
                   key={cls.id}
@@ -434,7 +434,7 @@ export function SchedulePageClient({
               hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore",
             });
             const isEditing = editingPtId === s.id;
-            const leaveConflict = hasLeaveConflict([s.coach_id], time);
+            const leaveConflict = hasLeaveConflict([s.coach_id], dt.getTime(), endDt.getTime());
 
             return (
               <div

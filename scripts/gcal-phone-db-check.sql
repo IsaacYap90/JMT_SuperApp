@@ -9,10 +9,11 @@ create table pt_sessions(id uuid primary key default gen_random_uuid(), coach_id
 create table leaves(id uuid primary key default gen_random_uuid(), coach_id uuid, status text, deleted_at timestamptz, leave_date date, leave_end_date date, is_half_day boolean, half_day_period text);
 create table classes(id uuid primary key, is_active boolean, event_date date, day_of_week text, lead_coach_id uuid, assistant_coach_id uuid, start_time time, end_time time);
 create table class_coaches(class_id uuid, coach_id uuid, is_lead boolean, unique(class_id,coach_id));
+create table notifications(id uuid primary key default gen_random_uuid(), user_id uuid references users(id), sender_id uuid references users(id), notification_type text check(notification_type in ('pt_updated','pt_cancelled')), title text not null, message text not null, is_read boolean default false, action_url text);
 \i /repo/supabase/migrations/20260920142820_google_calendar_sync.sql
 \i /repo/supabase/migrations/20260921154616_gcal_phone_pt_changes.sql
 grant usage on schema public to service_role, anon, authenticated;
-grant all on users, pt_packages, pt_sessions, leaves, classes, class_coaches to service_role;
+grant all on users, pt_packages, pt_sessions, leaves, classes, class_coaches, notifications to service_role;
 
 insert into users values
 ('00000000-0000-0000-0000-000000000001','Jeremy','master_admin',true),
@@ -61,6 +62,34 @@ update gcal_event_map set pt_baseline=b where google_event_id='event';
 result := apply_gcal_pt_change('00000000-0000-0000-0000-000000000012','event',b,null,null,true);
 assert result='applied', result;
 assert (select status='cancelled' from pt_sessions limit 1);
+end $$;
+
+-- Jeremy's accepted phone edit notifies the assigned coach once. Rejections
+-- and replayed calls must neither create notifications nor alter the booking.
+update pt_sessions set status='scheduled', scheduled_at='2090-10-01T02:00:00Z';
+insert into gcal_event_map(connection_id,local_entity_key,google_event_id,pt_baseline)
+select '00000000-0000-0000-0000-000000000011','pt:'||id,'jeremy-event',jsonb_build_object('scheduled_at',scheduled_at,'duration_minutes',duration_minutes,'coach_id',coach_id,'member_id',member_id,'status',status,'edited_at',edited_at) from pt_sessions;
+do $$ declare b jsonb; result text;
+begin
+assert (select count(*)=0 from notifications), 'Coach self-edits do not self-notify';
+select pt_baseline into b from gcal_event_map where google_event_id='jeremy-event';
+result := apply_gcal_pt_change('00000000-0000-0000-0000-000000000011','jeremy-event',b,'2090-09-30T10:00:00Z',60,false);
+assert result='leave_conflict', result;
+assert (select count(*)=0 from notifications), 'Rejected edits must not notify';
+result := apply_gcal_pt_change('00000000-0000-0000-0000-000000000011','jeremy-event',b,'2090-10-01T03:00:00Z',60,false);
+assert result='applied', result;
+assert (select count(*)=1 from notifications where user_id='00000000-0000-0000-0000-000000000002' and sender_id='00000000-0000-0000-0000-000000000001' and notification_type='pt_updated' and message like '%01 Oct 2090 10:00%01 Oct 2090 11:00%');
+result := apply_gcal_pt_change('00000000-0000-0000-0000-000000000011','jeremy-event',b,'2090-10-01T03:00:00Z',60,false);
+assert result='baseline_changed', result;
+assert (select count(*)=1 from notifications), 'Retry duplicated notification';
+select jsonb_build_object('scheduled_at',scheduled_at,'duration_minutes',duration_minutes,'coach_id',coach_id,'member_id',member_id,'status',status,'edited_at',edited_at) into b from pt_sessions limit 1;
+update gcal_event_map set pt_baseline=b where google_event_id='jeremy-event';
+result := apply_gcal_pt_change('00000000-0000-0000-0000-000000000011','jeremy-event',b,null,null,true);
+assert result='applied', result;
+assert (select count(*)=1 from notifications where notification_type='pt_cancelled');
+result := apply_gcal_pt_change('00000000-0000-0000-0000-000000000011','jeremy-event',b,null,null,true);
+assert result='baseline_changed', result;
+assert (select count(*)=2 from notifications), 'Cancellation replay duplicated notification';
 end $$;
 
 insert into gcal_pt_drafts(id,connection_id,google_event_id,summary,scheduled_at,duration_minutes)
