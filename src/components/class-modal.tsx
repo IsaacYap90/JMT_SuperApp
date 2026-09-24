@@ -2,8 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { Class, DayOfWeek, User } from "@/lib/types/database";
-import { createClient } from "@/lib/supabase/client";
 import { createNotification } from "@/app/actions/notifications";
+import { saveClassWithCoaches } from "@/app/actions/classes";
 import { Button } from "./ui/button";
 
 const DAYS: DayOfWeek[] = [
@@ -21,7 +21,6 @@ export function ClassModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -110,7 +109,7 @@ export function ClassModal({
       // (booking pages, trials, calendly) never pick it up.
       day_of_week: form.is_one_off ? null : form.day_of_week,
       event_date: form.is_one_off ? form.event_date : null,
-      class_kind: form.is_one_off ? "corporate" : "regular",
+      class_kind: (form.is_one_off ? "corporate" : "regular") as "corporate" | "regular",
       start_time: form.start_time,
       end_time: form.end_time,
       lead_coach_id: leadCoachId,
@@ -118,70 +117,21 @@ export function ClassModal({
       is_active: true,
     };
 
-    let classId = cls?.id;
-
-    if (cls) {
-      console.log("[ClassModal] Updating class", cls.id, classData);
-      const { data: updated, error: updateErr } = await supabase
-        .from("classes")
-        .update(classData)
-        .eq("id", cls.id)
-        .select("id");
-      console.log("[ClassModal] Update result:", updateErr ? updateErr.message : "success", "rows:", updated?.length);
-      if (updateErr) {
-        setError(`Update failed: ${updateErr.message}`);
-        setLoading(false);
-        return;
-      }
-      if (!updated || updated.length === 0) {
-        setError("Update blocked — no rows changed. Check RLS policies on the classes table (admin needs UPDATE permission).");
-        setLoading(false);
-        return;
-      }
-    } else {
-      console.log("[ClassModal] Inserting class", classData);
-      const { data: inserted, error: insertErr } = await supabase
-        .from("classes")
-        .insert(classData)
-        .select("id")
-        .single();
-      console.log("[ClassModal] Insert result:", insertErr ? insertErr.message : inserted?.id);
-      if (insertErr) {
-        setError(`Insert failed: ${insertErr.message}`);
-        setLoading(false);
-        return;
-      }
-      classId = inserted.id;
+    let classId: string;
+    try {
+      const saved = await saveClassWithCoaches({
+        id: cls?.id,
+        ...classData,
+        selected_coach_ids: form.selectedCoachIds,
+      });
+      classId = saved.id;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save class");
+      setLoading(false);
+      return;
     }
 
     if (classId) {
-      console.log("[ClassModal] Deleting old class_coaches for", classId);
-      const { error: deleteErr } = await supabase
-        .from("class_coaches")
-        .delete()
-        .eq("class_id", classId);
-      if (deleteErr) {
-        console.error("[ClassModal] class_coaches delete failed:", deleteErr.message);
-        setError(`Failed to update coaches: ${deleteErr.message}. Check RLS policies on class_coaches table.`);
-        setLoading(false);
-        return;
-      }
-      if (form.selectedCoachIds.length > 0) {
-        const coachRows = form.selectedCoachIds.map((coachId, i) => ({
-          class_id: classId!,
-          coach_id: coachId,
-          is_lead: i === 0,
-        }));
-        console.log("[ClassModal] Inserting class_coaches", coachRows);
-        const { error: ccErr } = await supabase.from("class_coaches").insert(coachRows);
-        if (ccErr) {
-          console.error("[ClassModal] class_coaches insert failed:", ccErr.message);
-          setError(`Coach assignment failed: ${ccErr.message}`);
-          setLoading(false);
-          return;
-        }
-      }
-      console.log("[ClassModal] All saves complete");
 
       // Notify coaches about changes
       const previousCoachIds = getInitialCoachIds();

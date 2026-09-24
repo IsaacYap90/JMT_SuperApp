@@ -5,7 +5,7 @@ import { ProfilePageClient } from "@/components/profile-page-client";
 import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function ProfilePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

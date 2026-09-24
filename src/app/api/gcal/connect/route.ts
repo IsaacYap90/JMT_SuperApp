@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(`${profile}?gcal_error=not_configured`);
     }
 
-    const supabase = createClient();
+    const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();

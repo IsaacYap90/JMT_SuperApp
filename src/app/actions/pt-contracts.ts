@@ -10,7 +10,7 @@ import React from "react";
 import { ContractPdfDoc, ContractPdfData } from "@/lib/contract-pdf";
 
 async function requireAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

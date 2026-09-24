@@ -11,7 +11,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 // the service-role client to read that one row — a caller can never fetch
 // anyone else's token.
 export async function getMyCalendarToken(): Promise<string | null> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

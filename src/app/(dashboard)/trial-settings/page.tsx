@@ -6,7 +6,7 @@ import { TrialSettingsClient } from "@/components/trial-settings-client";
 import { USER_SELECT } from "@/lib/user-columns";
 
 export default async function TrialSettingsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

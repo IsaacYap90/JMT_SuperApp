@@ -8,7 +8,7 @@ import { createNotification } from "./notifications";
 import { transitionExactPublicLead } from "@/lib/leads/lifecycle-service";
 
 async function requireAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

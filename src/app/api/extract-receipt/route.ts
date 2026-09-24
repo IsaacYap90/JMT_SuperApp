@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
   // Auth: the earnings surface is owner-only (see /earning page — gated to
   // "Isaac Yap", who is a coach, not master_admin — so mirror that gate here
   // rather than isMasterAdmin()). Stops anonymous callers burning OpenAI spend.
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

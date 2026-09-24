@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { createNotification } from "./notifications";
 import { assertValidPtDuration, parsePtScheduledAt } from "@/lib/pt-schedule";
+import { assertCoachAvailableForPt } from "@/lib/leave-conflicts";
 
 function formatSgtDate(date: Date): string {
   const weekday = date.toLocaleDateString("en-GB", { weekday: "long", timeZone: "Asia/Singapore" });
@@ -20,7 +21,7 @@ function formatSgtTime(date: Date): string {
 }
 
 async function requireAdmin() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -239,6 +240,7 @@ export async function createPtSession(payload: {
   const scheduledAt = parsePtScheduledAt(payload.scheduled_at);
   assertValidPtDuration(payload.duration_minutes);
   const admin = createAdminClient();
+  await assertCoachAvailableForPt(admin, payload.coach_id, scheduledAt, payload.duration_minutes);
 
   // Find active package for this member+coach. Pay-per-class clients won't
   // have one — fall back to a null package_id (pt_sessions.package_id is
@@ -298,6 +300,7 @@ export async function updatePtSession(
   const scheduledAt = parsePtScheduledAt(payload.scheduled_at);
   assertValidPtDuration(payload.duration_minutes);
   const admin = createAdminClient();
+  await assertCoachAvailableForPt(admin, payload.coach_id, scheduledAt, payload.duration_minutes);
 
   // Get old session to check if coach changed
   const { data: oldSession } = await admin
@@ -629,7 +632,7 @@ export async function coachUpdatePtStatus(
   newStatus: "completed" | "cancelled" | "no_show",
   signature?: SessionSignaturePayload
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -696,7 +699,7 @@ export async function coachReschedulePtSession(
   newScheduledAt: string,
   newDurationMinutes: number
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -721,6 +724,7 @@ export async function coachReschedulePtSession(
   if (scheduledAt < new Date()) {
     throw new Error("New time must be in the future");
   }
+  await assertCoachAvailableForPt(admin, session.coach_id, scheduledAt, newDurationMinutes);
 
   // Update the session
   const { error } = await admin
@@ -749,7 +753,7 @@ export async function logPtSession(
   coachNotes: string,
   nextFocus: string
 ) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

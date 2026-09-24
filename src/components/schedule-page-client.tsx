@@ -11,6 +11,8 @@ import { getMyCalendarToken } from "@/app/actions/calendar";
 import { USER_SELECT } from "@/lib/user-columns";
 import { Button, Fab } from "./ui/button";
 
+type ScheduleLeave = { coach_id: string; leave_date: string; leave_end_date: string; is_half_day: boolean | null; half_day_period: "morning" | "evening" | null };
+
 const CLASS_SELECT =
   `*, lead_coach:users!classes_lead_coach_id_fkey(${USER_SELECT}), assistant_coach:users!classes_assistant_coach_id_fkey(${USER_SELECT}), class_coaches(*, coach:users(${USER_SELECT}))`;
 
@@ -131,6 +133,7 @@ export function SchedulePageClient({
   isAdmin,
   adminId,
   anchorDate,
+  approvedLeaves,
 }: {
   classes: Class[];
   coaches: User[];
@@ -138,6 +141,7 @@ export function SchedulePageClient({
   isAdmin: boolean;
   adminId?: string;
   anchorDate: string;
+  approvedLeaves?: ScheduleLeave[];
 }) {
   const router = useRouter();
   const dates = getDates(anchorDate);
@@ -191,6 +195,16 @@ export function SchedulePageClient({
   const selected = dates[selectedIdx];
   const dayOfWeek = selected.dayName;
   const selectedDateStr = `${selected.date.getFullYear()}-${String(selected.date.getMonth() + 1).padStart(2, "0")}-${String(selected.date.getDate()).padStart(2, "0")}`;
+
+  function hasLeaveConflict(coachIds: string[], startTime: string): boolean {
+    if (!isAdmin || !approvedLeaves?.length) return false;
+    return approvedLeaves.some((leave) => {
+      if (!coachIds.includes(leave.coach_id) || selectedDateStr < leave.leave_date || selectedDateStr > leave.leave_end_date) return false;
+      if (!leave.is_half_day) return true;
+      const period = leave.half_day_period || "morning";
+      return period === "morning" ? startTime < "18:30" : startTime >= "18:30";
+    });
+  }
 
   // Classes for selected day: weekly recurring by day-of-week, one-off events by exact date.
   const dayClasses = classes
@@ -375,6 +389,8 @@ export function SchedulePageClient({
                 cls.lead_coach?.full_name,
                 ...(cls.class_coaches?.filter((cc) => !cc.is_lead && cc.coach).map((cc) => cc.coach!.full_name) || []),
               ].filter(Boolean).join(", ");
+              const assignedCoachIds = [cls.lead_coach_id, cls.assistant_coach_id, ...(cls.class_coaches?.map((cc) => cc.coach_id) || [])].filter(Boolean) as string[];
+              const leaveConflict = hasLeaveConflict(assignedCoachIds, cls.start_time);
               return (
                 <div
                   key={cls.id}
@@ -392,6 +408,7 @@ export function SchedulePageClient({
                       )}
                     </div>
                     <div className="flex items-center gap-2 ml-3">
+                      {leaveConflict && <span title="Coach on approved leave — reassign this class" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-500 text-white font-bold">!</span>}
                       <span className={`text-[10px] px-2.5 py-1 rounded-full border ${cls.class_kind === "corporate" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" : "bg-jai-blue/10 text-jai-blue border-jai-blue/20"}`}>
                         {cls.class_kind === "corporate" ? "Corporate" : "Class"}
                       </span>
@@ -417,6 +434,7 @@ export function SchedulePageClient({
               hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore",
             });
             const isEditing = editingPtId === s.id;
+            const leaveConflict = hasLeaveConflict([s.coach_id], time);
 
             return (
               <div
@@ -439,6 +457,7 @@ export function SchedulePageClient({
                     </p>
                   </div>
                   <div className="flex items-center gap-2 ml-3">
+                    {leaveConflict && <span title="Coach on approved leave — reassign this PT session" className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-red-500 text-white font-bold">!</span>}
                     <span className="text-[10px] px-2.5 py-1 rounded-full border bg-green-500/10 text-green-400 border-green-500/20">
                       PT
                     </span>

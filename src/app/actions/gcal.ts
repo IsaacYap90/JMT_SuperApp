@@ -21,7 +21,7 @@ export interface GcalConnectionStatus {
  * only a boolean saying whether the feature is set up server-side.
  */
 export async function getGcalStatus(): Promise<GcalConnectionStatus> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
@@ -55,7 +55,7 @@ export async function getGcalStatus(): Promise<GcalConnectionStatus> {
  * revoke endpoint or delete events.
  */
 export async function disconnectGcal(): Promise<{ success: boolean; error?: string }> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Not authenticated" };
 
@@ -72,7 +72,7 @@ export async function disconnectGcal(): Promise<{ success: boolean; error?: stri
  * Trigger a manual sync for the current user's Google Calendar.
  */
 export async function triggerGcalSync(): Promise<{ success: boolean; error?: string; result?: SyncResult }> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { success: false, error: "Not authenticated" };
 

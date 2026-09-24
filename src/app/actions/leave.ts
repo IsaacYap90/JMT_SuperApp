@@ -79,6 +79,47 @@ async function findAffectedClasses(
   return affected;
 }
 
+// PTs are one-off, so unlike recurring classes we can show Jeremy the exact
+// client, date and time that need a replacement before the leave starts.
+async function findAffectedPtSessions(
+  coachId: string,
+  leaveStart: string,
+  leaveEnd: string,
+  isHalfDay: boolean,
+  halfDayPeriod: "morning" | "evening" | null
+): Promise<{ member: string; date: string; time: string }[]> {
+  const admin = createAdminClient();
+  const start = new Date(`${leaveStart}T00:00:00+08:00`);
+  const end = new Date(`${leaveEnd}T23:59:59+08:00`);
+  const { data, error } = await admin
+    .from("pt_sessions")
+    .select("scheduled_at, duration_minutes, member:users!pt_sessions_member_id_fkey(full_name)")
+    .eq("coach_id", coachId)
+    .in("status", ["scheduled", "confirmed"])
+    .gte("scheduled_at", start.toISOString())
+    .lte("scheduled_at", end.toISOString())
+    .order("scheduled_at");
+  if (error) throw new Error(`Could not check PT leave conflicts: ${error.message}`);
+
+  return (data || []).flatMap((session) => {
+    const local = new Date(session.scheduled_at);
+    const time = local.toLocaleTimeString("en-SG", {
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "Asia/Singapore",
+    });
+    if (isHalfDay) {
+      const period = halfDayPeriod || "morning";
+      if (period === "morning" && time >= "18:30") return [];
+      if (period === "evening" && time < "18:30") return [];
+    }
+    const member = (Array.isArray(session.member) ? session.member[0] : session.member) as { full_name?: string } | null;
+    return [{
+      member: member?.full_name || "Client",
+      date: local.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "Asia/Singapore" }),
+      time,
+    }];
+  });
+}
+
 export async function submitLeave(payload: {
   leave_date: string;
   leave_end_date: string;
@@ -229,24 +270,33 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
     : "";
 
   if (action === "approved") {
-    // Find conflicts and re-notify admins so Jeremy is reminded right at approval time
+    // Find conflicts and notify Jeremy immediately. Existing assignments are
+    // never silently cancelled: clients need a deliberate reassignment.
     const affected = await findAffectedClasses(leave.coach_id, leave.leave_date, leave.leave_end_date, leave.is_half_day, leave.is_half_day ? ((leave.half_day_period as "morning" | "evening" | null) || "morning") : null);
+    const affectedPt = await findAffectedPtSessions(leave.coach_id, leave.leave_date, leave.leave_end_date, leave.is_half_day, leave.is_half_day ? ((leave.half_day_period as "morning" | "evening" | null) || "morning") : null);
     const coachName = ((leave.coach as unknown as { full_name: string } | null))?.full_name || "Coach";
 
-    if (affected.length > 0) {
+    if (affected.length > 0 || affectedPt.length > 0) {
       const { data: admins } = await admin
         .from("users")
         .select("id")
-        .in("role", ["admin", "master_admin"]);
+        .in("role", ["admin", "master_admin"])
+        .is("merged_into_id", null);
 
       if (admins) {
-        const conflictLine = affected.map((a) => `• ${a.name} — ${a.date} ${a.time}`).join("\n");
+        const classLines = affected.length
+          ? `Classes to reassign:\n${affected.map((a) => `• ${a.name} — ${a.date} ${a.time}`).join("\n")}`
+          : "";
+        const ptLines = affectedPt.length
+          ? `PT to reassign or cancel:\n${affectedPt.map((p) => `• ${p.member} — ${p.date} ${p.time}`).join("\n")}`
+          : "";
+        const conflicts = [classLines, ptLines].filter(Boolean).join("\n\n");
         for (const a of admins) {
           createNotification(
             a.id,
             "system",
-            "⚠️ Approved Leave — Substitute Needed",
-            `${coachName}'s ${leave.leave_type} leave${halfDayLabel} for ${dateRange} is approved. These classes still have ${coachName} assigned and need a substitute:\n${conflictLine}`
+            "⚠️ Approved Leave — Reassignment Needed",
+            `${coachName}'s ${leave.leave_type} leave${halfDayLabel} for ${dateRange} is approved. Reassign these before the leave starts:\n\n${conflicts}`
           ).catch((err) => console.error("Failed to notify admin of conflict:", err));
         }
       }
@@ -271,7 +321,7 @@ export async function reviewLeave(leaveId: string, action: "approved" | "rejecte
 }
 
 async function getAuthUser() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -348,7 +398,7 @@ export async function addInLieuCredit(payload: {
   days: number;
   reason: string;
 }) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

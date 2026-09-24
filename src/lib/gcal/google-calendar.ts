@@ -117,9 +117,10 @@ interface GCalRequest {
   path: string;
   body?: unknown;
   query?: Record<string, string>;
+  etag?: string;
 }
 
-async function gcalFetch<T = unknown>({ accessToken, method = "GET", path, body, query }: GCalRequest): Promise<T> {
+async function gcalFetch<T = unknown>({ accessToken, method = "GET", path, body, query, etag }: GCalRequest): Promise<T> {
   const url = new URL(`${GCAL_BASE}${path}`);
   if (query) {
     for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
@@ -129,6 +130,7 @@ async function gcalFetch<T = unknown>({ accessToken, method = "GET", path, body,
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
+      ...(etag ? { "If-Match": etag } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -177,6 +179,9 @@ export interface GCalEvent {
 /** Minimal event shape returned while reconciling this app's calendar. */
 export interface GCalListedEvent {
   id: string;
+  etag?: string;
+  recurrence?: string[];
+  recurringEventId?: string;
   status?: string;
   summary?: string;
   description?: string;
@@ -214,6 +219,7 @@ export async function listCalendarEvents(accessToken: string, calendarId: string
       path: `/calendars/${encodeURIComponent(calendarId)}/events`,
       query: {
         maxResults: "2500",
+        showDeleted: "true",
         ...(pageToken ? { pageToken } : {}),
       },
     });
@@ -222,6 +228,11 @@ export async function listCalendarEvents(accessToken: string, calendarId: string
   } while (pageToken);
 
   return events;
+}
+
+/** Update only the draft's helper description, preserving other phone fields. */
+export async function setDraftDescription(accessToken: string, calendarId: string, eventId: string, description: string): Promise<void> {
+  await gcalFetch({ accessToken, method: "PATCH", path: `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, body: { description } });
 }
 
 /** Insert a calendar event. Returns the Google event ID. */
@@ -240,13 +251,15 @@ export async function updateEvent(
   accessToken: string,
   calendarId: string,
   eventId: string,
-  event: GCalEvent
+  event: GCalEvent,
+  etag?: string
 ): Promise<void> {
   await gcalFetch({
     accessToken,
     method: "PUT",
     path: `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
     body: event,
+    etag,
   });
 }
 
@@ -254,11 +267,13 @@ export async function updateEvent(
 export async function deleteEvent(
   accessToken: string,
   calendarId: string,
-  eventId: string
+  eventId: string,
+  etag?: string
 ): Promise<void> {
   await gcalFetch({
     accessToken,
     method: "DELETE",
     path: `/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    etag,
   });
 }

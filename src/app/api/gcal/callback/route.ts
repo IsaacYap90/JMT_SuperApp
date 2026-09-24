@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Verify the logged-in user matches the state userId
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

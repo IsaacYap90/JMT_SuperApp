@@ -7,7 +7,7 @@ import { DEMO_MODE } from "@/lib/demo-mask";
 
 // Native WhatsApp inbox — master_admin (Jeremy) only.
 export default async function WaInboxPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

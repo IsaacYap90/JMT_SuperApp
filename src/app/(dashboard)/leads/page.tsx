@@ -8,7 +8,7 @@ import { USER_SELECT } from "@/lib/user-columns";
 import { DEMO_MODE, maskName, maskPhone, maskEmail, scrubText, maskFormFields } from "@/lib/demo-mask";
 
 export default async function LeadsPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

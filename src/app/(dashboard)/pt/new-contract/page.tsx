@@ -8,7 +8,7 @@ import { USER_SELECT } from "@/lib/user-columns";
 export const dynamic = "force-dynamic";
 
 export default async function NewContractPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

@@ -1,12 +1,13 @@
-export default function ConfirmationPage({
+export default async function ConfirmationPage({
   searchParams,
 }: {
-  searchParams: { name?: string; date?: string; time?: string; class?: string };
+  searchParams: Promise<{ name?: string; date?: string; time?: string; class?: string }>;
 }) {
-  const name = searchParams.name || "there";
-  const date = searchParams.date || "";
-  const time = searchParams.time || "";
-  const className = searchParams.class || "";
+  const params = await searchParams;
+  const name = params.name || "there";
+  const date = params.date || "";
+  const time = params.time || "";
+  const className = params.class || "";
 
   return (
     <div className="space-y-6">

@@ -71,6 +71,8 @@ check(
 // ── 2. Messages that MUST be intercepted ─────────────────────────────────────
 console.log("\n[2] Must intercept");
 const hits = [
+  { msg: "what time is tomorrow’s 7:30pm class?", intent: "SCHEDULE" },
+  { msg: "tomorrow classes?", intent: "SCHEDULE" },
   { msg: "what time is the monday class?", intent: "SCHEDULE", must: ["6:30–7:30pm", "7:30–8:30pm"], mustNot: ["7:00–8:00pm"] },
   { msg: "Wednesday what time ah", intent: "SCHEDULE", must: ["7:30–8:30pm All Levels"], mustNot: ["8:30–9:30pm"] },
   { msg: "timetable for saturday", intent: "SCHEDULE", must: ["10:00–10:45am", "11:30am–12:30pm"] },
@@ -132,6 +134,11 @@ for (const t of hits) {
 // ── 3. Messages that MUST NOT be intercepted ─────────────────────────────────
 console.log("\n[3] Must fall through to the AI");
 const misses = [
+  "Hi I have already booked for tomorrow 7:30pm class thanks 🙏",
+  "I've reserved tomorrow's evening class, thank you",
+  "I will attend the class tomorrow",
+  "See you in tomorrow's class!",
+  "I enjoyed the morning class",
   "hi",
   "hello, is anyone there?",
   "can i book a free trial",

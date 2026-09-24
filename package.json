@@ -8,31 +8,36 @@
     "start": "next start",
     "lint": "next lint",
     "test:e2e": "playwright test",
-    "test:jai": "node --import ./scripts/ts-resolve.mjs scripts/validate-facts-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/deterministic-answers-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/day-binding-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/timetable-claim-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/substitution-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/late-arrival-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/no-calls-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/session-window-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/guard-holes-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/pause-stale-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/facts-fallback-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/handoff-markers-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/followup-facts-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/lang-check.mjs",
+    "test:jai": "node --import ./scripts/ts-resolve.mjs scripts/validate-facts-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/deterministic-answers-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/booking-statement-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/day-binding-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/timetable-claim-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/substitution-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/late-arrival-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/no-calls-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/session-window-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/guard-holes-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/pause-stale-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/facts-fallback-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/handoff-markers-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/followup-facts-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/lang-check.mjs",
     "test:jai:conversation": "node scripts/jai-conversation-check.mjs",
-    "test:gcal": "node --import ./scripts/ts-resolve.mjs scripts/gcal-config-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/gcal-crypto-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/pt-schedule-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/gcal-sync-check.mjs"
+    "test:gcal": "node --import ./scripts/ts-resolve.mjs scripts/gcal-config-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/gcal-crypto-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/pt-schedule-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/gcal-sync-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/gcal-phone-check.mjs && node --import ./scripts/ts-resolve.mjs scripts/gcal-phone-ingest-check.mjs",
+    "test:schedule": "node --import ./scripts/ts-resolve.mjs scripts/leave-conflicts-check.mjs",
+    "test:security": "node scripts/security-hardening-check.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.88.0",
     "@react-pdf/renderer": "^4.4.1",
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.99.3",
     "lucide-react": "^1.7.0",
-    "next": "14.2.35",
+    "next": "^15.5.24",
     "openai": "^6.33.0",
-    "react": "^18",
-    "react-dom": "^18",
+    "postcss": "8.5.28",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
     "signature_pad": "^5.1.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.0",
     "@types/node": "^20",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "eslint": "^8",
-    "eslint-config-next": "14.2.35",
-    "postcss": "^8",
+    "eslint-config-next": "^15.5.24",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "8.5.28",
+    "nanoid": "3.3.18"
   }
 }

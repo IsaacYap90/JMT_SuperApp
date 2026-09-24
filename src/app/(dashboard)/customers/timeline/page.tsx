@@ -12,17 +12,18 @@ const SOURCES = new Set<CustomerSource>(["public.leads", "public.trial_bookings"
 export default async function CustomerTimelinePage({
   searchParams,
 }: {
-  searchParams: { source?: string; id?: string };
+  searchParams: Promise<{ source?: string; id?: string }>;
 }) {
-  const supabase = createClient();
+  const params = await searchParams;
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
   const { data } = await supabase.from("users").select(USER_SELECT).eq("id", user.id).single();
   const profile = data as unknown as User | null;
   if (!profile || !isAdmin(profile.role)) redirect("/");
 
-  const source = searchParams.source as CustomerSource | undefined;
-  const sourceKey = searchParams.id?.trim();
+  const source = params.source as CustomerSource | undefined;
+  const sourceKey = params.id?.trim();
   if (!source || !SOURCES.has(source) || !sourceKey) redirect("/leads");
 
   if (DEMO_MODE) {

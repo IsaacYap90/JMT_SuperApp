@@ -7,12 +7,13 @@ import { maskName } from "@/lib/demo-mask";
 
 export const dynamic = "force-dynamic";
 
-export default async function PtLogPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+export default async function PtLogPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = await params;
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?next=/pt/log/${params.id}`);
+  if (!user) redirect(`/login?next=/pt/log/${resolvedParams.id}`);
 
   const { data: profile } = await supabase
     .from("users")
@@ -27,7 +28,7 @@ export default async function PtLogPage({ params }: { params: { id: string } }) 
     .select(
       "id, coach_id, scheduled_at, duration_minutes, status, coach_notes, next_focus, member:users!pt_sessions_member_id_fkey(id, full_name)"
     )
-    .eq("id", params.id)
+    .eq("id", resolvedParams.id)
     .single();
 
   if (!session) notFound();

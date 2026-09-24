@@ -607,6 +607,28 @@ function dayLabelNow(cfg: DeterministicConfig, addDays: number): string | undefi
 }
 
 /**
+ * Weak schedule hints describe a topic, not the customer's intent. Only take
+ * a compact lookup made of schedule terms and question scaffolding. Anything
+ * else (a booking update, attendance plan, thanks, or personal story) needs
+ * the model to read the conversation. This creates no customer-facing reply.
+ */
+function isScheduleLookupFragment(text: string, cfg: DeterministicConfig): boolean {
+  let remaining = norm(text);
+  const terms = [
+    ...cfg.classWords, ...cfg.scheduleWeak, ...cfg.todayWords, ...cfg.tomorrowWords,
+    ...Object.values(cfg.dayAliases).flat(),
+    ...Object.values(cfg.timeWindows).flatMap((window) => window.aliases),
+    "do you have", "are there", "is there", "what", "are", "is", "any",
+    "on", "for", "the", "your", "a", "please", "pls", "hi", "hello", "got", "ah", "lah",
+  ].sort((a, b) => b.length - a.length);
+  for (const term of terms) {
+    if (/^[\x20-\x7e]+$/.test(term)) remaining = remaining.split(` ${term} `).join(" ");
+    else remaining = remaining.split(term).join("");
+  }
+  return remaining.trim().length === 0;
+}
+
+/**
  * Conservative on purpose. A missed interception costs nothing — the model
  * answers exactly as it does today, with Layer 1 guarding it. A WRONG
  * interception sends a real customer a canned answer to a question they didn't
@@ -659,6 +681,13 @@ export function detectIntent(text: string, cfg: DeterministicConfig = DEFAULT_CO
     return { intent: null, score: 0, reason: "asks about both schedule and price — the AI answers it whole" };
 
   if (sched >= cfg.threshold) {
+    // "I have already booked for tomorrow ... class" used to score 2 from
+    // day + class alone and return a timetable before DeepSeek ever ran.
+    // Ambiguous sentences fall through intact; explicit "what time" queries
+    // still use the fact-sheet lookup and all downstream fact guards remain.
+    if (schedStrong === 0 && !isScheduleLookupFragment(raw, cfg)) {
+      return { intent: null, score: sched, reason: "schedule mentioned in conversation, not a clear lookup" };
+    }
     let day = canonicalDay(raw, cfg) || undefined;
     if (!day && countHits(padded, lower, cfg.todayWords) > 0) day = dayLabelNow(cfg, 0);
     if (!day && countHits(padded, lower, cfg.tomorrowWords) > 0) day = dayLabelNow(cfg, 1);

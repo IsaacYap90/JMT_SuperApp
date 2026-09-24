@@ -10,14 +10,15 @@ export const dynamic = "force-dynamic";
 export default async function PtClientPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = createClient();
+  const resolvedParams = await params;
+  const supabase = await createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect(`/login?next=/pt/client/${params.id}`);
+  if (!user) redirect(`/login?next=/pt/client/${resolvedParams.id}`);
 
   const { data: profileData } = await supabase
     .from("users")
@@ -35,7 +36,7 @@ export default async function PtClientPage({
   const { data: memberData } = await db
     .from("users")
     .select(USER_SELECT)
-    .eq("id", params.id)
+    .eq("id", resolvedParams.id)
     .single();
   if (!memberData) notFound();
   const member = memberData as unknown as User;
@@ -45,13 +46,13 @@ export default async function PtClientPage({
     const { count } = await supabase
       .from("pt_packages")
       .select("id", { count: "exact", head: true })
-      .eq("user_id", params.id)
+      .eq("user_id", resolvedParams.id)
       .eq("preferred_coach_id", user.id);
     if (!count) {
       const { count: sessCount } = await supabase
         .from("pt_sessions")
         .select("id", { count: "exact", head: true })
-        .eq("member_id", params.id)
+        .eq("member_id", resolvedParams.id)
         .eq("coach_id", user.id);
       if (!sessCount) redirect("/pt");
     }
@@ -61,12 +62,12 @@ export default async function PtClientPage({
     db
       .from("pt_packages")
       .select(`*, coach:users!pt_packages_preferred_coach_id_fkey(${USER_SELECT})`)
-      .eq("user_id", params.id)
+      .eq("user_id", resolvedParams.id)
       .order("created_at", { ascending: false }),
     db
       .from("pt_sessions")
       .select(`*, coach:users!pt_sessions_coach_id_fkey(${USER_SELECT})`)
-      .eq("member_id", params.id)
+      .eq("member_id", resolvedParams.id)
       .order("scheduled_at", { ascending: false }),
   ]);
 

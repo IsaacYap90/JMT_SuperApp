@@ -8,7 +8,7 @@ import { USER_SELECT } from "@/lib/user-columns";
 import { DEMO_MODE, maskUser, maskPtSession, maskPtPackage, maskName, maskPhone } from "@/lib/demo-mask";
 
 export default async function PtPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },

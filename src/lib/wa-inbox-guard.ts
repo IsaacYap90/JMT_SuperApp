@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 
 // The WhatsApp inbox is master_admin (Jeremy) only. Used by the /api/wa-inbox/* routes.
 export async function isMasterAdmin(): Promise<boolean> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

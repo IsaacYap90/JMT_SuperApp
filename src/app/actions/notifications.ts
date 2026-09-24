@@ -37,7 +37,7 @@ export async function createNotification(
 
 // Fetch notifications for the current user
 export async function getMyNotifications(limit = 30) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -55,7 +55,7 @@ export async function getMyNotifications(limit = 30) {
 
 // Get unread count for current user
 export async function getUnreadCount() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -72,7 +72,7 @@ export async function getUnreadCount() {
 
 // Mark a single notification as read
 export async function markNotificationRead(notificationId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   await supabase
     .from("notifications")
     .update({ is_read: true })
@@ -81,7 +81,7 @@ export async function markNotificationRead(notificationId: string) {
 
 // Mark all notifications as read for current user
 export async function markAllNotificationsRead() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

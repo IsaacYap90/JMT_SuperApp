@@ -5,7 +5,7 @@
  * then creates/updates/deletes events on the coach's JMT Schedule
  * secondary calendar. Idempotent via gcal_event_map.
  *
- * One-way mirror: JMT OS → Google. Never reads back from Google.
+ * PT edits in the app-owned calendar are reconciled before the outbound mirror.
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -27,6 +27,9 @@ import {
   type GCalConnection,
 } from "./connection";
 import { isValidPtScheduledAt } from "@/lib/pt-schedule";
+import { randomUUID } from "crypto";
+import { ingestPhoneChanges } from "./phone-changes";
+import { ptBaseline, type PtBaseline } from "./phone-policy";
 
 const CALENDAR_NAME = "JMT Schedule";
 const TZ = "Asia/Singapore";
@@ -138,6 +141,7 @@ interface PtRow {
   status: string;
   updated_at?: string | null;
   created_at: string;
+  edited_at: string | null;
   member?: { full_name: string } | null;
   coach?: { full_name: string } | null;
 }
@@ -205,7 +209,7 @@ async function fetchCalendarPt(userId: string, includeAllCoaches: boolean): Prom
   const twoWeeksAgo = new Date(Date.now() - 14 * 86400_000).toISOString();
   let query = sb
     .from("pt_sessions")
-    .select("id, coach_id, member_id, scheduled_at, duration_minutes, status, created_at, member:users!pt_sessions_member_id_fkey(full_name), coach:users!pt_sessions_coach_id_fkey(full_name)")
+    .select("id, coach_id, member_id, scheduled_at, duration_minutes, status, created_at, edited_at, member:users!pt_sessions_member_id_fkey(full_name), coach:users!pt_sessions_coach_id_fkey(full_name)")
     .in("status", ["scheduled", "confirmed", "completed"])
     .gte("scheduled_at", twoWeeksAgo);
   if (!includeAllCoaches) query = query.eq("coach_id", userId);
@@ -228,7 +232,7 @@ async function fetchCalendarLeaves(userId: string, includeAllCoaches: boolean): 
     .select("id, coach_id, leave_date, leave_end_date, leave_type, is_half_day, half_day_period, status")
     .eq("status", "approved")
     .is("deleted_at", null)
-    .gte("leave_date", todayStr);
+    .or(`leave_end_date.gte.${todayStr},and(leave_end_date.is.null,leave_date.gte.${todayStr})`);
   if (!includeAllCoaches) query = query.eq("coach_id", userId);
   const { data, error } = await query;
   if (error) throw new Error(`Failed to read leave for Google Calendar sync: ${error.message}`);
@@ -243,13 +247,14 @@ interface EventMapRow {
   google_event_id: string | null;
   synced_at: string | null;
   deleted: boolean;
+  pt_baseline: PtBaseline | null;
 }
 
 async function getEventMap(connectionId: string): Promise<Map<string, EventMapRow>> {
   const sb = createAdminClient();
   const { data, error } = await sb
     .from("gcal_event_map")
-    .select("id, local_entity_key, google_event_id, synced_at, deleted")
+    .select("id, local_entity_key, google_event_id, synced_at, deleted, pt_baseline")
     .eq("connection_id", connectionId);
   if (error) throw new Error(`Failed to read Google Calendar event map: ${error.message}`);
   const map = new Map<string, EventMapRow>();
@@ -263,7 +268,8 @@ async function upsertEventMap(
   connectionId: string,
   key: string,
   googleEventId: string,
-  deleted: boolean = false
+  deleted: boolean = false,
+  baseline: PtBaseline | null = null
 ): Promise<void> {
   const sb = createAdminClient();
   const { error } = await sb.from("gcal_event_map").upsert(
@@ -274,6 +280,7 @@ async function upsertEventMap(
       synced_at: new Date().toISOString(),
       local_updated_at: new Date().toISOString(),
       deleted,
+      pt_baseline: baseline,
     },
     { onConflict: "connection_id,local_entity_key" }
   );
@@ -301,6 +308,7 @@ const SYNC_CONCURRENCY = 1;
 interface EventWork {
   key: string;
   event: GCalEvent;
+  baseline?: PtBaseline;
 }
 
 export interface SyncResult {
@@ -345,6 +353,24 @@ export function isPtBlockedByLeave(
  * Full sync for one coach. Idempotent: safe to retry on failure.
  */
 export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
+  const sb = createAdminClient();
+  const lock = randomUUID();
+  const now = new Date();
+  // Manual and scheduled runs must not import the same edit concurrently or
+  // let an older remote snapshot undo the other run's outbound writes.
+  const { data, error } = await sb.from("gcal_connections").update({ sync_lock_id: lock, sync_lock_until: new Date(now.getTime() + 120_000).toISOString() })
+    .eq("id", conn.id).is("revoked_at", null)
+    .or(`sync_lock_until.is.null,sync_lock_until.lt.${now.toISOString()}`).select("id").maybeSingle();
+  if (error) throw new Error(`Calendar sync lock: ${error.message}`);
+  if (!data) return { created: 0, updated: 0, deleted: 0, errors: ["Calendar sync is already running. Try again shortly."] };
+  try { return await syncCoachLocked(conn); }
+  finally {
+    const { error: releaseError } = await sb.from("gcal_connections").update({ sync_lock_id: null, sync_lock_until: null }).eq("id", conn.id).eq("sync_lock_id", lock);
+    if (releaseError) console.error("Calendar lock release failed", releaseError.message);
+  }
+}
+
+async function syncCoachLocked(conn: GCalConnection): Promise<SyncResult> {
   const result: SyncResult = { created: 0, updated: 0, deleted: 0, errors: [] };
 
   let accessToken: string;
@@ -371,15 +397,18 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
 
   const eventMap = await getEventMap(conn.id);
   let remoteEvents: GCalListedEvent[] = [];
-  let remoteSnapshotAvailable = true;
+  const remoteSnapshotAvailable = true;
   try {
     remoteEvents = await listCalendarEvents(accessToken, calId);
   } catch (err) {
     // A remote snapshot lets us avoid rewrites. If it is unavailable, keep
     // syncing safely; map-backed writes still repair missing events.
     result.errors.push(`List calendar events: ${err instanceof Error ? err.message : String(err)}`);
-    remoteSnapshotAvailable = false;
+    // A failed list cannot distinguish a phone edit from the existing mirror.
+    // Stop instead of overwriting potentially unseen changes.
+    return result;
   }
+  await ingestPhoneChanges(conn, accessToken, calId, remoteEvents, eventMap, result.errors);
   const remoteEventsById = new Map(remoteEvents.map((event) => [event.id, event]));
   const wantedKeys = new Set<string>();
   const classWork: EventWork[] = [];
@@ -422,7 +451,7 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
         wantedKeys.add(key);
         const event: GCalEvent = {
           summary: cls.name,
-          description: `Class`,
+          description: `Class\nTiming is fixed. Manage coach assignments: ${(process.env.NEXT_PUBLIC_APP_URL || "https://jmtos.ionicx.ai").replace(/\/$/, "")}/calendar/manage?class=${cls.id}`,
           start: sgtTime({ dateTime: sgtDatetime(date, cls.start_time), timeZone: TZ }),
           end: sgtTime({ dateTime: sgtDatetime(date, cls.end_time), timeZone: TZ }),
           extendedProperties: { private: { jmt_key: key } },
@@ -455,13 +484,13 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
     const event: GCalEvent = {
       summary: includeAllCoaches ? `PT — ${coachName} · ${clientName}` : `PT — ${clientName}`,
       description: includeAllCoaches
-        ? `PT Session · ${pt.duration_minutes || 60}min · Coach: ${coachName}`
-        : `PT Session · ${pt.duration_minutes || 60}min`,
+        ? `PT Session · ${pt.duration_minutes || 60}min · Coach: ${coachName}\nManage PT: ${(process.env.NEXT_PUBLIC_APP_URL || "https://jmtos.ionicx.ai").replace(/\/$/, "")}/calendar/manage?pt=${pt.id}`
+        : `PT Session · ${pt.duration_minutes || 60}min\nManage PT: ${(process.env.NEXT_PUBLIC_APP_URL || "https://jmtos.ionicx.ai").replace(/\/$/, "")}/calendar/manage?pt=${pt.id}`,
       start: sgtTime({ dateTime: sgtDatetime(start.date, start.time), timeZone: TZ }),
       end: sgtTime({ dateTime: sgtDatetime(end.date, end.time), timeZone: TZ }),
       extendedProperties: { private: { jmt_key: key } },
     };
-    ptWork.push({ key, event });
+    ptWork.push({ key, event, baseline: ptBaseline(pt) });
   }
 
   // ── 3. Leave events (coach sees their own leave on the calendar) ──
@@ -500,8 +529,8 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
   // PT must not wait behind hundreds of recurring class writes. Each key is
   // unique; the remote snapshot skips unchanged entries before a write occurs.
   const eventWork = [...ptWork, ...leaveWork, ...classWork];
-  await runWithConcurrency(eventWork, SYNC_CONCURRENCY, ({ key, event }) =>
-    syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, remoteSnapshotAvailable ? remoteEventsById : null, result)
+  await runWithConcurrency(eventWork, SYNC_CONCURRENCY, ({ key, event, baseline }) =>
+    syncOneEvent(accessToken, calId, conn.id, key, event, eventMap, remoteSnapshotAvailable ? remoteEventsById : null, result, baseline)
   );
 
   // A prior network interruption can happen after Google creates an event but
@@ -516,6 +545,9 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
   const deleteWork: EventMapRow[] = [];
   for (const [key, mapRow] of Array.from(eventMap.entries())) {
     if (wantedKeys.has(key)) continue;
+    // Past recurring classes are history, not stale work. Preserve them in
+    // Google Calendar even though they are outside the active sync horizon.
+    if (isHistoricalClassKey(key)) continue;
     if (mapRow.deleted) continue;
     if (!mapRow.google_event_id) continue;
     deleteWork.push(mapRow);
@@ -526,7 +558,13 @@ export async function syncCoach(conn: GCalConnection): Promise<SyncResult> {
     const googleEventId = mapRow.google_event_id;
     if (!googleEventId) return;
     try {
-      await deleteEvent(accessToken, calId, googleEventId);
+      // Persist intent before deleting. If Google succeeds and our map write
+      // fails, its tombstone must never be mistaken for a coach cancellation.
+      if (mapRow.pt_baseline) {
+        const { error } = await createAdminClient().from("gcal_event_map").update({ pt_baseline: null }).eq("id", mapRow.id);
+        if (error) throw new Error(error.message);
+      }
+      await deleteEvent(accessToken, calId, googleEventId, remoteEventsById.get(googleEventId)?.etag);
       await upsertEventMap(conn.id, key, googleEventId, true);
       result.deleted++;
     } catch (err) {
@@ -582,6 +620,14 @@ function addOneDay(ymd: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
 }
 
+/** True for an expanded recurring class occurrence before today in Singapore. */
+function isHistoricalClassKey(key: string): boolean {
+  const match = /^class:[^:]+:(\d{4}-\d{2}-\d{2})$/.exec(key);
+  if (!match) return false;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: TZ });
+  return match[1] < today;
+}
+
 /** Create or update a single event, driven by the event map. */
 function timeValue(value: { date?: string; dateTime?: string } | undefined): string | undefined {
   if (value?.date) return `date:${value.date}`;
@@ -613,7 +659,8 @@ async function syncOneEvent(
   event: GCalEvent,
   eventMap: Map<string, EventMapRow>,
   remoteEventsById: Map<string, GCalListedEvent> | null,
-  result: SyncResult
+  result: SyncResult,
+  baseline?: PtBaseline
 ): Promise<void> {
   const existing = eventMap.get(key);
   const remote = existing?.google_event_id && remoteEventsById
@@ -624,18 +671,20 @@ async function syncOneEvent(
     if (!existing || !existing.google_event_id || existing.deleted) {
       // Create new
       const gid = await insertEvent(accessToken, calId, event);
-      await upsertEventMap(connectionId, key, gid);
+      await upsertEventMap(connectionId, key, gid, false, baseline);
       result.created++;
-    } else if (remoteEventsById && !remote) {
+    } else if (remoteEventsById && (!remote || remote.status === "cancelled")) {
       // The event was removed from Google outside JMT; recreate it directly.
       const gid = await insertEvent(accessToken, calId, event);
-      await upsertEventMap(connectionId, key, gid);
+      await upsertEventMap(connectionId, key, gid, false, baseline);
       result.created++;
     } else if (!remote || !remoteMatchesEvent(remote, event)) {
       // Update existing
-      await updateEvent(accessToken, calId, existing.google_event_id, event);
-      await upsertEventMap(connectionId, key, existing.google_event_id);
+      await updateEvent(accessToken, calId, existing.google_event_id, event, remote?.etag);
+      await upsertEventMap(connectionId, key, existing.google_event_id, false, baseline);
       result.updated++;
+    } else if (baseline && (!existing.pt_baseline || Object.entries(baseline).some(([field, value]) => existing.pt_baseline?.[field as keyof PtBaseline] !== value))) {
+      await upsertEventMap(connectionId, key, existing.google_event_id, false, baseline);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -643,7 +692,7 @@ async function syncOneEvent(
     if (existing?.google_event_id && (msg.includes("404") || msg.includes("410"))) {
       try {
         const gid = await insertEvent(accessToken, calId, event);
-        await upsertEventMap(connectionId, key, gid);
+        await upsertEventMap(connectionId, key, gid, false, baseline);
         result.created++;
         return;
       } catch (retryErr) {

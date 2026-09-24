@@ -8,6 +8,8 @@ import { fetchPreviousFocusMap, attachPreviousFocusToNext } from "@/lib/pt-focus
 import { USER_SELECT } from "@/lib/user-columns";
 import { maskPtSession } from "@/lib/demo-mask";
 
+type ScheduleLeave = { coach_id: string; leave_date: string; leave_end_date: string; is_half_day: boolean | null; half_day_period: "morning" | "evening" | null };
+
 export const dynamic = "force-dynamic";
 
 const CLASS_SELECT =
@@ -31,12 +33,13 @@ function shiftIsoDate(iso: string, deltaDays: number): string {
 export default async function SchedulePage({
   searchParams,
 }: {
-  searchParams: { date?: string };
+  searchParams: Promise<{ date?: string }>;
 }) {
-  const anchorDate = resolveAnchorDate(searchParams.date);
+  const params = await searchParams;
+  const anchorDate = resolveAnchorDate(params.date);
   const rangeStart = shiftIsoDate(anchorDate, -14);
   const rangeEnd = shiftIsoDate(anchorDate, 21);
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const {
     data: { user },
@@ -54,7 +57,7 @@ export default async function SchedulePage({
 
   if (isAdmin(profile.role)) {
     const db = createAdminClient();
-    const [classesRes, coachesRes, ptSessionsRes] = await Promise.all([
+    const [classesRes, coachesRes, ptSessionsRes, leavesRes] = await Promise.all([
       db
         .from("classes")
         .select(CLASS_SELECT)
@@ -76,6 +79,12 @@ export default async function SchedulePage({
         .lte("scheduled_at", `${rangeEnd}T23:59:59+08:00`)
         .in("status", ["scheduled", "confirmed", "completed", "cancelled", "no_show"])
         .order("scheduled_at"),
+      db
+        .from("leaves")
+        .select("coach_id, leave_date, leave_end_date, is_half_day, half_day_period")
+        .eq("status", "approved")
+        .lte("leave_date", rangeEnd)
+        .gte("leave_end_date", rangeStart),
     ]);
 
     const rawPtSessions = (ptSessionsRes.data || []) as unknown as PtSession[];
@@ -94,6 +103,7 @@ export default async function SchedulePage({
         isAdmin={true}
         adminId={user.id}
         anchorDate={anchorDate}
+        approvedLeaves={(leavesRes.data || []) as ScheduleLeave[]}
       />
     );
   }
