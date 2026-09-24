@@ -11,7 +11,7 @@ create table classes(id uuid primary key, is_active boolean, event_date date, da
 create table class_coaches(class_id uuid, coach_id uuid, is_lead boolean, unique(class_id,coach_id));
 create table notifications(id uuid primary key default gen_random_uuid(), user_id uuid references users(id), sender_id uuid references users(id), notification_type text check(notification_type in ('pt_updated','pt_cancelled')), title text not null, message text not null, is_read boolean default false, action_url text);
 \i /repo/supabase/migrations/20260920142820_google_calendar_sync.sql
-\i /repo/supabase/migrations/20260921154616_gcal_phone_pt_changes.sql
+\i /repo/supabase/migrations/20260924070540_gcal_phone_pt_changes.sql
 grant usage on schema public to service_role, anon, authenticated;
 grant all on users, pt_packages, pt_sessions, leaves, classes, class_coaches, notifications to service_role;
 

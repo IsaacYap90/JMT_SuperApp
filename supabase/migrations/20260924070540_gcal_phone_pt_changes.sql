@@ -1,4 +1,4 @@
--- Apply only after local review. No wider Google permission is required.
+-- Applied as migration 20260924070540. No wider Google permission is required.
 alter table public.gcal_event_map add column if not exists pt_baseline jsonb;
 alter table public.gcal_connections add column if not exists sync_lock_id uuid;
 alter table public.gcal_connections add column if not exists sync_lock_until timestamptz;

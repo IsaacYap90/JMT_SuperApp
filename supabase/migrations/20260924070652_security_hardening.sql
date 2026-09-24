@@ -1,5 +1,4 @@
--- Security hardening only. These are local migration instructions; do not run
--- against production until the complete release has passed review.
+-- Applied as migration 20260924070652 after review.
 
 -- Trigger functions never need to be callable through the PostgREST RPC API.
 -- They still execute normally when their table trigger fires.
