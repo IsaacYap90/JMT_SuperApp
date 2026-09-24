@@ -21,8 +21,8 @@ async function requireScheduleAdmin() {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
-  const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
-  if (!profile || !isAdmin(profile.role)) throw new Error("Not authorized to edit the schedule");
+  const { data: profile } = await supabase.from("users").select("role, is_active").eq("id", user.id).single();
+  if (!profile?.is_active || !isAdmin(profile.role)) throw new Error("Not authorized to edit the schedule");
 }
 
 /**
