@@ -50,6 +50,7 @@ import { extractFollowupFacts } from "@/lib/wa/followup-facts";
 import { readJaiFacts } from "@/lib/wa/jai-facts";
 import { HANDOFF_MARKERS } from "@/lib/wa/join-intent";
 import { detectLangFromHistory } from "@/lib/wa/lang";
+import { evaluateFollowupEligibility } from "@/lib/wa/human-takeover";
 
 
 export const dynamic = "force-dynamic";
@@ -162,7 +163,7 @@ export async function GET(req: NextRequest) {
   // let the next run pick it up.
   const { data: linkRows, error: linkErr } = await jai
     .from("conversations")
-    .select("contact_number, created_at")
+    .select("contact_number, created_at, message")
     .eq("role", "assistant")
     .or(`via.is.null,via.neq.${FOLLOWUP_VIA}`)
     .ilike("message", `%${dropinBookingUrl}%`)
@@ -174,10 +175,12 @@ export async function GET(req: NextRequest) {
   }
 
   const linkAtByContact = new Map<string, number>();
+  const anchorBodyByContact = new Map<string, string>();
   for (const r of linkRows || []) {
     // Rows arrive newest-first, so the first one per contact is the latest.
     if (!linkAtByContact.has(r.contact_number)) {
       linkAtByContact.set(r.contact_number, new Date(r.created_at).getTime());
+      anchorBodyByContact.set(r.contact_number, String(r.message || ""));
     }
   }
 
@@ -222,6 +225,7 @@ export async function GET(req: NextRequest) {
     if (body.includes(dropinBookingUrl)) continue;
     if (HANDOFF_MARKERS.some((m) => body.includes(m))) continue;
     answerAtByContact.set(to, new Date(r.created_at).getTime());
+    anchorBodyByContact.set(to, body);
   }
 
   // One map, one loop. `armedBy` only decides which wording is used; every
@@ -278,20 +282,34 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // Their last inbound: both the "have they replied since?" test and the
-    // clock Meta's 24h customer-service window actually runs on.
-    const { data: lastUserRows, error: lastUserError } = await jai
+    // Read mixed-author history so eligibility can distinguish a genuine
+    // unanswered CTA from closure, decline, handoff, reschedule, or a manual
+    // coach reply. Author metadata is load-bearing here.
+    const { data: recentRows, error: recentError } = await jai
       .from("conversations")
-      .select("created_at, message")
+      .select("created_at, message, role, via")
       .eq("contact_number", to)
-      .eq("role", "user")
       .order("created_at", { ascending: false })
-      .limit(10);
-    if (lastUserError) {
-      console.error("[lead-followup] inbound-history read FAILED, skipping contact:", to, lastUserError.code, lastUserError.message);
-      plans.push({ to, stage: "skip", reason: "inbound history unavailable" });
+      .limit(20);
+    if (recentError) {
+      console.error("[lead-followup] conversation-history read FAILED, skipping contact:", to, recentError.code, recentError.message);
+      plans.push({ to, stage: "skip", reason: "conversation history unavailable" });
       continue;
     }
+    const eligibility = evaluateFollowupEligibility({
+      history: recentRows || [],
+      anchorAt: armAt,
+      answerBody: anchorBodyByContact.get(to) || "",
+      armedBy: armedBy(to),
+    });
+    if (!eligibility.eligible) {
+      plans.push({ to, stage: "skip", reason: eligibility.reason });
+      continue;
+    }
+
+    // Their last inbound: both the "have they replied since?" test and the
+    // clock Meta's 24h customer-service window actually runs on.
+    const lastUserRows = (recentRows || []).filter((row) => row.role === "user");
     const lastUserAt = lastUserRows?.[0] ? new Date(lastUserRows[0].created_at).getTime() : 0;
 
     // Which language to nudge her in. Her OWN messages only — the assistant's
