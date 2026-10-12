@@ -743,6 +743,7 @@ These rules override conflicting tone, greeting, identity, or sales-copy example
       };
     }
     const retried = parseResponse(retryText);
+    let sanitized = false;
     check = guard(retried.messageText, lastCustomerMsg, jaiFacts);
     if (!check.ok) {
       console.error(
@@ -750,6 +751,21 @@ These rules override conflicting tone, greeting, identity, or sales-copy example
         describeViolations(check.violations),
         JSON.stringify({ violations: check.violations, reply: retried.messageText })
       );
+      // If the ONLY problem left is an age-rule sentence, drop that sentence and
+      // send the rest — the customer still gets the drop-in price and link
+      // instead of a bare "let me check" (e2e C15, 2026-10-12). Anything else
+      // (an invented time/price/link) still goes to Jeremy below.
+      if (check.violations.every((v) => v.kind === "age_rule")) {
+        const kept = withoutAgeRuleSentences(retried.messageText);
+        if (kept && guard(kept, lastCustomerMsg, jaiFacts).ok) {
+          console.error("[jai-reply] age-rule sentence removed from draft 2");
+          parsed = { ...retried, messageText: kept };
+          check = { ok: true, violations: [] };
+          sanitized = true;
+        }
+      }
+    }
+    if (!check.ok) {
       // Never send an invented fact. Hand the customer to Jeremy through the
       // EXISTING escalation mechanism — the webhook Telegram-alerts on it.
       return {
@@ -763,7 +779,7 @@ These rules override conflicting tone, greeting, identity, or sales-copy example
         member: parsed.member,
       };
     }
-    parsed = retried;
+    if (!sanitized) parsed = retried;
   }
 
   // The provider-level !text.trim() check above sees the RAW text. parseResponse
@@ -830,6 +846,14 @@ type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
 // bands ARE in the sheet (for routing), so the fact guard alone lets them through.
 const AGE_RULE =
   /\b1[0-9]\s*(?:\+|and\s+(?:up|above|older|over))|\b(?:aged|ages)\s+1[0-9]\s*(?:\+|and\s+(?:up|above|older))|\bunder\s+(?:1[0-9]|2[01])\b.{0,40}\b(?:parent|guardian)|\bparent(?:al)?\s*(?:\/\s*guardian\s*)?(?:consent|permission|approval)|\b(?:mum|mom|dad|parent|guardian)s?\s+(?:or\s+(?:mum|mom|dad|guardian)\s+)?(?:will\s+)?(?:need|needs|has|have|must)\s+to\b|\bneed\s+(?:a\s+)?(?:mum|mom|dad|parent|guardian)\b|\b(?:mum|mom|dad|parent)\s+or\s+(?:mum|mom|dad|guardian)\s+in\s+on\s+it\b/i;
+
+export function withoutAgeRuleSentences(text: string): string {
+  return text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter((sentence) => sentence.trim() && !AGE_RULE.test(sentence))
+    .join(" ")
+    .trim();
+}
 
 function guard(draft: string, customerText: string, facts: string): FactCheckResult {
   const check = validateReply(draft, facts, { customerText, config: JMT_FACT_GUARD_CONFIG });

@@ -30,4 +30,15 @@ for (const t of [
   "Class sizes are 6 to 12 people.",
 ]) assert.equal(AGE_RULE.test(t), false, t);
 
+// Draft 2 still broke the rule -> only the offending sentence is dropped, so the
+// customer keeps the real answer (e2e C15).
+const fn = src.match(/export function withoutAgeRuleSentences\(text: string\): string \{([\s\S]*?)\n\}/);
+assert.ok(fn, "withoutAgeRuleSentences not found");
+const strip = new Function("AGE_RULE", "text", fn[1]);
+assert.equal(
+  strip(AGE_RULE, "Free trials for adults are paused. Since you're under 21, a parent or guardian will need to help. The drop-in is $42: https://jaimuaythai.com/booking"),
+  "Free trials for adults are paused. The drop-in is $42: https://jaimuaythai.com/booking"
+);
+assert.equal(strip(AGE_RULE, "Our adult classes (15 and up) are great."), "");
+
 console.log("age-rule-check: all assertions passed");
