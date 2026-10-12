@@ -661,7 +661,11 @@ export async function POST(req: NextRequest) {
       ANTI_LOOP_HANDOFF_TEXT
     );
     const dragging = (sessionBotCount >= 8 && repeatingItself) || sessionBotCount >= 20;
+    // The takeover guard already sent a fixed handoff with its own intent
+    // (reschedule_request / explicit_human_takeover); replacing it here would hide
+    // that intent from Jeremy's alert.
     const forceHandoff =
+      !humanTakeover &&
       (resendingLink || dragging) &&
       (!escalation || escalation.escalation === "GENERAL_ESCALATION");
 
@@ -890,6 +894,8 @@ export async function POST(req: NextRequest) {
           JOIN_INTENT:
             esc?.intent === "price_blocked"
               ? "Quoted a price we don't have 💰 — reply binned, JAI paused, take over"
+              : pauseAi
+              ? "Wants to join / asked about a promo 💰 — JAI paused, please take over"
               : "Wants to join / asked about a promo 💰 — JAI answered, please confirm",
           CORPORATE: "Corporate / group enquiry",
           COMPLAINT: "Complaint / issue ⚠️",
@@ -1016,7 +1022,9 @@ export async function POST(req: NextRequest) {
           // A join/money escalation must never be swallowed by an unrelated
           // open item (e.g. a PT lead from an hour ago) — dedupe it only
           // against other join escalations for the same contact.
-          if (joinEscalation) taskQuery = taskQuery.ilike("description", `${label}%`);
+          // Match on the label's stem (before " — "), so the paused and answered
+          // variants of the same join alert dedupe against each other.
+          if (joinEscalation) taskQuery = taskQuery.ilike("description", `${label.split(" — ")[0]}%`);
           const { data: existingTask } = await taskQuery.limit(1);
           const who = contactName || `+${from}`;
           const preview = text.length > 200 ? text.slice(0, 197) + "..." : text;
