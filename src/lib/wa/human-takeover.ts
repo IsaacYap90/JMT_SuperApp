@@ -58,7 +58,7 @@ export function detectRescheduleIntent(text: string): boolean {
 
 // "Do I need to talk to the coach before I join sparring?" asks HOW things work;
 // it is not a request for a person (e2e OT1, 2026-10-12).
-const PROCESS_QUESTION = /\b(?:do|should|must|would)\s+i\s+(?:need|have)\s+to\b|\bbefore\s+i\b|\bis\s+it\s+necessary\b/i;
+const PROCESS_QUESTION = /\b(?:do|should|must|would)\s+i\s+(?:need|have)\s+to\b|\bbefore\s+i\b|\bis\s+it\s+necessary\b|\bor\s+(?:a\s+)?(?:bot|ai|robot|machine)\b|\bam\s+i\s+(?:talking|chatting|speaking)\s+(?:to|with)\b|\bare\s+you\s+(?:a\s+)?(?:bot|ai|robot|real|human)\b/i;
 
 export function detectExplicitHumanRequest(text: string): boolean {
   return EXPLICIT_HUMAN.test(text) && !PROCESS_QUESTION.test(text);

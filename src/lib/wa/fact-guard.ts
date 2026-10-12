@@ -34,7 +34,9 @@
 //    the safe direction, but worth knowing.
 // ============================================================================
 
-export type ViolationKind = "time" | "price" | "link" | "day";
+// "age_rule" is added by JMT's wrapper in jai-reply.ts (an age cut-off or a
+// consent rule the sheet forbids stating), not detected here.
+export type ViolationKind = "time" | "price" | "link" | "day" | "age_rule";
 
 export type Violation = {
   kind: ViolationKind;

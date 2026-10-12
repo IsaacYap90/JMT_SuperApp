@@ -824,8 +824,24 @@ type ChatMsg = { role: "system" | "user" | "assistant"; content: string };
 
 // The guard itself fails open (see fact-guard.ts) — this only binds JMT's
 // fact sheet + tenant config to it.
+// The sheet says: NEVER write an age cut-off for the adult classes ("15+",
+// "15 and up") and it has no parental-consent rule — yet both the brain and
+// DeepSeek kept inventing them for a 16-year-old (e2e C15, 2026-10-12). The
+// bands ARE in the sheet (for routing), so the fact guard alone lets them through.
+const AGE_RULE =
+  /\b1[0-9]\s*(?:\+|and\s+(?:up|above|older|over))|\b(?:aged|ages)\s+1[0-9]\s*(?:\+|and\s+(?:up|above|older))|\bunder\s+(?:1[0-9]|2[01])\b.{0,40}\b(?:parent|guardian)|\bparent(?:al)?\s*(?:\/\s*guardian\s*)?(?:consent|permission|approval)|\b(?:mum|mom|dad|parent|guardian)s?\s+(?:or\s+(?:mum|mom|dad|guardian)\s+)?(?:will\s+)?(?:need|needs|has|have|must)\s+to\b|\bneed\s+(?:a\s+)?(?:mum|mom|dad|parent|guardian)\b|\b(?:mum|mom|dad|parent)\s+or\s+(?:mum|mom|dad|guardian)\s+in\s+on\s+it\b/i;
+
 function guard(draft: string, customerText: string, facts: string): FactCheckResult {
-  return validateReply(draft, facts, { customerText, config: JMT_FACT_GUARD_CONFIG });
+  const check = validateReply(draft, facts, { customerText, config: JMT_FACT_GUARD_CONFIG });
+  const age = draft.match(AGE_RULE);
+  if (age && !AGE_RULE.test(customerText)) {
+    return {
+      ...check,
+      ok: false,
+      violations: [...check.violations, { kind: "age_rule", token: age[0], normalised: age[0].toLowerCase() }],
+    };
+  }
+  return check;
 }
 
 function correctionPrompt(check: FactCheckResult): string {
@@ -836,6 +852,10 @@ function correctionPrompt(check: FactCheckResult): string {
     `Every time, price and link you state must be COPIED CHARACTER-FOR-CHARACTER ` +
     `from the FACT SHEET. If the fact sheet does not contain what they asked for, ` +
     `do not approximate it — say you'll check with Coach Jeremy and include the ` +
-    `escalation JSON block. Reply with the customer-facing message only.`
+    `escalation JSON block. Reply with the customer-facing message only.` +
+    (check.violations.some((v) => v.kind === "age_rule")
+      ? ` Never state an age cut-off for a class or any parent/guardian consent rule — ` +
+        `use the age only to pick the right class and link, silently.`
+      : "")
   );
 }

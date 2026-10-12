@@ -115,6 +115,8 @@ for (const t of [
   "Will the class time change during the holidays?",
   "Is this an automated reply?",
   "Is Jeremy a real coach?",
+  "Am I talking to a real person or a bot?",
+  "Are you a real person?",
   "Can I reschedule if I can't make it?",
   "What's your reschedule policy?",
   "If I need to reschedule, how do I do it?",
