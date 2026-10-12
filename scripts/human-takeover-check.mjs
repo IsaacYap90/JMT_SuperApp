@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  isBookingPolicyQuestion,
   detectHumanTakeoverIntent,
   evaluateFollowupEligibility,
   hasUnverifiedOperationalClaim,
@@ -130,5 +131,10 @@ for (const t of [
   "I need to reschedule my trial to Friday",
   "I want a real person please",
 ]) assert.equal(detectHumanTakeoverIntent(t), true, t);
+
+for (const t of ["Can I reschedule if I can't make it?", "What's your reschedule policy?", "Is rescheduling allowed for the trial?"])
+  assert.equal(isBookingPolicyQuestion(t), true, t);
+for (const t of ["Please cancel my trial", "I need to reschedule my trial to Friday", "Can I cancel my trial if I'm sick?"])
+  assert.equal(isBookingPolicyQuestion(t), false, t);
 
 console.log("human-takeover-check: all assertions passed");

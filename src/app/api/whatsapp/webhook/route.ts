@@ -50,6 +50,7 @@ import {
   detectHumanTakeoverIntent,
   detectRescheduleIntent,
   hasUnverifiedOperationalClaim,
+  isBookingPolicyQuestion,
   HUMAN_TAKEOVER_TEXT,
   OPERATIONAL_CONFIRMATION_TEXT,
   RESCHEDULE_TEXT,
@@ -719,6 +720,12 @@ export async function POST(req: NextRequest) {
       outQuick = [];
     }
 
+    // Only a real request may release a booking. A model TRIAL_CANCEL on a policy
+    // question is downgraded so Jeremy is told but nothing is cancelled.
+    if (esc?.escalation === "TRIAL_CANCEL" && isBookingPolicyQuestion(text)) {
+      esc = { escalation: "GENERAL_ESCALATION", intent: "reschedule_policy_question", source: esc.source ?? "guard" };
+    }
+
     // A timetable is not live availability. If the model promises the gym is
     // open, a coach is present, or an unconfirmed time works, replace the
     // unsupported operational claim and ask Jeremy to confirm (JAI keeps answering).
@@ -904,6 +911,8 @@ export async function POST(req: NextRequest) {
           GENERAL_ESCALATION:
             esc?.intent === "explicit_human_takeover"
               ? "Asked for a person - JAI paused, please take over"
+              : esc?.intent === "reschedule_policy_question"
+              ? "Asked about rescheduling - nothing changed, please reply"
               : esc?.intent === "reschedule_request"
               ? "Wants to change their booking - NOT changed yet, please move it"
               : esc?.intent === "live_availability_unverified"

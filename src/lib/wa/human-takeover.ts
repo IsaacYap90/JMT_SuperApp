@@ -52,6 +52,13 @@ export function detectHumanTakeoverIntent(text: string): boolean {
 // about the rule; they are not a request to move a booking (re-review 2026-10-12).
 const RESCHEDULE_POLICY_QUESTION = /\bif\b|\bpolic(?:y|ies)\b|\ballow(?:ed)?\b|\blater\b|\bbefore\s+i\s+book\b|\bin\s+case\b|\bhow\s+(?:do|does|can)\b|\bcan\s+i\s+(?:still\s+)?reschedule\s*\?|\bis\s+(?:it\s+)?possible\b/i;
 
+// A question about the rule ("Can I reschedule if…?", "what's your policy?") must
+// never release a real booking, whoever drafted the TRIAL_CANCEL (e2e P01: a
+// DeepSeek fallback tagged one and the webhook cancelled the trial).
+export function isBookingPolicyQuestion(text: string): boolean {
+  return RESCHEDULE_POLICY_QUESTION.test(text) && !/\bcancel\s+(?:my|our|the)\b/i.test(text);
+}
+
 export function detectRescheduleIntent(text: string): boolean {
   return RESCHEDULE.test(text) && !RESCHEDULE_POLICY_QUESTION.test(text);
 }
