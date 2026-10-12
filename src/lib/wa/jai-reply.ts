@@ -546,7 +546,10 @@ These rules override conflicting tone, greeting, identity, or sales-copy example
 - Do not infer age, eligibility, class clearance, or fight readiness from years of experience or competition goals. For an age-dependent trial answer, establish the intended participant's age from their explicit statement or reliable contact context first. If missing, ask their age without quoting an age-specific offer. Do not ask again when already known. An earlier assistant assumption is not evidence.
 - For example, after "I have two years of experience and want to compete", "how much is a trial?" still requires an age question if no age was provided. A coach assesses class clearance and fight readiness; do not promise either.
 - If asked "is this AI?" or whether you are human, explicitly say you are JMT's AI assistant in their language. Offer Coach Jeremy as a choice without claiming a handoff has happened. If they ask for a human, follow the escalation rules. Never answer merely "I'm JMT's assistant" or claim to know everything.
-- Facts, prices, availability, and policies must come from the live fact sheet, not an old example or a previous assistant reply. If a fact is missing, check with Coach Jeremy using the escalation rules.`;
+- Facts, prices, availability, and policies must come from the live fact sheet, not an old example or a previous assistant reply. If a fact is missing, check with Coach Jeremy using the escalation rules.
+- Never approve, confirm or agree to a membership freeze, pause, extension, renewal or refund — not even "yes, that works". Say Coach Jeremy will handle it and include the escalation.
+- The fact sheet has no reschedule or cancellation policy: never describe one. Never say a time "works", is "fine" or is "sorted" — only Coach Jeremy confirms timing. When you repeat a time the customer gave, copy it exactly as they wrote it.
+- Never mention a parent, guardian or consent rule, and never write an age with "+" or "and up".`;
 
   const messages: ChatMsg[] = [
     { role: "system", content: systemPrompt },
@@ -855,8 +858,19 @@ export function withoutAgeRuleSentences(text: string): string {
     .trim();
 }
 
+const POLICY_APPROVAL =
+  /\b(?:yes|yep|sure|ok(?:ay)?|no\s+problem|we\s+can(?!['’]t|not)(?:\s+definitely)?|i\s+can(?!['’]t|not)|happy\s+to)\b[^.!?\n]{0,40}\b(?:freez(?:e|ing)|pause|extend|extension|refund)\b|\b(?:freez(?:e|ing)|extension|refund)\b[^.!?\n]{0,40}\b(?:approved|is\s+done|sorted|confirmed|qualifies|works)\b/i;
+
 function guard(draft: string, customerText: string, facts: string): FactCheckResult {
   const check = validateReply(draft, facts, { customerText, config: JMT_FACT_GUARD_CONFIG });
+  const approval = draft.match(POLICY_APPROVAL);
+  if (approval) {
+    return {
+      ...check,
+      ok: false,
+      violations: [...check.violations, { kind: "policy_approval", token: approval[0], normalised: approval[0].toLowerCase() }],
+    };
+  }
   const age = draft.match(AGE_RULE);
   if (age && !AGE_RULE.test(customerText)) {
     return {
@@ -877,6 +891,9 @@ function correctionPrompt(check: FactCheckResult): string {
     `from the FACT SHEET. If the fact sheet does not contain what they asked for, ` +
     `do not approximate it — say you'll check with Coach Jeremy and include the ` +
     `escalation JSON block. Reply with the customer-facing message only.` +
+    (check.violations.some((v) => v.kind === "policy_approval")
+      ? ` Never approve a freeze, pause, extension or refund — say Coach Jeremy will handle it and include the escalation JSON block.`
+      : "") +
     (check.violations.some((v) => v.kind === "age_rule")
       ? ` Never state an age cut-off for a class or any parent/guardian consent rule — ` +
         `use the age only to pick the right class and link, silently.`

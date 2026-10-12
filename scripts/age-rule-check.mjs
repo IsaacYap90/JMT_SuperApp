@@ -41,4 +41,23 @@ assert.equal(
 );
 assert.equal(strip(AGE_RULE, "Our adult classes (15 and up) are great."), "");
 
+// The sheet: "The bot never approves a freeze or promises a date itself." A DeepSeek
+// fallback said "Yes, we can freeze your membership" (e2e v5 C25); 5 past live
+// replies said "We can definitely freeze your membership".
+const pm = src.match(/const POLICY_APPROVAL =\s*(\/.*\/i);/);
+assert.ok(pm, "POLICY_APPROVAL not found");
+const POLICY_APPROVAL = eval(pm[1]);
+for (const t of [
+  "Yes, we can freeze your membership 🙏 your November trip qualifies.",
+  "We can definitely freeze your membership — minimum 2 weeks.",
+  "Sure, I can pause it for 3 weeks.",
+  "Your refund is approved.",
+]) assert.equal(POLICY_APPROVAL.test(t), true, t);
+for (const t of [
+  "Freezes are handled by Coach Jeremy — I've passed this to him.",
+  "I can't approve a freeze myself, but Coach Jeremy will help.",
+  "Freeze is minimum 2 weeks, for medical reasons or overseas travel only — Coach Jeremy sets it up.",
+  "Sure — the drop-in is $42.",
+]) assert.equal(POLICY_APPROVAL.test(t), false, t);
+
 console.log("age-rule-check: all assertions passed");
