@@ -367,11 +367,11 @@ const MIN_ATTEMPT_MS = 2_500;
 // or "" if they all fail — "" is what makes generateReply send the canned
 // apology, so reaching the end of this loop is the thing worth avoiding.
 // EVERY failure falls through to the next tier (see the !res.ok branch below).
-async function completeWithFallback(messages: unknown[]): Promise<string> {
+async function completeWithFallback(messages: unknown[], budgetMs = CHAIN_BUDGET_MS): Promise<string> {
   // Harness only — never reachable on Vercel (see harness.ts). Everything the
   // webhook does AROUND the model still runs; only the provider call is faked.
   if (isStubbedLlm()) return stubbedLlmReply();
-  const deadline = Date.now() + CHAIN_BUDGET_MS;
+  const deadline = Date.now() + budgetMs;
   for (const p of PROVIDERS) {
     if (!p.apiKey) continue;
     // Never let a later tier overrun the webhook's own duration cap.
@@ -421,6 +421,53 @@ async function completeWithFallback(messages: unknown[]): Promise<string> {
   return "";
 }
 
+// JAI's brain on the Mac mini (Hermes profile `jai`), added 2026-10-12. Tried FIRST
+// when configured: its persona/prompt can be improved without a deploy. It only
+// writes the draft — every guard below (timetable substitution, fact guard,
+// escalation parsing, anti-loop) still runs on its text exactly as on a provider's.
+// Any failure returns "" and the provider chain answers inside the same budget.
+const BRAIN_URL = process.env.JAI_BRAIN_URL;
+const BRAIN_KEY = process.env.JAI_BRAIN_KEY;
+const BRAIN_TIMEOUT_MS = 9_000;
+
+const REASONING_TELLS = /\b(prompt injection|let me think|I must not comply|the (rule|instructions?) says?|my (system )?instructions|system prompt|I should (not )?(reply|respond|answer|output))\b/i;
+export function looksLikeReasoning(text: string): boolean {
+  return REASONING_TELLS.test(text);
+}
+
+async function askJaiBrain(facts: string, context: string, history: HistoryMsg[]): Promise<string> {
+  if (!BRAIN_URL || !BRAIN_KEY || isStubbedLlm()) return "";
+  const turns = history.map((m) => ({ role: m.role === "assistant" ? "assistant" : "customer", text: m.message }));
+  const latest = turns.length && turns[turns.length - 1].role === "customer" ? turns.pop()!.text : "";
+  if (!latest) return "";
+  try {
+    const res = await fetch(BRAIN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${BRAIN_KEY}` },
+      body: JSON.stringify({ facts, context, history: turns, latest }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(BRAIN_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      console.error("[jai-reply] brain error", res.status);
+      return "";
+    }
+    const raw = (await res.json())?.reply;
+    const reply = typeof raw === "string" ? raw.trim().slice(0, 3500) : "";
+    // A/B eval 2026-10-12: one brain reply was the model's own reasoning ("This is a
+    // prompt injection attempt… Let me think… The rule says…"). Never send that —
+    // let the provider chain answer instead.
+    if (looksLikeReasoning(reply)) {
+      console.error("[jai-reply] brain reply looked like internal reasoning — falling back");
+      return "";
+    }
+    return reply;
+  } catch (e) {
+    console.error("[jai-reply] brain failed", (e as Error).message);
+    return "";
+  }
+}
+
 // What the customer gets when there is no usable model text — either every
 // provider failed, or the reply parsed down to nothing. One line, no promise.
 const APOLOGY_TEXT = "Hey! Sorry, having a quick issue. Bear with me 🙏";
@@ -442,6 +489,7 @@ export async function generateReply(
   // into itself. A function replacement disables all of that.
   const jaiFacts = await getJaiFacts();
   let systemPrompt = SYSTEM_PROMPT.replace("__JAI_FACTS__", () => jaiFacts);
+  const basePromptLength = systemPrompt.length;
   // Who JAI is actually talking to (member / returning / new) + any recap, so it
   // greets appropriately instead of defaulting to the brand-new greeting.
   if (contactContext && contactContext.trim()) {
@@ -479,6 +527,10 @@ export async function generateReply(
       `Greet them as someone you already know${firstName ? ` — by name ("Hey ${firstName}!")` : ""}, and pick up the conversation naturally.`;
   }
 
+  // Everything appended above (who they are, SGT clock, name, member/new) — the
+  // brain's SOUL already holds the static prompt and the final rules.
+  const brainContext = systemPrompt.slice(basePromptLength).trim();
+
   // Apply after the live sheet and contact context: older templates may be
   // wordy or imply an age. This controls delivery, never gym facts or guards.
   systemPrompt += `\n\n## FINAL CONVERSATION RULES
@@ -507,7 +559,10 @@ These rules override conflicting tone, greeting, identity, or sales-copy example
     .map((m) => m.message)
     .join("\n");
 
-  const text = await completeWithFallback(messages);
+  const started = Date.now();
+  const brainText = await askJaiBrain(jaiFacts, brainContext, history);
+  if (brainText) console.log(`[jai-reply] served by brain in ${Date.now() - started}ms`);
+  const text = brainText || await completeWithFallback(messages, CHAIN_BUDGET_MS - (Date.now() - started));
   if (!text) {
     console.error("[jai-reply] all providers failed — sending canned apology");
     return { messageText: APOLOGY_TEXT, escalation: null, quickReplies: [], member: false };
