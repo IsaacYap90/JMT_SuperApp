@@ -26,19 +26,34 @@ const MEMBERSHIP_OR_JOIN =
   /\b(?:membership|sign\s*up|join(?:ing)?|enrol(?:l|ment)|package)\b|\b(?:six|twelve|6|12|monthly|annual)\s*(?:month\s*)?plan\b/i;
 
 const RESCHEDULE =
-  /\b(?:reschedul(?:e|ing)|re[- ]?schedul(?:e|ing))\b|\b(?:change|move)\b.{0,80}\b(?:session|trial|booking|appointment|date|time|slot)\b|\b(?:session|trial|booking|appointment|date|time|slot)\b.{0,80}\b(?:change|move)\b|\b(?:change|move)\b.{0,50}\bclass\b.{0,30}\b(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|today|tomorrow|\d{1,2}(?::\d{2})?\s*(?:am|pm))\b/i;
+  /\b(?:reschedul(?:e|ing)|re[- ]?schedul(?:e|ing))\b|\b(?:change|move|shift|postpone|push)\s+(?:my|our|the)\s+(?:trial|session|booking|appointment|slot)\b|\b(?:change|move)\s+(?:the\s+)?(?:date|time|day|slot)\s+(?:of|for)\s+(?:my|our|the)\s+(?:trial|session|booking|appointment)\b/i;
 
 const EXPLICIT_HUMAN =
-  /\b(?:speak|talk|contact|hear|reply)\b.{0,50}\b(?:coach\s+jeremy|coach|human|real\s+person)\b|\b(?:coach\s+jeremy|human|real\s+(?:reply|person|coach))\b.{0,50}\b(?:speak|talk|contact|call|reach|reply)\b|\b(?:automated|automatic|auto)\s+(?:reply|message|check[- ]?in)\b/i;
+  /\b(?:speak|talk|chat)\s+(?:to|with)\s+(?:someone|somebody|a\s+(?:person|human|real\s+person)|coach(?:\s+jeremy)?|jeremy|a\s+coach|the\s+coach)\b|\b(?:coach\s+jeremy|jeremy|a\s+human|a\s+real\s+person)\b.{0,30}\b(?:call|contact|reach|message)\s+me\b|\b(?:real|actual)\s+(?:person|human|reply|coach)\b|\b(?:coach\s+)?jeremy(?:['’]s)?\s+(?:contact|number|phone|whatsapp)\b/i;
 
 export const HUMAN_TAKEOVER_TEXT =
   "I’ll pass this to Coach Jeremy and pause the automated replies here. He’ll confirm directly — nothing has been changed or booked yet.";
 
+// Isaac, 2026-10-12: only an explicit "get me a person" pauses JAI. A reschedule
+// or a live-availability question alerts Jeremy while JAI keeps answering
+// (his 2026-07-25 rule: never leave the lead hanging), so these two texts must
+// not promise a pause.
+export const RESCHEDULE_TEXT =
+  "No problem — I’ve let Coach Jeremy know you’d like to change your booking, and he’ll confirm the new slot with you. Nothing has been changed yet.";
+
 export const OPERATIONAL_CONFIRMATION_TEXT =
-  "I can share the scheduled class times, but I can’t verify live availability, whether the gym is open right now, or whether a coach is on site. I’ll pass this to Coach Jeremy and pause automated replies until he confirms.";
+  "I can share the scheduled class times, but I can’t confirm live availability, whether the gym is open right now, or whether a coach is on site. I’ve asked Coach Jeremy to confirm for you.";
 
 export function detectHumanTakeoverIntent(text: string): boolean {
   return EXPLICIT_HUMAN.test(text) || RESCHEDULE.test(text);
+}
+
+export function detectRescheduleIntent(text: string): boolean {
+  return RESCHEDULE.test(text);
+}
+
+export function detectExplicitHumanRequest(text: string): boolean {
+  return EXPLICIT_HUMAN.test(text);
 }
 
 export function hasUnverifiedOperationalClaim(text: string): boolean {
@@ -56,7 +71,7 @@ export function hasUnverifiedOperationalClaim(text: string): boolean {
     return (
       /\b(?:we(?:'|’)re|we\s+are|the\s+gym\s+is)\s+open\s+(?:now|right\s+now|today)\b/i.test(statement) ||
       /\bcoach\s+jeremy\s+(?:is|will\s+be)\s+(?:around|on\s*site|inside|available|there|expecting\s+you)\b/i.test(statement) ||
-      /\b(?:that\s+timing|afternoons?|mornings?|evenings?)\s+(?:(?:is|are)\s+)?(?:can|should|would|usually)?\s*(?:work|fine|available)\b/i.test(statement) ||
+      /\b(?:that\s+timing|afternoons?|mornings?|evenings?)\s+(?:(?:is|are)\s+)?(?:can|should|would|usually)?\s*(?:work|works|fine)\b/i.test(statement) ||
       /\b(?:(?:i|we)\s+will|i(?:'|’)ll|we(?:'|’)ll)\s+(?:give|make\s+sure).{0,35}\b(?:heads?\s*up|expecting\s+you)\b/i.test(statement) ||
       /\bsee\s+you\s+inside\b/i.test(statement)
     );
@@ -103,16 +118,8 @@ export function evaluateFollowupEligibility(args: {
     return { eligible: false, reason: "answer handed the conversation to Coach Jeremy" };
   }
 
-  if (args.armedBy === "silent") {
-    const hasRealNextStep =
-      /\?/.test(args.answerBody) ||
-      /\b(?:tell me which|let me know which|which (?:day|time|slot)|want me to|would you like)\b/i.test(
-        args.answerBody
-      );
-    if (!hasRealNextStep) {
-      return { eligible: false, reason: "answer did not invite a next step" };
-    }
-  }
-
+  // Isaac, 2026-10-12: the "answer had no question" rule cut ~72% of silent-lead
+  // nudges, including real leads ("What's the package" → link → never nudged).
+  // Only closed / declined / handed-off / human-replied threads are skipped.
   return { eligible: true };
 }

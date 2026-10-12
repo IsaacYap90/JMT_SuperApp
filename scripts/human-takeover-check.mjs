@@ -35,12 +35,13 @@ for (const reply of [
 for (const reply of [
   "The scheduled All Levels class is at 12:15pm.",
   "I will pass this to Coach Jeremy and pause automated replies.",
-]) {
   "I cannot verify whether the gym is open right now.",
   "Coach Jeremy will confirm whether he is available.",
   "Are you open right now?",
   "Coach Jeremy teaches classes on Friday.",
   "Afternoons are listed in the timetable.",
+  "Mornings are available on Saturday.",
+]) {
   assert.equal(hasUnverifiedOperationalClaim(reply), false, reply);
 }
 
@@ -76,8 +77,8 @@ for (const [name, userMessage, answerBody] of [
 
 assert.equal(
   eligibility("Where are you located?", "We are at 45 Ubi Road 1.").eligible,
-  false,
-  "a factual answer without a real next step should not arm generic nudges"
+  true,
+  "a factual answer may still be nudged (Isaac, 2026-10-12: no-question rule removed)"
 );
 assert.equal(
   eligibility("Which class suits a beginner?", "All Levels is suitable. Which day works for you?").eligible,

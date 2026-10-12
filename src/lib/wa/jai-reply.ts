@@ -430,14 +430,19 @@ const BRAIN_URL = process.env.JAI_BRAIN_URL;
 const BRAIN_KEY = process.env.JAI_BRAIN_KEY;
 const BRAIN_TIMEOUT_MS = 9_000;
 
-const REASONING_TELLS = /\b(prompt injection|let me think|I must not comply|the (rule|instructions?) says?|my (system )?instructions|system prompt|I should (not )?(reply|respond|answer|output))\b/i;
+const REASONING_TELLS = /<\/?think\b|\b(prompt injection|let me think|I must not comply|the (rules?|instructions?) (says?|say)|my (system )?instructions|system prompt|I should (not )?(reply|respond|answer|output)|the (user|customer) (is|wants|asked))\b|^(FACT SHEET|CONTACT CONTEXT|HISTORY|LATEST)\s*:/im;
 export function looksLikeReasoning(text: string): boolean {
   return REASONING_TELLS.test(text);
 }
 
 async function askJaiBrain(facts: string, context: string, history: HistoryMsg[]): Promise<string> {
   if (!BRAIN_URL || !BRAIN_KEY || isStubbedLlm()) return "";
-  const turns = history.map((m) => ({ role: m.role === "assistant" ? "assistant" : "customer", text: m.message }));
+  // Same window the brain keeps (last 12 turns, 1000 chars each): sending more only
+  // adds payload and risks the 64KB cap, which would silently skip the brain.
+  const turns = history.slice(-13).map((m) => ({
+    role: m.role === "assistant" ? "assistant" : "customer",
+    text: m.message.slice(0, 1000),
+  }));
   const latest = turns.length && turns[turns.length - 1].role === "customer" ? turns.pop()!.text : "";
   if (!latest) return "";
   try {

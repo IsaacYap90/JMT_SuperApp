@@ -48,9 +48,11 @@ import {
 } from "@/lib/wa/pause-metadata";
 import {
   detectHumanTakeoverIntent,
+  detectRescheduleIntent,
   hasUnverifiedOperationalClaim,
   HUMAN_TAKEOVER_TEXT,
   OPERATIONAL_CONFIRMATION_TEXT,
+  RESCHEDULE_TEXT,
 } from "@/lib/wa/human-takeover";
 
 
@@ -594,11 +596,16 @@ export async function POST(req: NextRequest) {
     // model tasks. Stop before generation so JAI cannot invent a changed slot,
     // coach availability, or another automated check-in while a human is due.
     const humanTakeover = detectHumanTakeoverIntent(text);
+    const rescheduleAsk = humanTakeover && detectRescheduleIntent(text);
     const { messageText, quickReplies, escalation, member } = humanTakeover
       ? {
-          messageText: HUMAN_TAKEOVER_TEXT,
+          messageText: rescheduleAsk ? RESCHEDULE_TEXT : HUMAN_TAKEOVER_TEXT,
           quickReplies: [] as string[],
-          escalation: { escalation: "GENERAL_ESCALATION", intent: "explicit_human_takeover", source: "guard" },
+          // A reschedule must still release the booking (TRIAL_CANCEL frees the slot
+          // and stops the trial reminders); only a plain "get me a person" is GENERAL.
+          escalation: rescheduleAsk
+            ? { escalation: "TRIAL_CANCEL", intent: "reschedule_or_cancel", source: "guard" }
+            : { escalation: "GENERAL_ESCALATION", intent: "explicit_human_takeover", source: "guard" },
           member: false,
         }
       : promoHandoff
@@ -710,13 +717,13 @@ export async function POST(req: NextRequest) {
 
     // A timetable is not live availability. If the model promises the gym is
     // open, a coach is present, or an unconfirmed time works, replace the
-    // unsupported operational claim and stop JAI until a human confirms.
-    let operationalGuardHit = false;
+    // unsupported operational claim and ask Jeremy to confirm (JAI keeps answering).
     if (!humanTakeover && hasUnverifiedOperationalClaim(outText)) {
-      operationalGuardHit = true;
       outText = OPERATIONAL_CONFIRMATION_TEXT;
       outQuick = [];
-      esc = { escalation: "GENERAL_ESCALATION", intent: "live_availability_unverified", source: "guard" };
+      // Keep an escalation the reply already carried (TRIAL_CANCEL / PT_LEAD /
+      // JOIN_INTENT...): overwriting it would lose the slot release or the lead label.
+      esc = esc ?? { escalation: "GENERAL_ESCALATION", intent: "live_availability_unverified", source: "guard" };
     }
 
     // ── Money guard (last line of defence) ─────────────────────────────────
@@ -754,7 +761,10 @@ export async function POST(req: NextRequest) {
     // both pause — JAI must not be pressed into guessing a figure it does not
     // have while Jeremy is closing — and an answered "how do I join" does not.
     // That is the case that was muting the warmest leads for good.
-    const pauseAi = priceLeak || promoHandoff || humanTakeover || operationalGuardHit;
+    // Isaac, 2026-10-12: of the new guards only an explicit request for a person
+    // pauses; reschedules and live-availability claims alert Jeremy and JAI keeps
+    // answering (2026-07-25: "dont leave the lead hanging").
+    const pauseAi = priceLeak || promoHandoff || (humanTakeover && !rescheduleAsk);
 
     // ── Dead adult-trial-link guard (last line of defence) ─────────────────
     // The adult trial Calendly link was switched OFF on 2026-07-30 and is DEAD —
@@ -818,8 +828,7 @@ export async function POST(req: NextRequest) {
     // making unsupported operational promises. This uses the same interlock as
     // the WA inbox "Jeremy taking over" toggle (jai.leads.ai_paused, see
     // /api/wa-inbox/pause); Jeremy flips it back off from the inbox when done.
-    // Price/promo guards, explicit human or reschedule requests, and blocked
-    // live-availability claims pause. A plain rate question is still answered
+    // Price/promo guards and an explicit request for a person pause. A plain rate question is still answered
     // without pausing. Jeremy is pinged and receives a pending item below, so a
     // paused chat is a handoff, never silent abandonment.
     if (pauseAi) {
@@ -827,16 +836,12 @@ export async function POST(req: NextRequest) {
         ? "price_guard"
         : promoHandoff
           ? "promo_handoff"
-          : humanTakeover
-            ? "explicit_human_takeover"
-            : "operational_guard";
+          : "explicit_human_takeover";
       const pauseReason = priceLeak
         ? "JAI blocked a non-standard price and handed the chat to Coach Jeremy"
         : promoHandoff
           ? "Customer asked about a promotion or quoted an unverified price"
-          : humanTakeover
-            ? "Customer requested Coach Jeremy or a booking change"
-            : "JAI blocked an unverified live availability or coach-presence claim";
+          : "Customer asked to speak to Coach Jeremy or a person";
       let { error: pauseErr } = await sb
         .from("leads")
         .update(buildPauseMetadata({
@@ -890,7 +895,12 @@ export async function POST(req: NextRequest) {
           COMPLAINT: "Complaint / issue ⚠️",
           TRIAL_BOOKED: "Trial booked ✅",
           TRIAL_CANCEL: "Trial cancelled / reschedule ↩️",
-          GENERAL_ESCALATION: "Needs your attention",
+          GENERAL_ESCALATION:
+            esc?.intent === "explicit_human_takeover"
+              ? "Asked for a person - JAI paused, please take over"
+              : esc?.intent === "live_availability_unverified"
+              ? "Asked about live availability - JAI could not confirm, please reply"
+              : "Needs your attention",
         };
 
         // Trial cancellation: release the booking so reminders stop and the
@@ -973,6 +983,8 @@ export async function POST(req: NextRequest) {
           await sendTelegramPlainToUser(a.id, alert, "jai-escalation");
         }
 
+        // One exception, Isaac 2026-10-12: a customer who explicitly asks for a
+        // person pauses JAI (pauseAi above). Everything else below still holds.
         // Escalation NEVER auto-pauses JAI (Isaac, 2026-07-25: "once it is
         // escalate to jeremy, JAI still answering the lead ... dont leave the
         // lead hanging"). Previously COMPLAINT and GENERAL_ESCALATION set
