@@ -25,7 +25,6 @@ for (const reply of [
   "We are open right now.",
   "Coach Jeremy will be around for classes today.",
   "That timing can work.",
-  "Afternoons are usually fine.",
   "I will make sure Coach Jeremy is expecting you.",
   "I will give Coach Jeremy a heads up.",
   "See you inside!",
@@ -46,6 +45,8 @@ for (const reply of [
   "Mornings are available on Saturday.",
   "We're open Mon–Sat for group classes.",
   "We're open from 7am on Saturdays.",
+  "Afternoons are usually fine.",
+  "Evenings work best for most beginners.",
 ]) {
   assert.equal(hasUnverifiedOperationalClaim(reply), false, reply);
 }
@@ -113,6 +114,14 @@ for (const t of [
   "Can Coach Jeremy speak Mandarin?",
   "Will the class time change during the holidays?",
   "Is this an automated reply?",
+  "Is Jeremy a real coach?",
+  "Can I reschedule if I can't make it?",
+  "What's your reschedule policy?",
+  "If I need to reschedule, how do I do it?",
+  "Is rescheduling allowed for the trial?",
+  "Before I book, can I reschedule later?",
+  "Can I postpone the session if it rains?",
+  "Do you allow me to change my booking later?",
 ]) assert.equal(detectHumanTakeoverIntent(t), false, t);
 for (const t of [
   "Can I speak to Coach Jeremy?",

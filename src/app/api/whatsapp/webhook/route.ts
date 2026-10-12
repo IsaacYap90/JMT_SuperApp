@@ -601,10 +601,10 @@ export async function POST(req: NextRequest) {
       ? {
           messageText: rescheduleAsk ? RESCHEDULE_TEXT : HUMAN_TAKEOVER_TEXT,
           quickReplies: [] as string[],
-          // A reschedule must still release the booking (TRIAL_CANCEL frees the slot
-          // and stops the trial reminders); only a plain "get me a person" is GENERAL.
+          // Not TRIAL_CANCEL: a regex must never cancel a real booking. Jeremy moves
+          // it; the customer is told the booking stands until he does.
           escalation: rescheduleAsk
-            ? { escalation: "TRIAL_CANCEL", intent: "reschedule_or_cancel", source: "guard" }
+            ? { escalation: "GENERAL_ESCALATION", intent: "reschedule_request", source: "guard" }
             : { escalation: "GENERAL_ESCALATION", intent: "explicit_human_takeover", source: "guard" },
           member: false,
         }
@@ -898,6 +898,8 @@ export async function POST(req: NextRequest) {
           GENERAL_ESCALATION:
             esc?.intent === "explicit_human_takeover"
               ? "Asked for a person - JAI paused, please take over"
+              : esc?.intent === "reschedule_request"
+              ? "Wants to change their booking - NOT changed yet, please move it"
               : esc?.intent === "live_availability_unverified"
               ? "Asked about live availability - JAI could not confirm, please reply"
               : "Needs your attention",
@@ -951,7 +953,10 @@ export async function POST(req: NextRequest) {
         // Never echo an unknown (attacker-controlled) escalation type into the
         // alert. generateReply already drops unknown types, but guard here too:
         // if the key isn't a known label, skip the escalation entirely.
-        const label = labels[esc.escalation];
+        // Combined messages (e.g. promo + "speak to Jeremy") can pause under another
+        // label; never let the alert say JAI is still answering when it is not.
+        const baseLabel = labels[esc.escalation];
+        const label = pauseAi && baseLabel && !/paused/i.test(baseLabel) ? `${baseLabel} - JAI paused, take over` : baseLabel;
         if (!label) {
           console.warn("[jai-webhook] dropping unknown escalation type", esc.escalation);
           return NextResponse.json({ ok: true });

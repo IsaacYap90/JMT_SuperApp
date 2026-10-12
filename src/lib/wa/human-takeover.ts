@@ -29,7 +29,7 @@ const RESCHEDULE =
   /\b(?:reschedul(?:e|ing)|re[- ]?schedul(?:e|ing))\b|\b(?:change|move|shift|postpone|push)\s+(?:my|our|the)\s+(?:trial|session|booking|appointment|slot)\b|\b(?:change|move)\s+(?:the\s+)?(?:date|time|day|slot)\s+(?:of|for)\s+(?:my|our|the)\s+(?:trial|session|booking|appointment)\b/i;
 
 const EXPLICIT_HUMAN =
-  /\b(?:speak|talk|chat)\s+(?:to|with)\s+(?:someone|somebody|a\s+(?:person|human|real\s+person)|coach(?:\s+jeremy)?|jeremy|a\s+coach|the\s+coach)\b|\b(?:coach\s+jeremy|jeremy|a\s+human|a\s+real\s+person)\b.{0,30}\b(?:call|contact|reach|message)\s+me\b|\b(?:real|actual)\s+(?:person|human|reply|coach)\b|\b(?:coach\s+)?jeremy(?:['’]s)?\s+(?:contact|number|phone|whatsapp)\b/i;
+  /\b(?:speak|talk|chat)\s+(?:to|with)\s+(?:someone|somebody|a\s+(?:person|human|real\s+person)|coach(?:\s+jeremy)?|jeremy|a\s+coach|the\s+coach)\b|\b(?:coach\s+jeremy|jeremy|a\s+human|a\s+real\s+person)\b.{0,30}\b(?:call|contact|reach|message)\s+me\b|\b(?:real|actual)\s+(?:person|human)\b|\breal\s+reply\b|\b(?:coach\s+)?jeremy(?:['’]s)?\s+(?:contact|number|phone|whatsapp)\b/i;
 
 export const HUMAN_TAKEOVER_TEXT =
   "Sure — I’m passing this to Coach Jeremy now and pausing my automated replies, so he can reply to you here directly.";
@@ -39,17 +39,21 @@ export const HUMAN_TAKEOVER_TEXT =
 // (his 2026-07-25 rule: never leave the lead hanging), so these two texts must
 // not promise a pause.
 export const RESCHEDULE_TEXT =
-  "No problem — I’ve let Coach Jeremy know you’d like to change your booking, and he’ll confirm the new slot with you. Nothing has been changed yet.";
+  "No problem — I’ve let Coach Jeremy know you’d like to change your booking. Your current booking stays as it is until he confirms the new slot with you.";
 
 export const OPERATIONAL_CONFIRMATION_TEXT =
   "I can share the scheduled class times, but I can’t confirm live availability, whether the gym is open right now, or whether a coach is on site. I’ve asked Coach Jeremy to confirm for you.";
 
 export function detectHumanTakeoverIntent(text: string): boolean {
-  return detectExplicitHumanRequest(text) || RESCHEDULE.test(text);
+  return detectExplicitHumanRequest(text) || detectRescheduleIntent(text);
 }
 
+// "Can I reschedule if I can't make it?" / "What's your reschedule policy?" ask
+// about the rule; they are not a request to move a booking (re-review 2026-10-12).
+const RESCHEDULE_POLICY_QUESTION = /\bif\b|\bpolic(?:y|ies)\b|\ballow(?:ed)?\b|\blater\b|\bbefore\s+i\s+book\b|\bin\s+case\b|\bhow\s+(?:do|does|can)\b|\bcan\s+i\s+(?:still\s+)?reschedule\s*\?|\bis\s+(?:it\s+)?possible\b/i;
+
 export function detectRescheduleIntent(text: string): boolean {
-  return RESCHEDULE.test(text);
+  return RESCHEDULE.test(text) && !RESCHEDULE_POLICY_QUESTION.test(text);
 }
 
 // "Do I need to talk to the coach before I join sparring?" asks HOW things work;
@@ -75,7 +79,7 @@ export function hasUnverifiedOperationalClaim(text: string): boolean {
     return (
       /\b(?:we(?:'|’)re|we\s+are|the\s+gym\s+is)\s+open\s+(?:now|right\s+now|today)\b/i.test(statement) ||
       /\bcoach\s+jeremy\s+(?:is|will\s+be)\s+(?:around|on\s*site|inside|available|there|expecting\s+you)\b/i.test(statement) ||
-      /\b(?:that\s+timing|afternoons?|mornings?|evenings?)\s+(?:(?:is|are)\s+)?(?:can|should|would|usually)?\s*(?:work|works|fine)\b/i.test(statement) ||
+      /\bthat\s+timing\s+(?:(?:is|are)\s+)?(?:can|should|would|usually)?\s*(?:work|works|fine)\b/i.test(statement) ||
       /\b(?:(?:i|we)\s+will|i(?:'|’)ll|we(?:'|’)ll)\s+(?:give|make\s+sure).{0,35}\b(?:heads?\s*up|expecting\s+you)\b/i.test(statement) ||
       /\bsee\s+you\s+inside\b/i.test(statement) ||
       // A bare "we're open" is a live claim; "we're open Mon–Sat / from 7am" is timetable.
