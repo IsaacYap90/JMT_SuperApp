@@ -29,6 +29,9 @@ for (const reply of [
   "I will make sure Coach Jeremy is expecting you.",
   "I will give Coach Jeremy a heads up.",
   "See you inside!",
+  "Yep — we're open, come on up.",
+  "Walking in is fine, see you up there.",
+  "Just head up and we'll get you in.",
 ]) {
   assert.equal(hasUnverifiedOperationalClaim(reply), true, reply);
 }
@@ -41,6 +44,8 @@ for (const reply of [
   "Coach Jeremy teaches classes on Friday.",
   "Afternoons are listed in the timetable.",
   "Mornings are available on Saturday.",
+  "We're open Mon–Sat for group classes.",
+  "We're open from 7am on Saturdays.",
 ]) {
   assert.equal(hasUnverifiedOperationalClaim(reply), false, reply);
 }
@@ -102,5 +107,17 @@ assert.equal(
   false,
   "a manual reply after the anchor must suppress automation"
 );
+
+for (const t of [
+  "Do I need to talk to the coach before I join sparring?",
+  "Can Coach Jeremy speak Mandarin?",
+  "Will the class time change during the holidays?",
+  "Is this an automated reply?",
+]) assert.equal(detectHumanTakeoverIntent(t), false, t);
+for (const t of [
+  "Can I speak to Coach Jeremy?",
+  "I need to reschedule my trial to Friday",
+  "I want a real person please",
+]) assert.equal(detectHumanTakeoverIntent(t), true, t);
 
 console.log("human-takeover-check: all assertions passed");

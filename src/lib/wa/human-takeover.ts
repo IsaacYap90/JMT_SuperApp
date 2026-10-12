@@ -32,7 +32,7 @@ const EXPLICIT_HUMAN =
   /\b(?:speak|talk|chat)\s+(?:to|with)\s+(?:someone|somebody|a\s+(?:person|human|real\s+person)|coach(?:\s+jeremy)?|jeremy|a\s+coach|the\s+coach)\b|\b(?:coach\s+jeremy|jeremy|a\s+human|a\s+real\s+person)\b.{0,30}\b(?:call|contact|reach|message)\s+me\b|\b(?:real|actual)\s+(?:person|human|reply|coach)\b|\b(?:coach\s+)?jeremy(?:['’]s)?\s+(?:contact|number|phone|whatsapp)\b/i;
 
 export const HUMAN_TAKEOVER_TEXT =
-  "I’ll pass this to Coach Jeremy and pause the automated replies here. He’ll confirm directly — nothing has been changed or booked yet.";
+  "Sure — I’m passing this to Coach Jeremy now and pausing my automated replies, so he can reply to you here directly.";
 
 // Isaac, 2026-10-12: only an explicit "get me a person" pauses JAI. A reschedule
 // or a live-availability question alerts Jeremy while JAI keeps answering
@@ -45,15 +45,19 @@ export const OPERATIONAL_CONFIRMATION_TEXT =
   "I can share the scheduled class times, but I can’t confirm live availability, whether the gym is open right now, or whether a coach is on site. I’ve asked Coach Jeremy to confirm for you.";
 
 export function detectHumanTakeoverIntent(text: string): boolean {
-  return EXPLICIT_HUMAN.test(text) || RESCHEDULE.test(text);
+  return detectExplicitHumanRequest(text) || RESCHEDULE.test(text);
 }
 
 export function detectRescheduleIntent(text: string): boolean {
   return RESCHEDULE.test(text);
 }
 
+// "Do I need to talk to the coach before I join sparring?" asks HOW things work;
+// it is not a request for a person (e2e OT1, 2026-10-12).
+const PROCESS_QUESTION = /\b(?:do|should|must|would)\s+i\s+(?:need|have)\s+to\b|\bbefore\s+i\b|\bis\s+it\s+necessary\b/i;
+
 export function detectExplicitHumanRequest(text: string): boolean {
-  return EXPLICIT_HUMAN.test(text);
+  return EXPLICIT_HUMAN.test(text) && !PROCESS_QUESTION.test(text);
 }
 
 export function hasUnverifiedOperationalClaim(text: string): boolean {
@@ -73,7 +77,12 @@ export function hasUnverifiedOperationalClaim(text: string): boolean {
       /\bcoach\s+jeremy\s+(?:is|will\s+be)\s+(?:around|on\s*site|inside|available|there|expecting\s+you)\b/i.test(statement) ||
       /\b(?:that\s+timing|afternoons?|mornings?|evenings?)\s+(?:(?:is|are)\s+)?(?:can|should|would|usually)?\s*(?:work|works|fine)\b/i.test(statement) ||
       /\b(?:(?:i|we)\s+will|i(?:'|’)ll|we(?:'|’)ll)\s+(?:give|make\s+sure).{0,35}\b(?:heads?\s*up|expecting\s+you)\b/i.test(statement) ||
-      /\bsee\s+you\s+inside\b/i.test(statement)
+      /\bsee\s+you\s+inside\b/i.test(statement) ||
+      // A bare "we're open" is a live claim; "we're open Mon–Sat / from 7am" is timetable.
+      /\bwe(?:'|’)re\s+open\b(?!\s+(?:mon|tue|wed|thu|fri|sat|sun|from|daily|every|on|until|till|\d))/i.test(statement) ||
+      /\bwalk(?:ing)?\s*-?\s*in\s+is\s+(?:fine|ok|okay)\b/i.test(statement) ||
+      /\bwe(?:'|’)ll\s+get\s+you\s+in\b/i.test(statement) ||
+      /\bsee\s+you\s+up\s+there\b/i.test(statement)
     );
   });
 }
