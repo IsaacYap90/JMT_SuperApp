@@ -46,6 +46,13 @@ import {
   clearPauseMetadata,
   isMissingPauseMetadataColumn,
 } from "@/lib/wa/pause-metadata";
+import {
+  detectHumanTakeoverIntent,
+  hasUnverifiedOperationalClaim,
+  HUMAN_TAKEOVER_TEXT,
+  OPERATIONAL_CONFIRMATION_TEXT,
+} from "@/lib/wa/human-takeover";
+
 
 /** What the anti-loop guard says. Named because the guard must be able to
  *  recognise its OWN output and not mistake it for JAI repeating itself. */
@@ -583,7 +590,18 @@ export async function POST(req: NextRequest) {
     const answerableJoin =
       joinHit === "wants_to_join" && !inboundHasUnknownFigure(text);
     const promoHandoff = !!joinHit && !answerableJoin;
-    const { messageText, quickReplies, escalation, member } = promoHandoff
+    // Booking changes and explicit requests for a real person are not safe
+    // model tasks. Stop before generation so JAI cannot invent a changed slot,
+    // coach availability, or another automated check-in while a human is due.
+    const humanTakeover = detectHumanTakeoverIntent(text);
+    const { messageText, quickReplies, escalation, member } = humanTakeover
+      ? {
+          messageText: HUMAN_TAKEOVER_TEXT,
+          quickReplies: [] as string[],
+          escalation: { escalation: "GENERAL_ESCALATION", intent: "explicit_human_takeover", source: "guard" },
+          member: false,
+        }
+      : promoHandoff
       ? {
           messageText: JOIN_HANDOFF_TEXT,
           quickReplies: [] as string[],
@@ -690,6 +708,17 @@ export async function POST(req: NextRequest) {
       outQuick = [];
     }
 
+    // A timetable is not live availability. If the model promises the gym is
+    // open, a coach is present, or an unconfirmed time works, replace the
+    // unsupported operational claim and stop JAI until a human confirms.
+    let operationalGuardHit = false;
+    if (!humanTakeover && hasUnverifiedOperationalClaim(outText)) {
+      operationalGuardHit = true;
+      outText = OPERATIONAL_CONFIRMATION_TEXT;
+      outQuick = [];
+      esc = { escalation: "GENERAL_ESCALATION", intent: "live_availability_unverified", source: "guard" };
+    }
+
     // ── Money guard (last line of defence) ─────────────────────────────────
     // The fact sheet holds the STANDARD rate card and no promo, but the model
     // can still parrot a figure the CUSTOMER quoted ("the $252 offer") or
@@ -725,7 +754,7 @@ export async function POST(req: NextRequest) {
     // both pause — JAI must not be pressed into guessing a figure it does not
     // have while Jeremy is closing — and an answered "how do I join" does not.
     // That is the case that was muting the warmest leads for good.
-    const pauseAi = priceLeak || promoHandoff;
+    const pauseAi = priceLeak || promoHandoff || humanTakeover || operationalGuardHit;
 
     // ── Dead adult-trial-link guard (last line of defence) ─────────────────
     // The adult trial Calendly link was switched OFF on 2026-07-30 and is DEAD —
@@ -785,22 +814,29 @@ export async function POST(req: NextRequest) {
       await markHandled();
     }
 
-    // Join / promo intent → hand the chat to Jeremy for real: pause JAI on this
-    // contact so it can't keep talking over him while he closes, or get pressed
-    // into guessing a promo figure it does not have. Same interlock the WA inbox
-    // "Jeremy taking over" toggle uses (jai.leads.ai_paused, see
-    // /api/wa-inbox/pause) — Jeremy flips it back off from the inbox when done.
-    // This is the ONE escalation type that auto-pauses; every other type still
-    // leaves JAI answering (2026-07-25 rule, deliberately not changed).
-    // Scope narrowed 2026-07-29: only a real commitment to join/pay or a promo
-    // ask reaches here. A plain rate question never pauses — it is answered.
-    // Jeremy is ALWAYS pinged on Telegram + given a pending item below, so a
-    // paused chat is a handoff, never silence.
+    // A fail-safe handoff pauses JAI so it cannot talk over Jeremy or keep
+    // making unsupported operational promises. This uses the same interlock as
+    // the WA inbox "Jeremy taking over" toggle (jai.leads.ai_paused, see
+    // /api/wa-inbox/pause); Jeremy flips it back off from the inbox when done.
+    // Price/promo guards, explicit human or reschedule requests, and blocked
+    // live-availability claims pause. A plain rate question is still answered
+    // without pausing. Jeremy is pinged and receives a pending item below, so a
+    // paused chat is a handoff, never silent abandonment.
     if (pauseAi) {
-      const pauseSource = priceLeak ? "price_guard" : "promo_handoff";
+      const pauseSource = priceLeak
+        ? "price_guard"
+        : promoHandoff
+          ? "promo_handoff"
+          : humanTakeover
+            ? "explicit_human_takeover"
+            : "operational_guard";
       const pauseReason = priceLeak
         ? "JAI blocked a non-standard price and handed the chat to Coach Jeremy"
-        : "Customer asked about a promotion or quoted an unverified price";
+        : promoHandoff
+          ? "Customer asked about a promotion or quoted an unverified price"
+          : humanTakeover
+            ? "Customer requested Coach Jeremy or a booking change"
+            : "JAI blocked an unverified live availability or coach-presence claim";
       let { error: pauseErr } = await sb
         .from("leads")
         .update(buildPauseMetadata({
@@ -816,7 +852,7 @@ export async function POST(req: NextRequest) {
           .eq("contact_number", from);
         pauseErr = legacy.error;
       }
-      if (pauseErr) console.error("[jai-webhook] join-intent pause failed", pauseErr);
+      if (pauseErr) console.error("[jai-webhook] takeover pause failed", pauseErr);
     }
 
     // Bot just sent a booking link → arm the silent-lead follow-up funnel
